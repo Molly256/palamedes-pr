@@ -83,9 +83,10 @@ export default function VipTask() {
  return (
  <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
 
- {/* Top bar: Back arrow HOT BLUE + Avatar with badge LEFT */}
- <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '30px' }}>
+ {/* Top bar: Back LEFT + Avatar RIGHT with text below */}
+ <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '30px' }}>
 
+ {/* Back arrow on left - HOT BLUE, text = "Back" only */}
  <Link href="/dashboard" style={{
  fontSize: '16px',
  color: '#00BFFF',
@@ -93,23 +94,29 @@ export default function VipTask() {
  textDecoration: 'none',
  display: 'flex',
  alignItems: 'center',
- gap: '6px'
+ gap: '4px',
+ paddingTop: '8px'
  }}>
- ← Back to Dashboard
+ ← Back
  </Link>
 
- {/* User avatar with VIP badge - FIXED PROP */}
- <div style={{ display: 'flex', alignItems: 'center' }}>
+ {/* Avatar + text on right side */}
+ <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
  <AvatarWithBadge 
  username={user?.username}
- vipLevel={Number(user?.vip?? 0)} // KEY FIX:?? keeps 0, Number forces number
+ vipLevel={Number(user?.vip?? 0)}
  size={60}
- key={user?.vip?? 0} // KEY FIX: remount on VIP change
+ key={user?.vip?? 0}
  />
  
- <div style={{ marginLeft: '15px' }}>
- <p style={{ margin: 0, fontWeight: '900', color: '#000' }}>Balance: {user?.balance?.toLocaleString() || 0} shs</p>
- <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#000' }}>{vips[user?.vip?? 0].name}</p>
+ {/* Balance + VIP text below avatar, aligned left */}
+ <div style={{ marginTop: '8px', textAlign: 'left' }}>
+ <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>
+ Balance: {user?.balance?.toLocaleString() || 0} shs
+ </p>
+ <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
+ {vips[user?.vip?? 0].name}
+ </p>
  </div>
  </div>
  </div>
