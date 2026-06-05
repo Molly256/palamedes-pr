@@ -2,9 +2,11 @@
 import React from 'react'
 
 export default function AvatarWithBadge({ username, vipLevel = 0, size = 70, avatar }) {
- // Rich hot colors for diamond only
+ // Force vipLevel to number 0-10
+ const level = parseInt(vipLevel) || 0
+
  const hotColors = {
- 0: '#A9A9A9', // rich grey
+ 0: '#A9A9A9', // rich hot grey
  1: '#00BFFF', // hot skyblue
  2: '#FFD700', // hot gold
  3: '#9400D3', // hot violet
@@ -17,13 +19,12 @@ export default function AvatarWithBadge({ username, vipLevel = 0, size = 70, ava
  10: '#FF8C00' // hot dark orange
  }
 
- const diamondColor = hotColors[vipLevel] || hotColors[0]
+ const diamondColor = hotColors[level] || hotColors[0]
  const initial = username? username.charAt(0).toUpperCase() : 'U'
 
  return (
  <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
 
- {/* Avatar circle - sky blue border */}
  <div style={{
  width: size,
  height: size,
@@ -40,14 +41,14 @@ export default function AvatarWithBadge({ username, vipLevel = 0, size = 70, ava
  {!avatar && initial}
  </div>
 
- {/* Diamond badge - stands alone, NO circle background */}
+ {/* Standalone diamond - rich hot grey for VIP 0 */}
  <div style={{
  position: 'absolute',
- bottom: -3,
- left: -3,
- fontSize: size * 0.4,
+ bottom: -4,
+ left: -4,
+ fontSize: size * 0.42,
  color: diamondColor,
- filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))',
+ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.5))',
  lineHeight: 1,
  zIndex: 2
  }}>
