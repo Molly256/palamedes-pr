@@ -1,56 +1,54 @@
 'use client'
+import React from 'react'
 
-const hotColors = {
- 0: '#E0E0E0', // VIP 0 - Gray
- 1: '#00BFFF', // VIP 1 - Hot blue
- 2: '#FFD700', // VIP 2 - Hot gold
- 3: '#FF00FF', // VIP 3 - Hot magenta
- 4: '#FF1493', // VIP 4 - Hot pink
- 5: '#FF4500', // VIP 5 - Hot orange red
- 6: '#32CD32', // VIP 6 - Hot lime green
- 7: '#FF69B4', // VIP 7 - Hot pink
- 8: '#DC143C', // VIP 8 - Hot crimson
- 9: '#9400D3', // VIP 9 - Hot violet
- 10: '#FF8C00' // VIP 10 - Hot dark orange
-}
+export default function AvatarWithBadge({ username, vipLevel = 0, size = 70, avatar }) {
+ // Rich hot colors for diamond only
+ const hotColors = {
+ 0: '#A9A9A9', // rich grey
+ 1: '#00BFFF', // hot skyblue
+ 2: '#FFD700', // hot gold
+ 3: '#9400D3', // hot violet
+ 4: '#FF1493', // hot deep pink
+ 5: '#FF4500', // hot orange red
+ 6: '#32CD32', // hot lime green
+ 7: '#FF69B4', // hot pink
+ 8: '#DC143C', // hot crimson
+ 9: '#8A2BE2', // hot blue violet
+ 10: '#FF8C00' // hot dark orange
+ }
 
-export default function AvatarWithBadge({ username, vipLevel = 0, size = 60, avatar }) {
- const badgeColor = hotColors[vipLevel] || hotColors[0]
+ const diamondColor = hotColors[vipLevel] || hotColors[0]
+ const initial = username? username.charAt(0).toUpperCase() : 'U'
 
  return (
- <div style={{ position: 'relative', width: size, height: size }}>
- {/* Avatar circle with image support */}
+ <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+
+ {/* Avatar circle - sky blue border */}
  <div style={{
  width: size,
  height: size,
  borderRadius: '50%',
- background: avatar? `url(${avatar}) center/cover no-repeat` : '#87CEEB',
+ background: avatar? `url(${avatar}) center/cover no-repeat` : '#00BFFF',
+ border: '3px solid #00BFFF',
  display: 'flex',
  alignItems: 'center',
  justifyContent: 'center',
  fontSize: size * 0.4,
- color: 'white',
  fontWeight: '900',
- border: '3px solid #00BFFF' // Hot sky blue border for avatar
+ color: 'white'
  }}>
- {!avatar && username?.[0]?.toUpperCase() || 'U'}
+ {!avatar && initial}
  </div>
 
- {/* Badge fixed to LEFT side - auto hot color */}
+ {/* Diamond badge - stands alone, NO circle background */}
  <div style={{
  position: 'absolute',
- left: '-5px',
- bottom: '-5px',
- background: badgeColor,
- borderRadius: '50%',
- width: size * 0.45,
- height: size * 0.45,
- display: 'flex',
- alignItems: 'center',
- justifyContent: 'center',
- fontSize: size * 0.23,
- border: '3px solid white',
- boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+ bottom: -3,
+ left: -3,
+ fontSize: size * 0.4,
+ color: diamondColor,
+ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))',
+ lineHeight: 1,
  zIndex: 2
  }}>
  💎
