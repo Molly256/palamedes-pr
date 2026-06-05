@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import AvatarWithBadge from '../../components/AvatarWithBadge' // 3 dots - file moved to root
+import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 export default function VipTask() {
  const [user, setUser] = useState(null)
@@ -40,13 +40,11 @@ export default function VipTask() {
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
- setUser(userData)
-
- if (!userData.vip || userData.vip === 0) {
+ if (userData.vip === undefined || userData.vip === null) {
  userData.vip = 0
+ }
  localStorage.setItem('palamedes_user', JSON.stringify(userData))
  setUser(userData)
- }
  }, [])
 
  const handleBuyVip = (vip) => {
@@ -71,7 +69,7 @@ export default function VipTask() {
  const newBalance = currentBalance - selectedVip.price + (prevVip? prevVip.price : 0)
 
  const updatedUser = {
-...user,
+ ...user,
  vip: selectedVip.level,
  balance: newBalance
  }
@@ -88,7 +86,6 @@ export default function VipTask() {
  {/* Top bar: Back arrow HOT BLUE + Avatar with badge LEFT */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '30px' }}>
 
- {/* Back arrow on left - HOT BLUE */}
  <Link href="/dashboard" style={{
  fontSize: '16px',
  color: '#00BFFF',
@@ -101,27 +98,28 @@ export default function VipTask() {
  ← Back to Dashboard
  </Link>
 
- {/* User avatar with VIP badge - uses reusable component */}
+ {/* User avatar with VIP badge - FIXED PROP */}
  <div style={{ display: 'flex', alignItems: 'center' }}>
  <AvatarWithBadge 
- username={user?.username} 
- vipLevel={user?.vip || 0} 
- size={60} 
+ username={user?.username}
+ vipLevel={Number(user?.vip?? 0)} // KEY FIX:?? keeps 0, Number forces number
+ size={60}
+ key={user?.vip?? 0} // KEY FIX: remount on VIP change
  />
  
  <div style={{ marginLeft: '15px' }}>
  <p style={{ margin: 0, fontWeight: '900', color: '#000' }}>Balance: {user?.balance?.toLocaleString() || 0} shs</p>
- <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#000' }}>{vips[user?.vip || 0].name}</p>
+ <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#000' }}>{vips[user?.vip?? 0].name}</p>
  </div>
  </div>
  </div>
 
  <h2 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '20px', color: '#000' }}>VIP Levels</h2>
 
- {/* VIP Cards - Hot colors, bold black text */}
+ {/* VIP Cards */}
  <div style={{ display: 'grid', gap: '12px', marginBottom: '40px' }}>
  {vips.map(vip => {
- const isUnlocked = user?.vip >= vip.level
+ const isUnlocked = (user?.vip?? 0) >= vip.level
 
  return (
  <div key={vip.level} style={{
@@ -148,82 +146,32 @@ export default function VipTask() {
 
  <div>
  {vip.level >= 1 && vip.level <= 3 && (
- <button
- onClick={() => handleBuyVip(vip)}
- style={{
- padding: '10px 24px',
- borderRadius: '50px',
- border: 'none',
- background: 'white',
- fontWeight: '900',
- cursor: 'pointer',
- color: '#000'
- }}
- >
- BUY
- </button>
+ <button onClick={() => handleBuyVip(vip)} style={{
+ padding: '10px 24px', borderRadius: '50px', border: 'none',
+ background: 'white', fontWeight: '900', cursor: 'pointer', color: '#000'
+ }}>BUY</button>
  )}
-
- {vip.level >= 4 && (
- <div style={{ fontSize: '28px' }}>🔒</div>
- )}
-
- {isUnlocked && vip.level!== user?.vip && vip.level < 4 && (
- <div style={{ fontSize: '24px' }}>✅</div>
- )}
+ {vip.level >= 4 && <div style={{ fontSize: '28px' }}>🔒</div>}
+ {isUnlocked && vip.level!== (user?.vip?? 0) && vip.level < 4 && <div style={{ fontSize: '24px' }}>✅</div>}
  </div>
  </div>
  )
  })}
  </div>
 
- {/* Buy Confirmation Popup */}
+ {/* Buy Popup */}
  {showBuyPopup && (
- <div style={{
- position: 'fixed',
- top: 0,
- left: 0,
- right: 0,
- bottom: 0,
- background: 'rgba(0,0,0,0.7)',
- display: 'flex',
- alignItems: 'center',
- justifyContent: 'center',
- zIndex: 1000
- }}>
- <div style={{
- background: 'white',
- padding: '30px',
- borderRadius: '16px',
- textAlign: 'center',
- maxWidth: '320px'
- }}>
+ <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+ <div style={{ background: 'white', padding: '30px', borderRadius: '16px', textAlign: 'center', maxWidth: '320px' }}>
  <h3 style={{ color: '#000', fontWeight: '900' }}>Do you want to BUY {selectedVip?.name}?</h3>
  <p style={{ color: '#000', fontWeight: '700' }}>Price: {selectedVip?.price.toLocaleString()} shs</p>
  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
- <button onClick={() => setShowBuyPopup(false)} style={{
- flex: 1,
- padding: '12px',
- borderRadius: '50px',
- border: '2px solid #ccc',
- background: 'white',
- fontWeight: '800',
- color: '#000'
- }}>No</button>
- <button onClick={confirmBuy} style={{
- flex: 1,
- padding: '12px',
- borderRadius: '50px',
- border: 'none',
- background: 'linear-gradient(135deg, #FF1493 0%, #FF00FF 100%)',
- color: 'white',
- fontWeight: '900'
- }}>OK</button>
+ <button onClick={() => setShowBuyPopup(false)} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: '2px solid #ccc', background: 'white', fontWeight: '800', color: '#000' }}>No</button>
+ <button onClick={confirmBuy} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: 'none', background: 'linear-gradient(135deg, #FF1493 0%, #FF00FF 100%)', color: 'white', fontWeight: '900' }}>OK</button>
  </div>
  </div>
  </div>
  )}
-
  </main>
  )
 }
