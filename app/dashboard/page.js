@@ -1,11 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import AvatarWithBadge from '../../components/AvatarWithBadge' // 3 dots - file is in root components/
+import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 export default function Dashboard() {
  const [user, setUser] = useState(null)
- const [avatar, setAvatar] = useState('') // for uploaded image
+ const [avatar, setAvatar] = useState('')
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
@@ -27,9 +27,14 @@ export default function Dashboard() {
  ]
 
  return (
- <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
+ <main style={{ 
+ minHeight: '100vh', 
+ background: '#FFFFFF', 
+ padding: '20px',
+ paddingBottom: '90px' // KEY FIX: space for colorless bottom bar
+ }}>
  
- {/* User details card - hot sky blue border */}
+ {/* User details card */}
  <div style={{
  background: 'white',
  border: '3px solid #00BFFF',
@@ -55,7 +60,6 @@ export default function Dashboard() {
  </p>
  </div>
 
- {/* Avatar with badge LEFT side hot color */}
  <AvatarWithBadge 
  username={user?.username} 
  vipLevel={user?.vip || 0} 
@@ -64,7 +68,7 @@ export default function Dashboard() {
  />
  </div>
 
- {/* Menu grid - hot sky blue cards */}
+ {/* Menu grid */}
  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
