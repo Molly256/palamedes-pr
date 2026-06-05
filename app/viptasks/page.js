@@ -7,7 +7,7 @@ export default function VipTask() {
   const [showBuyPopup, setShowBuyPopup] = useState(false)
   const [selectedVip, setSelectedVip] = useState(null)
 
-  // VIP config - colors will be overridden with hot colors below
+  // VIP config
   const vips = [
     { level: 0, name: 'VIP 0.Internship', price: 0, books: 4, perBook: 625, color: '#e0e0e0', badge: '💎' },
     { level: 1, name: 'VIP 1', price: 80000, books: 4, perBook: 625, color: '#87CEEB', badge: '💎' },
@@ -55,7 +55,7 @@ export default function VipTask() {
     const newBalance = currentBalance - selectedVip.price + (prevVip? prevVip.price : 0)
 
     const updatedUser = {
-  ...user,
+     ...user,
       vip: selectedVip.level,
       balance: newBalance
     }
@@ -69,9 +69,24 @@ export default function VipTask() {
   return (
     <main style={{ minHeight: '100vh', background: '#f8f9fa', padding: '20px' }}>
 
-      {/* User avatar with VIP badge */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px' }}>
-        <div style={{ position: 'relative' }}>
+      {/* Top bar: Back arrow HOT BLUE + User avatar with VIP badge */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '30px' }}>
+
+        {/* Back arrow on left - HOT BLUE */}
+        <Link href="/dashboard" style={{
+          fontSize: '16px',
+          color: '#00BFFF', // Rich hot blue
+          fontWeight: '900',
+          textDecoration: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          ← Back to Dashboard
+        </Link>
+
+        {/* User avatar with VIP badge */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{
             width: '60px',
             height: '60px',
@@ -104,10 +119,6 @@ export default function VipTask() {
             </div>
           )}
         </div>
-        <div style={{ marginLeft: '15px' }}>
-          <p style={{ margin: 0, fontWeight: '900', color: '#000' }}>Balance: {user?.balance?.toLocaleString() || 0} UGX</p>
-          <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#000' }}>{vips[user?.vip || 0].name}</p>
-        </div>
       </div>
 
       <h2 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '20px', color: '#000' }}>VIP Levels</h2>
@@ -117,19 +128,18 @@ export default function VipTask() {
         {vips.map(vip => {
           const isUnlocked = user?.vip >= vip.level
 
-          // Hot/rich colors like hot pink
           const hotColors = {
             0: '#E0E0E0',
-            1: '#00BFFF', // Hot blue
-            2: '#FFD700', // Hot gold
-            3: '#FF00FF', // Hot magenta
-            4: '#FF1493', // Hot pink
-            5: '#FF4500', // Hot orange red
-            6: '#32CD32', // Hot lime green
-            7: '#FF69B4', // Hot pink
-            8: '#DC143C', // Hot crimson
-            9: '#9400D3', // Hot violet
-            10: '#FF8C00' // Hot dark orange
+            1: '#00BFFF',
+            2: '#FFD700',
+            3: '#FF00FF',
+            4: '#FF1493',
+            5: '#FF4500',
+            6: '#32CD32',
+            7: '#FF69B4',
+            8: '#DC143C',
+            9: '#9400D3',
+            10: '#FF8C00'
           }
 
           return (
@@ -156,7 +166,7 @@ export default function VipTask() {
               </div>
 
               <div>
-                {/* BUY button for VIP 1-3 ALWAYS, no level check */}
+                {/* BUY button for VIP 1-3 ALWAYS */}
                 {vip.level >= 1 && vip.level <= 3 && (
                   <button
                     onClick={() => handleBuyVip(vip)}
@@ -174,7 +184,7 @@ export default function VipTask() {
                   </button>
                 )}
 
-                {/* Padlock ONLY on right side for VIP 4-10. Removed from VIP name above */}
+                {/* Padlock ONLY on right side for VIP 4-10 */}
                 {vip.level >= 4 && (
                   <div style={{ fontSize: '28px' }}>🔒</div>
                 )}
@@ -236,9 +246,6 @@ export default function VipTask() {
         </div>
       )}
 
-      <Link href="/dashboard" style={{ display: 'block', textAlign: 'center', marginTop: '30px', color: '#FF1493', fontWeight: '900' }}>
-        ← Back to Dashboard
-      </Link>
     </main>
   )
 }
