@@ -44,9 +44,9 @@ export default function Dashboard() {
 
   const menuItems = [
     { icon: '💳', label: 'Deposit', href: '/deposit' },
-    { icon: '🏧', label: 'Withdraw', href: '/withdraw' }, // <-- added href
-    { icon: '💼', label: 'Viptask' },
-    { icon: '📜', label: 'Transactions', href: '/transactions' }, // <-- added href
+    { icon: '🏧', label: 'Withdraw', href: '/withdraw' },
+    { icon: '💼', label: 'Viptask', href: '/viptasks' }, // FIXED - now opens viptasks page
+    { icon: '📜', label: 'Transactions', href: '/transactions' },
     { icon: '👥', label: 'Invite' },
     { icon: '👨‍👩‍👧', label: 'Myteam' },
     { icon: '📖', label: 'About' },
@@ -85,8 +85,8 @@ export default function Dashboard() {
             <p style={{ color: '#999', fontSize: '13px' }}>Available Balance</p>
           </div>
 
-          {/* RIGHT: Avatar */}
-          <div>
+          {/* RIGHT: Avatar with VIP badge */}
+          <div style={{ position: 'relative' }}>
             <div
               onClick={handleAvatarClick}
               style={{
@@ -106,6 +106,31 @@ export default function Dashboard() {
             >
               {!avatar && '👤'}
             </div>
+
+            {/* VIP Diamond Badge */}
+            {user.vip!== undefined && (
+              <div style={{
+                position: 'absolute',
+                right: '-5px',
+                bottom: '-5px',
+                background: user.vip === 0? '#e0e0e0' :
+                           user.vip === 1? '#87CEEB' :
+                           user.vip === 2? '#FFFACD' :
+                           user.vip === 3? '#DDA0DD' : '#DAA520',
+                borderRadius: '50%',
+                width: '28px',
+                height: '28px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '14px',
+                border: '2px solid white',
+                fontWeight: '900'
+              }}>
+                💎
+              </div>
+            )}
+
             <input
               ref={fileInputRef}
               type="file"
@@ -135,16 +160,17 @@ export default function Dashboard() {
                 borderRadius: '12px',
                 fontSize: '15px',
                 fontWeight: '400',
-                cursor: 'pointer',
+                cursor: item.href? 'pointer' : 'default',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '8px',
                 color: '#000',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s',
+                opacity: item.href? 1 : 0.7
               }}
-              onMouseOver={(e) => e.currentTarget.style.background = '#C7EFFF'}
-              onMouseOut={(e) => e.currentTarget.style.background = '#E0F6FF'}
+              onMouseOver={(e) => item.href && (e.currentTarget.style.background = '#C7EFFF')}
+              onMouseOut={(e) => item.href && (e.currentTarget.style.background = '#E0F6FF')}
             >
               <span style={{ fontSize: '36px' }}>{item.icon}</span>
               <span>{item.label}</span>
