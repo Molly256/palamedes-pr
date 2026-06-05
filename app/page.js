@@ -10,10 +10,11 @@ export default function Home() {
       backgroundImage: 'linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(/hero-bg.jpg)',
       backgroundSize: 'cover',
       backgroundPosition: 'center',
-      backgroundRepeat: 'no-repeat'
+      backgroundRepeat: 'no-repeat',
+      paddingBottom: '90px' // KEY: space for colorless bottom nav bar
     }}>
       
-      {/* Center content - kept your styling */}
+      {/* Center content */}
       <div style={{
         display: 'flex',
         flex: 1,
@@ -52,7 +53,7 @@ export default function Home() {
         </Link>
       </div>
 
-      {/* Bottom logos strip */}
+      {/* Bottom logos strip - now sits above nav bar */}
       <div style={{
         background: 'white',
         padding: '24px 20px',
