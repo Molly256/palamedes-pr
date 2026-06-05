@@ -5,13 +5,10 @@ import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 export default function Dashboard() {
  const [user, setUser] = useState(null)
- const [avatar, setAvatar] = useState('')
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
  setUser(userData)
- const savedAvatar = localStorage.getItem('palamedes_avatar')
- if (savedAvatar) setAvatar(savedAvatar)
  }, [])
 
  const menuItems = [
@@ -27,14 +24,14 @@ export default function Dashboard() {
  ]
 
  return (
- <main style={{ 
- minHeight: '100vh', 
- background: '#FFFFFF', 
+ <main style={{
+ minHeight: '100vh',
+ background: '#FFFFFF',
  padding: '20px',
- paddingBottom: '90px' // KEY FIX: space for colorless bottom bar
+ paddingBottom: '90px'
  }}>
- 
- {/* User details card */}
+
+ {/* User details card - READ ONLY avatar */}
  <div style={{
  background: 'white',
  border: '3px solid #00BFFF',
@@ -47,7 +44,7 @@ export default function Dashboard() {
  }}>
  <div>
  <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: '#000' }}>
- Welcome, {user?.username || 'User'}
+ Welcome, {user?.nickname || user?.username || 'User'}
  </h2>
  <p style={{ margin: '8px 0 0', fontSize: '14px', fontWeight: '800', color: '#000' }}>
  Phone: {user?.phone || '0771234567'}
@@ -60,11 +57,11 @@ export default function Dashboard() {
  </p>
  </div>
 
- <AvatarWithBadge 
- username={user?.username} 
- vipLevel={user?.vip || 0} 
+ <AvatarWithBadge
+ username={user?.username}
+ vipLevel={user?.vip || 0}
  size={70}
- avatar={avatar}
+ avatar={user?.avatar || ''} // ← now reads from palamedes_user only
  />
  </div>
 
