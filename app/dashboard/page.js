@@ -1,11 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import AvatarWithBadge from '../components/AvatarWithBadge' // FIXED: 2 dots only
+import AvatarWithBadge from '../../components/AvatarWithBadge' // 3 dots - file is in root components/
 
 export default function Dashboard() {
  const [user, setUser] = useState(null)
- const [avatar, setAvatar] = useState('') // add this for uploaded image
+ const [avatar, setAvatar] = useState('') // for uploaded image
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
@@ -27,12 +27,12 @@ export default function Dashboard() {
  ]
 
  return (
- <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}> {/* Hot rich white bg */}
-
+ <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
+ 
  {/* User details card - hot sky blue border */}
  <div style={{
  background: 'white',
- border: '3px solid #00BFFF', // hot rich sky blue lining
+ border: '3px solid #00BFFF',
  borderRadius: '16px',
  padding: '20px',
  marginBottom: '25px',
@@ -45,10 +45,10 @@ export default function Dashboard() {
  Welcome, {user?.username || 'User'}
  </h2>
  <p style={{ margin: '8px 0 0', fontSize: '14px', fontWeight: '800', color: '#000' }}>
- Phone: {user?.phone || '0771234567'} {/* Exact registered number */}
+ Phone: {user?.phone || '0771234567'}
  </p>
  <p style={{ margin: '12px 0 0', fontSize: '28px', fontWeight: '900', color: '#000' }}>
- {user?.balance?.toLocaleString() || 0} shs {/* shs at end, bold black */}
+ {user?.balance?.toLocaleString() || 0} shs
  </p>
  <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '800', color: '#000' }}>
  Available Balance
@@ -60,7 +60,7 @@ export default function Dashboard() {
  username={user?.username} 
  vipLevel={user?.vip || 0} 
  size={70}
- avatar={avatar} // pass uploaded avatar
+ avatar={avatar}
  />
  </div>
 
@@ -69,7 +69,7 @@ export default function Dashboard() {
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
  <div style={{
- background: '#00BFFF', // hot rich sky blue card
+ background: '#00BFFF',
  borderRadius: '12px',
  padding: '20px 10px',
  textAlign: 'center',

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import AvatarWithBadge from '../components/AvatarWithBadge' // FIXED: 2 dots only
+import AvatarWithBadge from '../../components/AvatarWithBadge' // 3 dots - file moved to root
 
 export default function VipTask() {
  const [user, setUser] = useState(null)
@@ -83,7 +83,7 @@ export default function VipTask() {
  }
 
  return (
- <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}> {/* Hot rich white bg */}
+ <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
 
  {/* Top bar: Back arrow HOT BLUE + Avatar with badge LEFT */}
  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '30px' }}>
@@ -110,7 +110,7 @@ export default function VipTask() {
  />
  
  <div style={{ marginLeft: '15px' }}>
- <p style={{ margin: 0, fontWeight: '900', color: '#000' }}>Balance: {user?.balance?.toLocaleString() || 0} shs</p> {/* shs at end */}
+ <p style={{ margin: 0, fontWeight: '900', color: '#000' }}>Balance: {user?.balance?.toLocaleString() || 0} shs</p>
  <p style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#000' }}>{vips[user?.vip || 0].name}</p>
  </div>
  </div>
@@ -142,7 +142,7 @@ export default function VipTask() {
  Daily tasks: {vip.books} books @ {vip.perBook.toLocaleString()}shs
  </p>
  {vip.price > 0 && <p style={{ margin: '4px 0 0', fontWeight: '900', color: '#000' }}>
- {vip.price.toLocaleString()}shs {/* shs at end */}
+ {vip.price.toLocaleString()}shs
  </p>}
  </div>
 
@@ -199,7 +199,7 @@ export default function VipTask() {
  maxWidth: '320px'
  }}>
  <h3 style={{ color: '#000', fontWeight: '900' }}>Do you want to BUY {selectedVip?.name}?</h3>
- <p style={{ color: '#000', fontWeight: '700' }}>Price: {selectedVip?.price.toLocaleString()} shs</p> {/* shs at end */}
+ <p style={{ color: '#000', fontWeight: '700' }}>Price: {selectedVip?.price.toLocaleString()} shs</p>
  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
  <button onClick={() => setShowBuyPopup(false)} style={{
  flex: 1,
