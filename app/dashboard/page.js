@@ -1,183 +1,89 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 export default function Dashboard() {
-  const [user, setUser] = useState(null)
-  const [avatar, setAvatar] = useState('')
-  const [hasViptask, setHasViptask] = useState(false)
-  const fileInputRef = useRef(null)
-  const router = useRouter()
+ const [user, setUser] = useState(null)
 
-  useEffect(() => {
-    const userData = localStorage.getItem('palamedes_user')
-    if (userData) {
-      setUser(JSON.parse(userData))
-      const savedAvatar = localStorage.getItem('palamedes_avatar')
-      if (savedAvatar) setAvatar(savedAvatar)
-    } else {
-      window.location.href = '/login'
-    }
-  }, [])
+ useEffect(() => {
+ const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+ setUser(userData)
+ }, [])
 
-  const handleAvatarClick = () => {
-    if (!hasViptask) {
-      alert('Change after viptask purchase')
-      return
-    }
-    fileInputRef.current?.click()
-  }
+ const menuItems = [
+ { icon: '💳', label: 'Deposit', href: '/deposit' },
+ { icon: '🏧', label: 'Withdraw', href: '/withdraw' },
+ { icon: '💼', label: 'Viptask', href: '/viptasks' },
+ { icon: '📜', label: 'Transactions', href: '/transactions' },
+ { icon: '👥', label: 'Invite', href: '/invite' },
+ { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
+ { icon: '📖', label: 'About', href: '/about' },
+ { icon: '⚙️', label: 'Settings', href: '/settings' },
+ { icon: '🎧', label: 'Manager - contact', href: '/manager' },
+ ]
 
-  const handleAvatarChange = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setAvatar(e.target.result)
-        localStorage.setItem('palamedes_avatar', e.target.result)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
+ return (
+ <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}> {/* Hot rich white bg */}
 
-  if (!user) return <div style={{ textAlign: 'center', padding: '100px' }}>Loading...</div>
+ {/* User details card - hot sky blue border */}
+ <div style={{
+ background: 'white',
+ border: '3px solid #00BFFF', // hot rich sky blue lining
+ borderRadius: '16px',
+ padding: '20px',
+ marginBottom: '25px',
+ display: 'flex',
+ justifyContent: 'space-between',
+ alignItems: 'center'
+ }}>
+ <div>
+ <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: '#000' }}> {/* Bold black */}
+ Welcome, {user?.username || 'User'}
+ </h2>
+ <p style={{ margin: '8px 0 0', fontSize: '14px', fontWeight: '800', color: '#000' }}> {/* Bold black */}
+ Phone: {user?.phone || '0771234567'} {/* Shows exact registered number */}
+ </p>
+ <p style={{ margin: '12px 0 0', fontSize: '28px', fontWeight: '900', color: '#000' }}> {/* Bold black, not blue */}
+ {user?.balance?.toLocaleString() || 0} shs {/* shs at end, not UGX at start */}
+ </p>
+ <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '800', color: '#000' }}> {/* Bold black */}
+ Available Balance
+ </p>
+ </div>
 
-  const menuItems = [
-    { icon: '💳', label: 'Deposit', href: '/deposit' },
-    { icon: '🏧', label: 'Withdraw', href: '/withdraw' },
-    { icon: '💼', label: 'Viptask', href: '/viptasks' }, // FIXED - now opens viptasks page
-    { icon: '📜', label: 'Transactions', href: '/transactions' },
-    { icon: '👥', label: 'Invite' },
-    { icon: '👨‍👩‍👧', label: 'Myteam' },
-    { icon: '📖', label: 'About' },
-    { icon: '⚙️', label: 'Settings' },
-    { icon: '🎧', label: 'Manager -contact' }
-  ]
+ {/* Avatar with badge LEFT side hot color */}
+ <AvatarWithBadge 
+ username={user?.username} 
+ vipLevel={user?.vip || 0} 
+ size={70} 
+ />
+ </div>
 
-  return (
-    <main style={{ minHeight: '100vh', background: '#f5f5f5', padding: '40px 20px' }}>
-      <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-
-        {/* 1 COMPACT CENTERED BOX */}
-        <div style={{
-          background: '#fff',
-          padding: '24px 30px',
-          borderRadius: '12px',
-          border: '2px solid #87CEEB',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '28px',
-          maxWidth: '650px',
-          margin: '0 auto 30px auto'
-        }}>
-          {/* LEFT: User details */}
-          <div>
-            <h1 style={{ fontSize: '26px', color: '#000', marginBottom: '8px' }}>
-              Welcome, {user.username}
-            </h1>
-            <p style={{ color: '#666', fontSize: '15px', marginBottom: '16px' }}>
-              Phone: {user.phone}
-            </p>
-            <h2 style={{ fontSize: '32px', color: '#87CEEB', fontWeight: '900', marginBottom: '4px' }}>
-              UGX {user.balance.toLocaleString()}
-            </h2>
-            <p style={{ color: '#999', fontSize: '13px' }}>Available Balance</p>
-          </div>
-
-          {/* RIGHT: Avatar with VIP badge */}
-          <div style={{ position: 'relative' }}>
-            <div
-              onClick={handleAvatarClick}
-              style={{
-                width: '110px',
-                height: '110px',
-                borderRadius: '50%',
-                background: avatar? `url(${avatar}) center/cover` : '#87CEEB',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '44px',
-                color: '#fff',
-                cursor: 'pointer',
-                border: '3px solid #87CEEB',
-                flexShrink: 0
-              }}
-            >
-              {!avatar && '👤'}
-            </div>
-
-            {/* VIP Diamond Badge */}
-            {user.vip!== undefined && (
-              <div style={{
-                position: 'absolute',
-                right: '-5px',
-                bottom: '-5px',
-                background: user.vip === 0? '#e0e0e0' :
-                           user.vip === 1? '#87CEEB' :
-                           user.vip === 2? '#FFFACD' :
-                           user.vip === 3? '#DDA0DD' : '#DAA520',
-                borderRadius: '50%',
-                width: '28px',
-                height: '28px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '14px',
-                border: '2px solid white',
-                fontWeight: '900'
-              }}>
-                💎
-              </div>
-            )}
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              style={{ display: 'none' }}
-            />
-          </div>
-        </div>
-
-        {/* Icon Buttons Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '15px',
-          maxWidth: '650px',
-          margin: '0 auto'
-        }}>
-          {menuItems.map(item => (
-            <button
-              key={item.label}
-              onClick={() => item.href && router.push(item.href)}
-              style={{
-                padding: '25px 15px',
-                background: '#E0F6FF',
-                border: '1px solid #87CEEB',
-                borderRadius: '12px',
-                fontSize: '15px',
-                fontWeight: '400',
-                cursor: item.href? 'pointer' : 'default',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#000',
-                transition: 'all 0.2s',
-                opacity: item.href? 1 : 0.7
-              }}
-              onMouseOver={(e) => item.href && (e.currentTarget.style.background = '#C7EFFF')}
-              onMouseOut={(e) => item.href && (e.currentTarget.style.background = '#E0F6FF')}
-            >
-              <span style={{ fontSize: '36px' }}>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </main>
-  )
+ {/* Menu grid - hot sky blue cards */}
+ <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+ {menuItems.map(item => (
+ <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
+ <div style={{
+ background: '#00BFFF', // hot rich sky blue card
+ borderRadius: '12px',
+ padding: '20px 10px',
+ textAlign: 'center',
+ minHeight: '100px',
+ display: 'flex',
+ flexDirection: 'column',
+ alignItems: 'center',
+ justifyContent: 'center',
+ boxShadow: '0 4px 8px rgba(0,191,255,0.3)'
+ }}>
+ <div style={{ fontSize: '32px', marginBottom: '8px' }}>{item.icon}</div> {/* Emoji stands out on blue */}
+ <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#000' }}> {/* Bold black text */}
+ {item.label}
+ </p>
+ </div>
+ </Link>
+ ))}
+ </div>
+ </main>
+ )
 }
