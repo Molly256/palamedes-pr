@@ -1,14 +1,17 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import AvatarWithBadge from '../../components/AvatarWithBadge'
+import AvatarWithBadge from '../components/AvatarWithBadge' // FIXED: 2 dots only
 
 export default function Dashboard() {
  const [user, setUser] = useState(null)
+ const [avatar, setAvatar] = useState('') // add this for uploaded image
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
  setUser(userData)
+ const savedAvatar = localStorage.getItem('palamedes_avatar')
+ if (savedAvatar) setAvatar(savedAvatar)
  }, [])
 
  const menuItems = [
@@ -38,16 +41,16 @@ export default function Dashboard() {
  alignItems: 'center'
  }}>
  <div>
- <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: '#000' }}> {/* Bold black */}
+ <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: '#000' }}>
  Welcome, {user?.username || 'User'}
  </h2>
- <p style={{ margin: '8px 0 0', fontSize: '14px', fontWeight: '800', color: '#000' }}> {/* Bold black */}
- Phone: {user?.phone || '0771234567'} {/* Shows exact registered number */}
+ <p style={{ margin: '8px 0 0', fontSize: '14px', fontWeight: '800', color: '#000' }}>
+ Phone: {user?.phone || '0771234567'} {/* Exact registered number */}
  </p>
- <p style={{ margin: '12px 0 0', fontSize: '28px', fontWeight: '900', color: '#000' }}> {/* Bold black, not blue */}
- {user?.balance?.toLocaleString() || 0} shs {/* shs at end, not UGX at start */}
+ <p style={{ margin: '12px 0 0', fontSize: '28px', fontWeight: '900', color: '#000' }}>
+ {user?.balance?.toLocaleString() || 0} shs {/* shs at end, bold black */}
  </p>
- <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '800', color: '#000' }}> {/* Bold black */}
+ <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '800', color: '#000' }}>
  Available Balance
  </p>
  </div>
@@ -56,7 +59,8 @@ export default function Dashboard() {
  <AvatarWithBadge 
  username={user?.username} 
  vipLevel={user?.vip || 0} 
- size={70} 
+ size={70}
+ avatar={avatar} // pass uploaded avatar
  />
  </div>
 
@@ -76,8 +80,8 @@ export default function Dashboard() {
  justifyContent: 'center',
  boxShadow: '0 4px 8px rgba(0,191,255,0.3)'
  }}>
- <div style={{ fontSize: '32px', marginBottom: '8px' }}>{item.icon}</div> {/* Emoji stands out on blue */}
- <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#000' }}> {/* Bold black text */}
+ <div style={{ fontSize: '32px', marginBottom: '8px' }}>{item.icon}</div>
+ <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#000' }}>
  {item.label}
  </p>
  </div>
