@@ -7,7 +7,7 @@ export default function VipTask() {
   const [showBuyPopup, setShowBuyPopup] = useState(false)
   const [selectedVip, setSelectedVip] = useState(null)
 
-  // VIP config - square cards
+  // VIP config
   const vips = [
     { level: 0, name: 'VIP 0.Internship', price: 0, books: 4, perBook: 625, color: '#e0e0e0', badge: '💎' },
     { level: 1, name: 'VIP 1', price: 80000, books: 4, perBook: 625, color: '#87CEEB', badge: '💎' },
@@ -56,7 +56,7 @@ export default function VipTask() {
     const newBalance = currentBalance - selectedVip.price + (prevVip? prevVip.price : 0)
 
     const updatedUser = {
-    ...user,
+   ...user,
       vip: selectedVip.level,
       balance: newBalance
     }
@@ -113,13 +113,8 @@ export default function VipTask() {
 
       <h2 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '20px' }}>VIP Levels</h2>
 
-      {/* VIP Cards - SQUARE BOXES */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-        gap: '15px',
-        marginBottom: '40px'
-      }}>
+      {/* VIP Cards - Previous arrangement, just a bit longer */}
+      <div style={{ display: 'grid', gap: '12px', marginBottom: '40px' }}>
         {vips.map(vip => {
           const isUnlocked = user?.vip >= vip.level
           const canBuy = user?.vip === vip.level - 1 && vip.level > 0 && vip.level < 4
@@ -127,58 +122,54 @@ export default function VipTask() {
           return (
             <div key={vip.level} style={{
               background: vip.color,
-              borderRadius: '15px',
-              padding: '20px 15px',
-              aspectRatio: '1/1', // SQUARE
+              padding: '18px 20px',
+              borderRadius: '12px',
               display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
+              justifyContent: 'space-between',
               alignItems: 'center',
-              textAlign: 'center',
-              border: isUnlocked? '3px solid #000' : '2px solid #ccc',
-              opacity: vip.level >= 4 &&!isUnlocked? 0.6 : 1,
-              position: 'relative'
+              minHeight: '75px', // Just a bit longer like green box
+              opacity: vip.level >= 4 &&!isUnlocked? 0.6 : 1
             }}>
-              <p style={{ margin: 0, fontWeight: '900', fontSize: '18px', marginBottom: '8px' }}>
-                {vip.name}
-              </p>
+              <div>
+                <p style={{ margin: 0, fontWeight: '700', fontSize: '16px' }}>
+                  {vip.name} {vip.level >= 4 &&!isUnlocked && '🔒'}
+                </p>
+                <p style={{ margin: '4px 0 0', fontSize: '13px' }}>
+                  Daily tasks: {vip.books} books @ {vip.perBook.toLocaleString()}shs
+                </p>
+                {vip.price > 0 && <p style={{ margin: '4px 0 0', fontWeight: '600' }}>
+                  {vip.price.toLocaleString()}shs
+                </p>}
+              </div>
 
-              <p style={{ margin: '0 0 5px', fontSize: '12px' }}>
-                {vip.books} books @ {vip.perBook.toLocaleString()} UGX
-              </p>
+              <div>
+                {/* BUY button only for VIP 1-3 */}
+                {canBuy && (
+                  <button
+                    onClick={() => handleBuyVip(vip)}
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: '50px',
+                      border: 'none',
+                      background: 'white',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    BUY
+                  </button>
+                )}
 
-              {vip.price > 0 && <p style={{ margin: '0 0 12px', fontWeight: '700', fontSize: '14px' }}>
-                {vip.price.toLocaleString()} UGX
-              </p>}
+                {/* Padlock shifted to BUY button position for VIP 4-10 */}
+                {vip.level >= 4 &&!isUnlocked && (
+                  <div style={{ fontSize: '28px' }}>🔒</div>
+                )}
 
-              {/* BUY button only for VIP 1-3 */}
-              {canBuy && (
-                <button
-                  onClick={() => handleBuyVip(vip)}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: '#000',
-                    color: 'white',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                  }}
-                >
-                  BUY
-                </button>
-              )}
-
-              {/* Padlock shifted to BUY button position for VIP 4-10 */}
-              {vip.level >= 4 &&!isUnlocked && (
-                <div style={{ fontSize: '32px' }}>🔒</div>
-              )}
-
-              {/* Unlocked badge */}
-              {isUnlocked && (
-                <div style={{ fontSize: '28px' }}>✅</div>
-              )}
+                {/* Unlocked badge */}
+                {isUnlocked && vip.level!== user?.vip && (
+                  <div style={{ fontSize: '24px' }}>✅</div>
+                )}
+              </div>
             </div>
           )
         })}
