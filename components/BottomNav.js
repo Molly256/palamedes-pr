@@ -13,7 +13,7 @@ export default function BottomNav() {
 
   const navItems = [
     { href: '/dashboard', icon: '🏠', label: 'Home', color: '#FFB800' },
-    { href: '/viptasks', icon: '📋', label: 'Tasks', color: '#00D26A' },
+    { href: '/tasks', icon: '📋', label: 'Tasks', color: '#00D26A' }, // FIXED: was /viptasks
     { href: '/hot', icon: '🔥', label: 'Hot', color: '#FF2E2E' },
     { href: '/myteam', icon: '👤', label: 'My', color: '#007AFF' },
     { href: '/settings', icon: '⚙️', label: 'Settings', color: '#BF5AF2' },
@@ -26,7 +26,7 @@ export default function BottomNav() {
       left: 0,
       right: 0,
       height: '75px',
-      background: '#FFFFFF', // same rich white as your app
+      background: '#FFFFFF',
       display: 'flex',
       justifyContent: 'space-around',
       alignItems: 'center',
