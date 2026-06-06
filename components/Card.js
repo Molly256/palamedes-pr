@@ -1,13 +1,11 @@
 export default function Card({ children, style = {} }) {
   return (
     <div style={{
-      background: '#FFFFFF',
-      border: 'none', // ← no border
-      borderRadius: '16px',
-      padding: '20px',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.04)', // super light shadow so card floats
-      boxSizing: 'border-box',
+      minHeight: '100vh',
       width: '100%',
+      background: '#0a0a0a', // same as app bg, no white card
+      padding: '40px 20px 120px 20px', // 120px bottom for sponsors + bottom nav
+      boxSizing: 'border-box',
       ...style
     }}>
       {children}
