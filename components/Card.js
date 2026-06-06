@@ -3,8 +3,9 @@ export default function Card({ children, style = {} }) {
     <div style={{
       minHeight: '100vh',
       width: '100%',
-      background: '#0a0a0a', // same as app bg, no white card
-      padding: '40px 20px 120px 20px', // 120px bottom for sponsors + bottom nav
+      background: '#FFFFFF', // pure white full page
+      padding: 0,
+      margin: 0,
       boxSizing: 'border-box',
       ...style
     }}>
