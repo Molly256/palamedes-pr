@@ -27,9 +27,9 @@ export default function Dashboard() {
  return (
  <Card>
  <main style={{
- minHeight: '100vh',
+ minHeight: 'auto', // NO MORE 100vh
  background: '#FFFFFF',
- padding: '15px 20px 100px',
+ padding: '15px 20px 80px', // 80px only for bottom bar
  boxSizing: 'border-box'
  }}>
 
@@ -78,7 +78,7 @@ export default function Dashboard() {
  width: '60px',
  height: '60px',
  background: '#00BFFF', 
- borderRadius: '16px',
+ borderRadius: '16px', // square rounded corners
  display: 'flex',
  alignItems: 'center',
  justifyContent: 'center',

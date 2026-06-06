@@ -1,9 +1,9 @@
 export default function Card({ children, style = {} }) {
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: 'auto', // changed from 100vh
       width: '100%',
-      background: '#FFFFFF', // pure white full page
+      background: '#FFFFFF',
       padding: 0,
       margin: 0,
       boxSizing: 'border-box',

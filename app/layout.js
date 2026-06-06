@@ -19,11 +19,12 @@ export default function RootLayout({ children }) {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}>
         <div style={{ 
-          paddingBottom: '85px', 
-          minHeight: '100vh',
+          paddingBottom: '85px', // space for BottomNav only
+          minHeight: 'auto', // NO 100vh - tight to content
           background: '#FFFFFF',
-          padding: '20px',
-          boxSizing: 'border-box'
+          padding: '0 20px 85px', // 0 top, 20px sides, 85px bottom
+          boxSizing: 'border-box',
+          width: '100%'
         }}>
           {children}
         </div>
