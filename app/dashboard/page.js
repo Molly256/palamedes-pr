@@ -25,44 +25,76 @@ export default function Dashboard() {
  ]
 
  return (
+ <Card>
  <main style={{
  minHeight: '100vh',
  background: '#FFFFFF',
- padding: '20px',
- paddingBottom: '85px',
+ padding: '15px 20px 100px',
  boxSizing: 'border-box'
  }}>
 
- <Card style={{ marginBottom: '25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+ <div style={{ 
+ display: 'flex', 
+ justifyContent: 'space-between', 
+ alignItems: 'flex-start',
+ marginBottom: '15px' 
+ }}>
  <div>
- <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: '#000' }}>
- Welcome, {user?.nickname || user?.username || 'User'}
+ <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
+ Welcome to PALAMEDES PR
  </h2>
- <p style={{ margin: '8px 0 0', fontSize: '14px', fontWeight: '800', color: '#000' }}>
- Phone: {user?.phone || '0771234567'}
- </p>
- <p style={{ margin: '12px 0 0', fontSize: '28px', fontWeight: '900', color: '#000' }}>
- {user?.balance?.toLocaleString() || 0} shs
- </p>
- <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '800', color: '#000' }}>
- Available Balance
+ <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
+ {user?.phone} {user?.nickname || user?.username || 'User'}
  </p>
  </div>
- <AvatarWithBadge username={user?.username} vipLevel={user?.vip || 0} size={70} avatar={user?.avatar || ''} />
- </Card>
+ <AvatarWithBadge username={user?.username} vipLevel={user?.vip || 0} size={60} avatar={user?.avatar || ''} />
+ </div>
 
- <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+ <div style={{ 
+ background: '#FFFFFF',
+ border: '1px solid #E0E0E0',
+ borderRadius: '20px',
+ padding: '15px',
+ marginBottom: '12px',
+ boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+ }}>
+ <p style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#666' }}>
+ Available Balance
+ </p>
+ <p style={{ margin: '6px 0 0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
+ {(user?.balance?.toLocaleString() || 0)} shs
+ </p>
+ </div>
+
+ <div style={{ 
+ display: 'grid', 
+ gridTemplateColumns: 'repeat(4, 1fr)', 
+ gap: '10px' 
+ }}>
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
- <Card style={{ minHeight: '100px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#00BFFF', boxShadow: '0 4px 8px rgba(0,191,255,0.15)' }}>
- <div style={{ fontSize: '32px', marginBottom: '8px' }}>{item.icon}</div>
- <p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#000' }}>
+ <div style={{ textAlign: 'center' }}>
+ <div style={{ 
+ width: '60px',
+ height: '60px',
+ background: '#00BFFF', 
+ borderRadius: '16px',
+ display: 'flex',
+ alignItems: 'center',
+ justifyContent: 'center',
+ margin: '0 auto 6px',
+ fontSize: '28px'
+ }}>
+ {item.icon}
+ </div>
+ <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#000' }}>
  {item.label}
  </p>
- </Card>
+ </div>
  </Link>
  ))}
  </div>
  </main>
+ </Card>
  )
 }
