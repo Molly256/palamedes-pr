@@ -6,6 +6,9 @@ export async function POST(request) {
     const body = await request.json()
     const { action, username, phone, password, referral } = body
 
+    // Remove all spaces from phone so 07 123 456 = 07123456
+    const cleanPhone = phone ? phone.replace(/\s+/g, '') : ''
+
     // REGISTER
     if (action === 'register') {
       if (!username || username.length < 6) {
@@ -17,7 +20,7 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username already taken' }, { status: 400 })
       }
 
-      const phoneExists = users.find(u => u.phone === phone)
+      const phoneExists = users.find(u => u.phone === cleanPhone)
       if (phoneExists) {
         return Response.json({ success: false, message: 'Phone number already registered' }, { status: 400 })
       }
@@ -32,7 +35,7 @@ export async function POST(request) {
       const newUser = {
         id: Date.now(),
         username,
-        phone, // keep phone in DB
+        phone: cleanPhone, // save without spaces
         password,
         referral: referral || '',
         balance: 0,
@@ -45,8 +48,8 @@ export async function POST(request) {
         message: 'Account created successfully',
         user: { 
           username: newUser.username, 
-          phone: newUser.phone, // Changed: phone not number
-          name: newUser.username, // Added: name for Dashboard
+          phone: newUser.phone,
+          name: newUser.username,
           balance: newUser.balance 
         }
       })
@@ -54,7 +57,7 @@ export async function POST(request) {
 
     // LOGIN  
     if (action === 'login') {
-      const user = users.find(u => u.phone === phone)
+      const user = users.find(u => u.phone === cleanPhone)
       
       if (!user || user.password !== password) {
         return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
@@ -65,8 +68,8 @@ export async function POST(request) {
         message: 'Login successful',
         user: { 
           username: user.username, 
-          phone: user.phone, // Changed: phone not number
-          name: user.username, // Added: name for Dashboard
+          phone: user.phone,
+          name: user.username,
           balance: user.balance 
         }
       })

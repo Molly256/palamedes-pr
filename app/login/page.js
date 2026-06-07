@@ -19,7 +19,7 @@ export default function Login() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'login',
-          phone: form.phone,
+          phone: form.phone, // send as-is, no cleaning
           password: form.password
         })
       })
@@ -27,9 +27,8 @@ export default function Login() {
       const data = await res.json()
       
       if (data.success && data.user) {
-        // Save with NAME for Dashboard
         localStorage.setItem('palamedes_user', JSON.stringify({
-          name: data.user.name || data.user.username, // Added name
+          name: data.user.name || data.user.username,
           username: data.user.username,
           phone: data.user.phone,
           balance: data.user.balance || 0,
@@ -48,72 +47,26 @@ export default function Login() {
   }
 
   return (
-    <main style={{ 
-      minHeight: '100vh', 
-      background: '#ffffff', // White only
-      padding: '40px 20px'
-    }}>
-      <h1 style={{ textAlign: 'center', fontSize: '28px', color: '#000', marginBottom: '20px' }}>
-        PALAMEDES PR
-      </h1>
-
-      <h2 style={{ color: '#000', fontSize: '24px', textAlign: 'center', marginBottom: '30px' }}>
-        Login
-      </h2>
-
+    <main style={{ minHeight: '100vh', background: '#ffffff', padding: '40px 20px' }}>
+      <h1 style={{ textAlign: 'center', fontSize: '28px', color: '#000', marginBottom: '20px' }}>PALAMEDES PR</h1>
+      <h2 style={{ color: '#000', fontSize: '24px', textAlign: 'center', marginBottom: '30px' }}>Login</h2>
       {error && <p style={{ color: 'red', textAlign: 'center', marginBottom: '20px' }}>{error}</p>}
-
       <form onSubmit={handleSubmit} style={{ maxWidth: '400px', margin: '0 auto' }}>
         <div style={{marginBottom: '15px'}}>
           <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Phone Number</label>
-          <input 
-            type="tel"
-            required
-            value={form.phone}
-            onChange={(e) => setForm({...form, phone: e.target.value})}
-            placeholder="07XXXXXXXXX"
-            style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
-          />
+          <input type="tel" required value={form.phone} onChange={(e) => setForm({...form, phone: e.target.value})} placeholder="07XXXXXXXXX" style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}/>
         </div>
-
         <div style={{marginBottom: '20px'}}>
           <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Password</label>
           <div style={{ position: 'relative' }}>
-            <input 
-              type={showPass ? 'text' : 'password'}
-              required
-              value={form.password}
-              onChange={(e) => setForm({...form, password: e.target.value})}
-              style={{width: '100%', padding: '12px 40px 12px 12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
-            />
-            <button 
-              type="button"
-              onClick={() => setShowPass(!showPass)}
-              style={{ position: 'absolute', right: '10px', top: '12px', background: 'none', border: 'none', cursor: 'pointer' }}
-            >
+            <input type={showPass ? 'text' : 'password'} required value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}/>
+            <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}>
               {showPass ? '🙈' : '👁️'}
             </button>
           </div>
         </div>
-
-        <p style={{ textAlign: 'right', marginBottom: '20px' }}>
-          <Link href="/register" style={{ color: '#000' }}>
-            No account? Register
-          </Link>
-        </p>
-
-        <button 
-          type="submit" 
-          disabled={loading} 
-          style={{
-            width: '100%',
-            padding: '14px',
-            background: '#000', // Black only
-            color: '#fff', 
-            border: 'none',
-            cursor: 'pointer'
-          }}
-        >
+        <p style={{ textAlign: 'right', marginBottom: '20px' }}><Link href="/register" style={{ color: '#000' }}>No account? Register</Link></p>
+        <button type="submit" disabled={loading} style={{width: '100%', padding: '14px', background: '#000', color: '#fff', border: 'none', cursor: 'pointer'}}>
           {loading ? 'Logging in...' : 'Login'}
         </button>
       </form>
