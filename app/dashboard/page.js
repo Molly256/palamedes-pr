@@ -21,7 +21,7 @@ export default function Dashboard() {
  { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
  { icon: '📖', label: 'About', href: '/about' },
  { icon: '⚙️', label: 'Settings', href: '/settings' },
- { icon: '🎧', label: 'Manager - contact', href: '/manager' },
+ { icon: '🎧', label: 'Manager', href: '/manager' } // shortened label
  ]
 
  return (
@@ -29,7 +29,7 @@ export default function Dashboard() {
  <main style={{
  minHeight: 'auto',
  background: '#FFFFFF',
- padding: '15px 20px 0', // changed: removed 80px bottom padding
+ padding: '15px 20px 0',
  boxSizing: 'border-box'
  }}>
 
@@ -68,29 +68,28 @@ export default function Dashboard() {
 
  <div style={{ 
  display: 'grid', 
- gridTemplateColumns: 'repeat(3, 1fr)', // CHANGED: 3 per row
- gap: '12px', // CHANGED: gap like green boxes
- marginBottom: '20px'
+ gridTemplateColumns: 'repeat(3, 1fr)',
+ gap: '12px'
+ // removed marginBottom here
  }}>
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
  <div style={{ textAlign: 'center' }}>
  <div style={{ 
- width: '100%', // CHANGED: full width of grid cell
- height: '95px', // CHANGED: exact height like green boxes
+ width: '100%',
+ height: '95px',
  background: '#00BFFF', 
  borderRadius: '14px',
  display: 'flex',
  flexDirection: 'column',
  alignItems: 'center',
  justifyContent: 'center',
- margin: '0 auto 6px',
  fontSize: '28px',
  color: '#000'
  }}>
  {item.icon}
  </div>
- <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#000', lineHeight: '1.2' }}>
+ <p style={{ margin: '6px 0 0', fontSize: '12px', fontWeight: '900', color: '#000', lineHeight: '1.2' }}>
  {item.label}
  </p>
  </div>
