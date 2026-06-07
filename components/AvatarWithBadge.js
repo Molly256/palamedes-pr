@@ -1,7 +1,7 @@
 'use client'
 import React from 'react'
 
-export default function AvatarWithBadge({ username, vipLevel = 0, size = 70, avatar }) {
+export default function AvatarWithBadge({ username, vipLevel = 0, size = 76, avatar }) {
  // Force to number 0-10
  const level = Number(vipLevel?? 0)
 
@@ -48,8 +48,8 @@ export default function AvatarWithBadge({ username, vipLevel = 0, size = 70, ava
  position: 'absolute',
  bottom: -4,
  left: -4,
- width: size * 0.42,
- height: size * 0.42,
+ width: size * 0.45,
+ height: size * 0.45,
  filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.5))',
  lineHeight: 1,
  zIndex: 2
