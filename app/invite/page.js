@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { getUserInviteCode } from '@/lib/invite'
+import { getUserInviteCode } from '../../lib/invite'
 
 export default function InvitePage() {
   const [inviteCode, setInviteCode] = useState('')
