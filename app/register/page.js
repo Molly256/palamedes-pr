@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
 export default function Register() {
@@ -14,6 +14,14 @@ export default function Register() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // NEW: Auto-fill referral from link
+  useEffect(() => {
+    const savedReferrer = localStorage.getItem('referrer_code')
+    if (savedReferrer) {
+      setForm(prev => ({...prev, referral: savedReferrer}))
+    }
+  }, [])
 
   const handleChange = (e) => {
     setForm({...form, [e.target.name]: e.target.value})
@@ -42,7 +50,7 @@ export default function Register() {
           username: form.username,
           phone: form.phone,
           password: form.password,
-          referral: form.referral
+          referral: form.referral // This now saves Team A/B/C link
         })
       })
       const data = await res.json()
@@ -55,6 +63,7 @@ export default function Register() {
           balance: 0,
           vip: 0
         }))
+        localStorage.removeItem('referrer_code') // NEW: Clear after signup
         window.location.href = '/login'
       } else {
         setError(data.message || 'Registration failed')
