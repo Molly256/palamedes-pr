@@ -48,7 +48,6 @@ export default function Register() {
       const data = await res.json()
       
       if(data.success) {
-        // Save for Dashboard
         localStorage.setItem('palamedes_user', JSON.stringify({
           name: form.username,
           phone: form.phone,
@@ -56,7 +55,7 @@ export default function Register() {
           balance: 0,
           vip: 0
         }))
-        window.location.href = '/login' // Changed: go to login not dashboard
+        window.location.href = '/login'
       } else {
         setError(data.message || 'Registration failed')
       }
@@ -69,7 +68,7 @@ export default function Register() {
   return (
     <main style={{
       minHeight: '100vh',
-      background: '#ffffff', // Changed: full white
+      background: '#ffffff',
       padding: '40px 20px'
     }}>
       <h1 style={{textAlign: 'center', marginBottom: '20px', color: '#000', fontSize: '28px'}}>
@@ -90,7 +89,7 @@ export default function Register() {
             value={form.username}
             onChange={handleChange}
             required
-            minLength={3}
+            minLength={6}
             style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
           />
         </div>
@@ -116,9 +115,9 @@ export default function Register() {
               value={form.password}
               onChange={handleChange}
               required
-              style={{width: '100%', padding: '12px 40px 12px 12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
+              style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
             />
-            <button type="button" onClick={() => setShowPass(!showPass)} style={{position: 'absolute', right: '10px', top: '12px', background: 'none', border: 'none', cursor: 'pointer'}}>
+            <button type="button" onClick={() => setShowPass(!showPass)} style={{position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0'}}>
               {showPass ? '🙈' : '👁️'}
             </button>
           </div>
@@ -133,9 +132,9 @@ export default function Register() {
               value={form.confirmPassword}
               onChange={handleChange}
               required
-              style={{width: '100%', padding: '12px 40px 12px 12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
+              style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
             />
-            <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{position: 'absolute', right: '10px', top: '12px', background: 'none', border: 'none', cursor: 'pointer'}}>
+            <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0'}}>
               {showConfirm ? '🙈' : '👁️'}
             </button>
           </div>
