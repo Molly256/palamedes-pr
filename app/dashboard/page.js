@@ -6,11 +6,32 @@ import Card from '../../components/Card'
 
 export default function Dashboard() {
  const [user, setUser] = useState(null)
+ const [deferredPrompt, setDeferredPrompt] = useState(null)
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
  setUser(userData)
  }, [])
+
+ // Listen for PWA install prompt
+ useEffect(() => {
+   const handler = (e) => {
+     e.preventDefault()
+     setDeferredPrompt(e)
+   }
+   window.addEventListener('beforeinstallprompt', handler)
+   return () => window.removeEventListener('beforeinstallprompt', handler)
+ }, [])
+
+ const handleInstall = async () => {
+   if (!deferredPrompt) {
+     alert('Install not available.\niPhone: Share > Add to Home Screen\nAndroid: Menu > Install app')
+     return
+   }
+   deferredPrompt.prompt()
+   const { outcome } = await deferredPrompt.userChoice
+   if (outcome === 'accepted') setDeferredPrompt(null)
+ }
 
  const menuItems = [
  { icon: '💳', label: 'Deposit', href: '/deposit' },
@@ -20,7 +41,7 @@ export default function Dashboard() {
  { icon: '👥', label: 'Invite', href: '/invite' },
  { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
  { icon: '📖', label: 'About', href: '/about' },
- { icon: '⚙️', label: 'Settings', href: '/settings' },
+ { icon: '📱', label: 'Download App', onClick: handleInstall, href: '#' },
  { icon: '🎧', label: 'Manager', href: '/manager' }
  ]
 
@@ -55,7 +76,7 @@ export default function Dashboard() {
  <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
  Phone number: {user?.phone || 'Not registered'}
  </p>
- <p style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '800', color: '#666' }}>
+ <p style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '800', color: '#000' }}>
  Available balance
  </p>
  <p style={{ margin: '0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
@@ -81,7 +102,7 @@ export default function Dashboard() {
  marginBottom: '60px'
  }}>
  {menuItems.map(item => (
- <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
+ <Link key={item.label} href={item.href} onClick={item.onClick} style={{ textDecoration: 'none' }}>
  <div style={{ textAlign: 'center' }}>
  <div style={{ 
  width: '100%',
