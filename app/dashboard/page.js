@@ -27,9 +27,9 @@ export default function Dashboard() {
  return (
  <Card>
  <main style={{
- minHeight: 'auto', // NO MORE 100vh
+ minHeight: 'auto',
  background: '#FFFFFF',
- padding: '15px 20px 80px', // 80px only for bottom bar
+ padding: '15px 20px 0', // changed: removed 80px bottom padding
  boxSizing: 'border-box'
  }}>
 
@@ -68,26 +68,29 @@ export default function Dashboard() {
 
  <div style={{ 
  display: 'grid', 
- gridTemplateColumns: 'repeat(4, 1fr)', 
- gap: '10px' 
+ gridTemplateColumns: 'repeat(3, 1fr)', // CHANGED: 3 per row
+ gap: '12px', // CHANGED: gap like green boxes
+ marginBottom: '20px'
  }}>
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
  <div style={{ textAlign: 'center' }}>
  <div style={{ 
- width: '60px',
- height: '60px',
+ width: '100%', // CHANGED: full width of grid cell
+ height: '95px', // CHANGED: exact height like green boxes
  background: '#00BFFF', 
- borderRadius: '16px', // square rounded corners
+ borderRadius: '14px',
  display: 'flex',
+ flexDirection: 'column',
  alignItems: 'center',
  justifyContent: 'center',
  margin: '0 auto 6px',
- fontSize: '28px'
+ fontSize: '28px',
+ color: '#000'
  }}>
  {item.icon}
  </div>
- <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#000' }}>
+ <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#000', lineHeight: '1.2' }}>
  {item.label}
  </p>
  </div>
