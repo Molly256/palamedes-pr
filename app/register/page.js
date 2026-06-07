@@ -15,7 +15,6 @@ export default function Register() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Reusable styles - all boxes same size now
   const inputStyle = {
     width: '100%',
     maxWidth: '400px',
@@ -27,8 +26,7 @@ export default function Register() {
     color: '#000',
     background: '#fff',
     outline: 'none',
-    boxSizing: 'border-box',
-    transition: 'border 0.2s'
+    boxSizing: 'border-box'
   }
 
   const labelStyle = {
@@ -93,15 +91,17 @@ export default function Register() {
       display: 'flex', 
       alignItems: 'center', 
       justifyContent: 'center', 
-      padding: '40px 20px' 
+      padding: '40px 20px',
+      margin: 0
     }}>
       <form onSubmit={handleSubmit} style={{ 
         width: '100%', 
         maxWidth: '420px',
-        background: '#fff',
-        padding: '40px 32px',
-        borderRadius: '16px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.08)'
+        background: 'transparent',
+        padding: '0',
+        border: 'none',
+        boxShadow: 'none',
+        borderRadius: '0'
       }}>
         
         <p style={{ textAlign: 'center', fontSize: '16px', color: '#666', marginBottom: '4px' }}>
@@ -118,7 +118,6 @@ export default function Register() {
 
         {error && <p style={{ color: 'red', fontSize: '14px', marginBottom: '15px', padding: '10px', background: '#ffe6e6', borderRadius: '6px' }}>{error}</p>}
 
-        {/* Username */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Username</label>
           <input 
@@ -130,12 +129,8 @@ export default function Register() {
             placeholder="Enter any name"
             style={inputStyle}
           />
-          <p style={{ fontSize: '12px', color: '#666', marginTop: '4px', marginBottom: 0 }}>
-            must be 6 letters of any name choice
-          </p>
         </div>
 
-        {/* Phone */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Phone Number</label>
           <input 
@@ -148,7 +143,6 @@ export default function Register() {
           />
         </div>
 
-        {/* Password */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Password</label>
           <div style={{ position: 'relative' }}>
@@ -178,7 +172,6 @@ export default function Register() {
           </div>
         </div>
 
-        {/* Repeat Password */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Repeat Password</label>
           <div style={{ position: 'relative' }}>
@@ -208,7 +201,6 @@ export default function Register() {
           </div>
         </div>
 
-        {/* Referral */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Referral Code</label>
           <input 
@@ -220,7 +212,6 @@ export default function Register() {
           />
         </div>
 
-        {/* Cute Register Button - not too long */}
         <button 
           type="submit" 
           disabled={loading} 
@@ -236,12 +227,8 @@ export default function Register() {
             fontWeight: '700',
             cursor: loading ? 'not-allowed' : 'pointer',
             marginTop: '10px',
-            opacity: loading ? 0.7 : 1,
-            transition: 'transform 0.2s',
-            boxShadow: '0 4px 15px rgba(0,191,255,0.3)'
+            opacity: loading ? 0.7 : 1
           }}
-          onMouseOver={(e) => !loading && (e.target.style.transform = 'scale(1.02)')}
-          onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
         >
           {loading ? 'Creating...' : 'Register'}
         </button>

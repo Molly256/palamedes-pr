@@ -8,7 +8,6 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Same styles as register - all boxes same size
   const inputStyle = {
     width: '100%',
     maxWidth: '400px',
@@ -20,8 +19,7 @@ export default function Login() {
     color: '#000',
     background: '#fff',
     outline: 'none',
-    boxSizing: 'border-box',
-    transition: 'border 0.2s'
+    boxSizing: 'border-box'
   }
 
   const labelStyle = {
@@ -57,9 +55,18 @@ export default function Login() {
       const data = await res.json()
       alert(data.message)
       
-      if (data.success) {
-        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      if (data.success && data.user) {
+        localStorage.setItem('palamedes_user', JSON.stringify({
+          username: data.user.username,
+          phone: data.user.phone,
+          nickname: data.user.nickname || data.user.username,
+          balance: data.user.balance || 0,
+          vip: data.user.vip || 0,
+          avatar: data.user.avatar || ''
+        }))
         window.location.href = '/dashboard'
+      } else {
+        setError(data.message || 'Invalid phone or password')
       }
     } catch (err) {
       alert('Network error. Try again')
@@ -75,15 +82,17 @@ export default function Login() {
       display: 'flex', 
       alignItems: 'center', 
       justifyContent: 'center', 
-      padding: '40px 20px' 
+      padding: '40px 20px',
+      margin: 0
     }}>
       <form onSubmit={handleSubmit} style={{ 
         width: '100%', 
         maxWidth: '420px',
-        background: '#fff',
-        padding: '40px 32px',
-        borderRadius: '16px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.08)'
+        background: 'transparent',
+        padding: '0',
+        border: 'none',
+        boxShadow: 'none',
+        borderRadius: '0'
       }}>
         
         <p style={{ textAlign: 'center', fontSize: '16px', color: '#666', marginBottom: '4px' }}>
@@ -100,7 +109,6 @@ export default function Login() {
 
         {error && <p style={{ color: 'red', fontSize: '14px', marginBottom: '15px', padding: '10px', background: '#ffe6e6', borderRadius: '6px' }}>{error}</p>}
 
-        {/* Phone */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Phone Number</label>
           <input 
@@ -113,7 +121,6 @@ export default function Login() {
           />
         </div>
 
-        {/* Password */}
         <div style={formGroupStyle}>
           <label style={labelStyle}>Password</label>
           <div style={{ position: 'relative' }}>
@@ -149,7 +156,6 @@ export default function Login() {
           </Link>
         </p>
 
-        {/* Cute Login Button - pill shape */}
         <button 
           type="submit" 
           disabled={loading} 
@@ -164,12 +170,8 @@ export default function Login() {
             fontSize: '16px', 
             fontWeight: '700',
             cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.7 : 1,
-            transition: 'transform 0.2s',
-            boxShadow: '0 4px 15px rgba(0,191,255,0.3)'
+            opacity: loading ? 0.7 : 1
           }}
-          onMouseOver={(e) => !loading && (e.target.style.transform = 'scale(1.02)')}
-          onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
         >
           {loading ? 'Logging in...' : 'Login'}
         </button>
