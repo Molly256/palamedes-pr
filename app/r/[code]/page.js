@@ -1,12 +1,16 @@
 'use client'
 import { useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { isValidInviteCode } from '../../lib/invite'
 
 export default function ReferralRedirect() {
   const params = useParams()
   const router = useRouter()
   const code = params.code
+
+  // Code logic now lives here - no lib/ folder needed
+  const isValidInviteCode = (code) => {
+    return /^PM\d{6}$/.test(code)
+  }
 
   useEffect(() => {
     // 1. Check if code is valid format

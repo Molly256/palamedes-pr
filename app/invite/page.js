@@ -1,10 +1,20 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { getUserInviteCode } from '../../lib/invite'
 
 export default function InvitePage() {
   const [inviteCode, setInviteCode] = useState('')
   const [copied, setCopied] = useState(false)
+
+  // Code logic now lives inside this file - no more lib/ folder needed
+  const getUserInviteCode = (phone) => {
+    const clean = phone.replace(/\D/g, '')
+    const last6 = clean.slice(-6)
+    return `PM${last6}`
+  }
+  
+  const isValidInviteCode = (code) => {
+    return /^PM\d{6}$/.test(code)
+  }
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
@@ -14,7 +24,6 @@ export default function InvitePage() {
     }
   }, [])
 
-  // FIXED: Use your real domain
   const referralLink = `https://www.palamedes-pr.co.uk/r/${inviteCode}`
 
   const copyCode = () => {
@@ -39,7 +48,7 @@ export default function InvitePage() {
     color: 'white',
     WebkitTextStroke: '1px #00BFFF',
     fontWeight: 'bold',
-    fontSize: '24px',
+    FontSize: '24px',
     lineHeight: '1',
     minWidth: '24px'
   }
