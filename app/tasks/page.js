@@ -28,7 +28,6 @@ export default function TasksPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [readBooks, setReadBooks] = useState([])
 
-  // Save read books to browser so button stays disabled after refresh
   useEffect(() => {
     const savedRead = localStorage.getItem('readBooks')
     if(savedRead) setReadBooks(JSON.parse(savedRead))
@@ -38,7 +37,6 @@ export default function TasksPage() {
     localStorage.setItem('readBooks', JSON.stringify(readBooks))
   }, [readBooks])
 
-  // Load today's 4 books
   useEffect(() => {
     const kampala = new Date().toLocaleString("en-US", {timeZone: "Africa/Kampala"})
     const date = new Date(kampala)
@@ -56,7 +54,6 @@ export default function TasksPage() {
     setTodayBooks(tasks)
   }, [])
 
-  // 10s timer - skyblue
   useEffect(() => {
     if(!readingBook || timer === 0) return
     const t = setTimeout(() => setTimer(timer - 1), 1000)
@@ -82,45 +79,44 @@ export default function TasksPage() {
     const book = todayBooks.find(b => b.id === bookId)
     if(!book) return
 
-    // Only add if user actually read it + not already submitted
     if(readBooks.includes(bookId) &&!completed.find(b => b.id === bookId)) {
       const earning = VIP_EARNINGS[userVip] || 625
 
-      // TODO: Send earning to Dashboard API
-      // await fetch('/api/add-balance', {method: 'POST', body: JSON.stringify({amount: earning})})
+      const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+      const newBalance = (userData.balance || 0) + earning
+      localStorage.setItem('palamedes_user', JSON.stringify({...userData, balance: newBalance}))
 
-      setCompleted(prev => [...prev, {...book, earning}])
+      setCompleted(prev => [...prev, {...book}])
       setTodayBooks(prev => prev.filter(b => b.id!== bookId))
     }
   }
 
-  // Reader page
   if(readingBook) {
     return (
-      <div style={{padding: 20, minHeight: "100vh", background: "#0a0a0a", color: "#fff"}}>
+      <div style={{padding: 20, minHeight: "100vh", background: "#FFFFFF", color: "#000"}}>
         <button onClick={() => {setReadingBook(null); setTimer(10)}} style={{
-          marginBottom: 20, padding: "8px 16px", background: "#333", border: "none",
-          borderRadius: 6, color: "#fff", cursor: "pointer"
+          marginBottom: 20, padding: "8px 16px", background: "#F5F5F5", border: "1px solid #E0E0E0",
+          borderRadius: 6, color: "#000", cursor: "pointer", fontWeight: "400"
         }}>← Back</button>
 
-        <h2 style={{marginBottom: 15}}>{readingBook.title}</h2>
-        <p style={{fontSize: 16, lineHeight: 1.7, color: "#ccc"}}>{readingBook.preview}</p>
+        <h2 style={{marginBottom: 15, fontWeight: "400", color: "#000"}}>{readingBook.title}</h2>
+        <p style={{fontSize: 16, lineHeight: 1.7, color: "#333"}}>{readingBook.preview}</p>
 
-        <div style={{position: "fixed", top: 20, right: 20, fontSize: 22, fontWeight: "bold", color: SKYBLUE}}>
+        <div style={{position: "fixed", top: 20, right: 20, fontSize: 22, fontWeight: "400", color: SKYBLUE}}>
           {timer}s
         </div>
 
         {showPopup && (
           <div style={{
             position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-            background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100
+            background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100
           }}>
-            <div style={{background: "#1a1a1a", padding: 30, borderRadius: 16, textAlign: "center", border: `2px solid ${SKYBLUE}`}}>
-              <h3 style={{color: SKYBLUE, margin: "0 0 10px 0", fontSize: 24}}>Earn {VIP_EARNINGS[userVip]}shs</h3>
-              <p style={{color: "#aaa", fontSize: 14, marginBottom: 15}}>Tap Submit on tasks page to claim</p>
+            <div style={{background: "#FFFFFF", padding: 30, borderRadius: 16, textAlign: "center", border: `2px solid ${SKYBLUE}`}}>
+              <h3 style={{color: "#000", margin: "0 0 10px 0", fontSize: 24, fontWeight: "400"}}>Time Complete ⌛</h3>
+              <p style={{color: "#666", fontSize: 14, marginBottom: 15}}>Tap Submit on tasks page to claim</p>
               <button onClick={handlePopupOk} style={{
                 padding: "12px 24px", background: SKYBLUE, border: "none",
-                borderRadius: 8, fontWeight: "bold", cursor: "pointer", fontSize: 16, color: "#000"
+                borderRadius: 8, fontWeight: "400", cursor: "pointer", fontSize: 16, color: "#000"
               }}>
                 OK
               </button>
@@ -132,37 +128,37 @@ export default function TasksPage() {
   }
 
   return (
-    <div style={{padding: 20, background: "#0a0a0a", minHeight: "100vh", color: "#fff"}}>
-      <h2 style={{marginBottom: 20}}>Today's Tasks</h2>
+    <div style={{padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000"}}>
+      <h2 style={{marginBottom: 20, fontWeight: "400", color: "#000"}}>Today's Tasks</h2>
 
       {todayBooks.length === 0? (
-        <p style={{textAlign: "center", marginTop: 100, color: "#888"}}>No books found</p>
+        <p style={{textAlign: "center", marginTop: 100, color: "#666"}}>No books found</p>
       ) : (
         todayBooks.map(book => {
           const isRead = readBooks.includes(book.id)
           return (
             <div key={book.id} style={{
-              background: "#1a1a1a", borderRadius: 12, padding: 15, marginBottom: 15,
-              border: "1px solid #333", display: "flex", gap: 15, alignItems: "center"
+              padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
+              borderBottom: "1px solid #E0E0E0"
             }}>
               <img src={book.cover} alt={book.title} style={{
                 width: 70, height: 100, objectFit: "cover", borderRadius: 8
               }} />
               <div style={{flex: 1}}>
-                <h4 style={{margin: "0 0 8px 0"}}>{book.title}</h4>
+                <h4 style={{margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16}}>{book.title}</h4>
                 <div style={{display: "flex", gap: 10}}>
                   <button
                     onClick={() => handleRead(book)}
                     disabled={isRead}
                     style={{
                       padding: "8px 16px",
-                      background: isRead? "#444" : SKYBLUE,
+                      background: isRead? "#E0E0E0" : SKYBLUE,
                       border: "none",
                       borderRadius: 6,
-                      fontWeight: "bold",
+                      fontWeight: "400",
                       cursor: isRead? "not-allowed" : "pointer",
                       color: "#000",
-                      opacity: isRead? 0.5 : 1
+                      opacity: isRead? 0.6 : 1
                     }}
                   >
                     {isRead? "Read ✓" : "Read"}
@@ -174,7 +170,7 @@ export default function TasksPage() {
                     borderRadius: 6,
                     color: "#000",
                     cursor: "pointer",
-                    fontWeight: "bold"
+                    fontWeight: "400"
                   }}>
                     Submit
                   </button>
@@ -185,20 +181,17 @@ export default function TasksPage() {
         })
       )}
 
-      <h2 style={{marginTop: 40, marginBottom: 20}}>Completed Tasks</h2>
+      <h2 style={{marginTop: 40, marginBottom: 20, fontWeight: "400", color: "#000"}}>Completed Tasks</h2>
       {completed.length === 0? (
-        <p style={{color: "#555"}}>No completed tasks yet</p>
+        <p style={{color: "#666"}}>No completed tasks yet</p>
       ) : (
         completed.map(book => (
           <div key={book.id} style={{
-            background: "#111", borderRadius: 12, padding: 12, marginBottom: 10,
-            border: "1px solid #222", display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between"
+            padding: 12, marginBottom: 10, display: "flex", gap: 12, alignItems: "center",
+            borderBottom: "1px solid #E0E0E0"
           }}>
-            <div style={{display: "flex", gap: 12, alignItems: "center"}}>
-              <img src={book.cover} style={{width: 50, height: 75, objectFit: "cover", borderRadius: 6}} />
-              <p style={{margin: 0}}>{book.title}</p>
-            </div>
-            <span style={{color: SKYBLUE, fontWeight: "bold"}}>+{book.earning}shs</span>
+            <img src={book.cover} style={{width: 50, height: 75, objectFit: "cover", borderRadius: 6}} />
+            <p style={{margin: 0, fontWeight: "400", color: "#000"}}>{book.title}</p>
           </div>
         ))
       )}
