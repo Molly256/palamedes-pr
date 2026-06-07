@@ -21,7 +21,7 @@ export default function Dashboard() {
  { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
  { icon: '📖', label: 'About', href: '/about' },
  { icon: '⚙️', label: 'Settings', href: '/settings' },
- { icon: '🎧', label: 'Manager', href: '/manager' } // shortened label
+ { icon: '🎧', label: 'Manager', href: '/manager' }
  ]
 
  return (
@@ -33,12 +33,18 @@ export default function Dashboard() {
  boxSizing: 'border-box'
  }}>
 
+ {/* 1 BIG BOX: Welcome + Username + Balance + Avatar */}
  <div style={{ 
- display: 'flex', 
- justifyContent: 'space-between', 
- alignItems: 'flex-start',
- marginBottom: '15px' 
+ background: '#FFFFFF',
+ border: '1px solid #E0E0E0',
+ borderRadius: '20px',
+ padding: '15px',
+ marginBottom: '12px',
+ boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+ position: 'relative',
+ minHeight: '120px'
  }}>
+ {/* Left side - your 4 lines exactly */}
  <div>
  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
  Welcome to PALAMEDES PR
@@ -46,19 +52,7 @@ export default function Dashboard() {
  <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
  {user?.phone} {user?.nickname || user?.username || 'User'}
  </p>
- </div>
- <AvatarWithBadge username={user?.username} vipLevel={user?.vip || 0} size={60} avatar={user?.avatar || ''} />
- </div>
-
- <div style={{ 
- background: '#FFFFFF',
- border: '1px solid #E0E0E0',
- borderRadius: '20px',
- padding: '15px',
- marginBottom: '12px',
- boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
- }}>
- <p style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#666' }}>
+ <p style={{ margin: '12px 0 0', fontSize: '14px', fontWeight: '800', color: '#666' }}>
  Available Balance
  </p>
  <p style={{ margin: '6px 0 0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
@@ -66,11 +60,23 @@ export default function Dashboard() {
  </p>
  </div>
 
+ {/* Right side - Avatar middle, not top. A bit bigger. Badge stays */}
+ <div style={{ 
+ position: 'absolute', 
+ top: '50%', 
+ right: '18px',
+ transform: 'translateY(-50%)'
+ }}>
+ <AvatarWithBadge username={user?.username} vipLevel={user?.vip || 0} size={64} avatar={user?.avatar || ''} />
+ </div>
+ </div>
+
+ {/* 9 Buttons - 3x3 same level + small bottom space */}
  <div style={{ 
  display: 'grid', 
  gridTemplateColumns: 'repeat(3, 1fr)',
- gap: '12px'
- // removed marginBottom here
+ gap: '12px',
+ marginBottom: '20px'  // <- small gap like your screenshot
  }}>
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
