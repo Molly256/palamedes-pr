@@ -6,6 +6,7 @@ export default function Deposit() {
   const [user, setUser] = useState(null)
   const [selectedMethod, setSelectedMethod] = useState(null)
   const [amount, setAmount] = useState('')
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -33,39 +34,53 @@ export default function Deposit() {
       alert('Minimum deposit is 10,000shs')
       return
     }
-    if (!user?.number) {
-      alert('User number missing. Please login again')
+    if (!user?.phone) {
+      alert('User phone missing. Please login again')
+      router.push('/login')
       return
     }
+
+    setLoading(true)
 
     try {
       const res = await fetch('/api/wallet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deposit', number: user.number, amount: depositAmount })
+        body: JSON.stringify({
+          action: 'deposit',
+          phone: user.phone, // FIXED: was user.number
+          amount: depositAmount
+        })
       })
 
       const data = await res.json()
       if (!res.ok) {
-        alert(data.error)
+        alert(data.error || 'Deposit failed')
+        setLoading(false)
         return
       }
 
+      // Save transaction to localStorage
       const newTx = {...data.tx, method: selectedMethod }
       const transactions = JSON.parse(localStorage.getItem('palamedes_transactions') || '[]')
       transactions.unshift(newTx)
       localStorage.setItem('palamedes_transactions', JSON.stringify(transactions))
 
-      const newBalance = user.balance + depositAmount
+      // Update user balance in localStorage
+      const newBalance = data.newBalance || user.balance + depositAmount
       const newUser = {...user, balance: newBalance }
       localStorage.setItem('palamedes_user', JSON.stringify(newUser))
+      setUser(newUser)
 
       alert(`Deposit successful! ${depositAmount.toLocaleString()}shs added. New balance: shs ${newBalance.toLocaleString()}`)
       router.push('/transactions')
 
     } catch (err) {
-      alert('Something went wrong')
+      console.error(err)
+      alert('Something went wrong. Try again')
     }
+
+    setLoading(false)
   }
 
   if (!user) return <div style={{ textAlign: 'center', padding: '100px' }}>Loading...</div>
@@ -122,11 +137,11 @@ export default function Deposit() {
               </p>
             </div>
 
-            <button onClick={handlePaid} style={{
-              width: '100%', padding: '18px', background: '#000', border: 'none', borderRadius: '12px',
-              fontSize: '17px', fontWeight: '700', color: '#87CEEB', cursor: 'pointer', transition: 'all 0.2s'
+            <button onClick={handlePaid} disabled={loading} style={{
+              width: '100%', padding: '18px', background: loading? '#666' : '#000', border: 'none', borderRadius: '12px',
+              fontSize: '17px', fontWeight: '700', color: '#87CEEB', cursor: loading? 'not-allowed' : 'pointer', transition: 'all 0.2s'
             }}>
-              I HAVE PAID MONEY
+              {loading? 'Processing...' : 'I HAVE PAID MONEY'}
             </button>
           </>
         )}
