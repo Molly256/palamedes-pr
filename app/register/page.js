@@ -5,63 +5,38 @@ import Link from 'next/link'
 export default function Register() {
   const [form, setForm] = useState({ 
     username: '',
-    phone: '', 
+    phone: '',
     password: '',
     confirmPassword: '',
-    referral: '' 
+    referral: ''
   })
   const [showPass, setShowPass] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const inputStyle = {
-    width: '100%',
-    maxWidth: '400px',
-    height: '48px',
-    padding: '0 16px',
-    border: '2px solid #d0d0d0',
-    borderRadius: '10px',
-    fontSize: '16px',
-    color: '#000',
-    background: '#fff',
-    outline: 'none',
-    boxSizing: 'border-box'
-  }
-
-  const labelStyle = {
-    display: 'block',
-    color: '#333',
-    fontWeight: '600',
-    marginBottom: '6px',
-    fontSize: '14px'
-  }
-
-  const formGroupStyle = {
-    marginBottom: '18px',
-    width: '100%',
-    maxWidth: '400px'
+  const handleChange = (e) => {
+    setForm({...form, [e.target.name]: e.target.value})
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setError('')
     
-    if (form.username.length < 6) {
-      setError('Username must be 6 letters of any name choice')
-      return
-    }
-    if (form.password !== form.confirmPassword) {
+    if(form.password !== form.confirmPassword) {
       setError('Passwords do not match')
       return
     }
+    if(form.password.length < 6) {
+      setError('Password must be 6+ characters')
+      return
+    }
     
-    setError('')
     setLoading(true)
-    
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           action: 'register',
           username: form.username,
@@ -70,175 +45,238 @@ export default function Register() {
           referral: form.referral
         })
       })
-
       const data = await res.json()
-      alert(data.message)
       
-      if (data.success) {
-        window.location.href = '/login'
+      if(data.success) {
+        // SAVE TO LOCALSTORAGE FOR DASHBOARD
+        localStorage.setItem('palamedes_user', JSON.stringify({
+          name: form.username,
+          phone: form.phone,
+          username: form.username,
+          balance: 0,
+          vip: 0
+        }))
+        window.location.href = '/dashboard'
+      } else {
+        setError(data.message || 'Registration failed')
       }
-    } catch (err) {
-      alert('Network error. Try again')
-    } finally {
-      setLoading(false)
+    } catch(err) {
+      setError('Network error. Try again')
     }
+    setLoading(false)
   }
 
   return (
-    <main style={{ 
-      minHeight: '100vh', 
-      background: '#f8f9fa', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      padding: '40px 20px',
-      margin: 0
+    <main style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '20px'
     }}>
-      <form onSubmit={handleSubmit} style={{ 
-        width: '100%', 
+      <div style={{
+        width: '100%',
         maxWidth: '420px',
-        background: 'transparent',
-        padding: '0',
-        border: 'none',
-        boxShadow: 'none',
-        borderRadius: '0'
+        background: '#fff',
+        borderRadius: '20px',
+        padding: '40px 30px',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
       }}>
-        
-        <p style={{ textAlign: 'center', fontSize: '16px', color: '#666', marginBottom: '4px' }}>
-          welcome to
-        </p>
-
-        <h1 style={{ textAlign: 'center', fontSize: '32px', fontWeight: '900', color: '#87CEEB', marginBottom: '32px', letterSpacing: '1px' }}>
+        <h1 style={{textAlign: 'center', marginBottom: '8px', color: '#667eea', fontSize: '28px'}}>
           PALAMEDES PR
         </h1>
+        <p style={{textAlign: 'center', color: '#666', marginBottom: '30px', fontSize: '14px'}}>
+          Create your account
+        </p>
 
-        <h2 style={{ color: '#000', fontSize: '24px', fontWeight: '700', marginBottom: '24px' }}>
-          Register
-        </h2>
-
-        {error && <p style={{ color: 'red', fontSize: '14px', marginBottom: '15px', padding: '10px', background: '#ffe6e6', borderRadius: '6px' }}>{error}</p>}
-
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Username</label>
-          <input 
-            type="text"
-            required
-            minLength={6}
-            value={form.username}
-            onChange={(e) => setForm({...form, username: e.target.value})}
-            placeholder="Enter any name"
-            style={inputStyle}
-          />
-        </div>
-
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Phone Number</label>
-          <input 
-            type="tel"
-            required
-            value={form.phone}
-            onChange={(e) => setForm({...form, phone: e.target.value})}
-            placeholder="07XXXXXXXXX"
-            style={inputStyle}
-          />
-        </div>
-
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Password</label>
-          <div style={{ position: 'relative' }}>
-            <input 
-              type={showPass ? 'text' : 'password'}
-              required
-              value={form.password}
-              onChange={(e) => setForm({...form, password: e.target.value})}
-              style={{...inputStyle, paddingRight: '50px'}}
-            />
-            <button 
-              type="button"
-              onClick={() => setShowPass(!showPass)}
-              style={{ 
-                position: 'absolute', 
-                right: '12px', 
-                top: '50%', 
-                transform: 'translateY(-50%)', 
-                background: 'none', 
-                border: 'none', 
-                fontSize: '20px', 
-                cursor: 'pointer' 
-              }}
-            >
-              {showPass ? '🙈' : '👁️'}
-            </button>
+        {error && (
+          <div style={{
+            background: '#ffe6e6',
+            color: '#d32f2f',
+            padding: '12px',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            fontSize: '14px'
+          }}>
+            {error}
           </div>
-        </div>
+        )}
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Repeat Password</label>
-          <div style={{ position: 'relative' }}>
-            <input 
-              type={showConfirm ? 'text' : 'password'}
+        <form onSubmit={handleSubmit}>
+          <div style={{marginBottom: '20px'}}>
+            <label style={{display: 'block', marginBottom: '6px', fontWeight: '600', color: '#333'}}>
+              Username
+            </label>
+            <input
+              type="text"
+              name="username"
+              value={form.username}
+              onChange={handleChange}
+              placeholder="Enter username"
               required
-              value={form.confirmPassword}
-              onChange={(e) => setForm({...form, confirmPassword: e.target.value})}
-              style={{...inputStyle, paddingRight: '50px'}}
-            />
-            <button 
-              type="button"
-              onClick={() => setShowConfirm(!showConfirm)}
-              style={{ 
-                position: 'absolute', 
-                right: '12px', 
-                top: '50%', 
-                transform: 'translateY(-50%)', 
-                background: 'none', 
-                border: 'none', 
-                fontSize: '20px', 
-                cursor: 'pointer' 
+              minLength={3}
+              style={{
+                width: '100%',
+                padding: '14px',
+                border: '2px solid #e0e0e0',
+                borderRadius: '10px',
+                fontSize: '16px',
+                outline: 'none'
               }}
-            >
-              {showConfirm ? '🙈' : '👁️'}
-            </button>
+            />
           </div>
-        </div>
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Referral Code</label>
-          <input 
-            type="text"
-            value={form.referral}
-            onChange={(e) => setForm({...form, referral: e.target.value})}
-            placeholder="Enter username of person who referred you"
-            style={inputStyle}
-          />
-        </div>
+          <div style={{marginBottom: '20px'}}>
+            <label style={{display: 'block', marginBottom: '6px', fontWeight: '600', color: '#333'}}>
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              name="phone"
+              value={form.phone}
+              onChange={handleChange}
+              placeholder="07XXXXXXXX"
+              required
+              style={{
+                width: '100%',
+                padding: '14px',
+                border: '2px solid #e0e0e0',
+                borderRadius: '10px',
+                fontSize: '16px',
+                outline: 'none'
+              }}
+            />
+          </div>
 
-        <button 
-          type="submit" 
-          disabled={loading} 
-          style={{
-            width: '100%',
-            maxWidth: '400px',
-            height: '50px',
-            background: 'linear-gradient(135deg, #87CEEB 0%, #00BFFF 100%)',
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '50px', 
-            fontSize: '16px', 
-            fontWeight: '700',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            marginTop: '10px',
-            opacity: loading ? 0.7 : 1
-          }}
-        >
-          {loading ? 'Creating...' : 'Register'}
-        </button>
+          <div style={{marginBottom: '20px'}}>
+            <label style={{display: 'block', marginBottom: '6px', fontWeight: '600', color: '#333'}}>
+              Password
+            </label>
+            <div style={{position: 'relative'}}>
+              <input
+                type={showPass ? 'text' : 'password'}
+                name="password"
+                value={form.password}
+                onChange={handleChange}
+                placeholder="Min 6 characters"
+                required
+                style={{
+                  width: '100%',
+                  padding: '14px 50px 14px 14px',
+                  border: '2px solid #e0e0e0',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  outline: 'none'
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '20px'
+                }}
+              >
+                {showPass ? '🙈' : '👁️'}
+              </button>
+            </div>
+          </div>
 
-        <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '14px' }}>
-          <Link href="/login" style={{ color: '#00BFFF', fontWeight: '600', textDecoration: 'none' }}>
-            Already have account? Login
+          <div style={{marginBottom: '20px'}}>
+            <label style={{display: 'block', marginBottom: '6px', fontWeight: '600', color: '#333'}}>
+              Confirm Password
+            </label>
+            <div style={{position: 'relative'}}>
+              <input
+                type={showConfirm ? 'text' : 'password'}
+                name="confirmPassword"
+                value={form.confirmPassword}
+                onChange={handleChange}
+                placeholder="Re-enter password"
+                required
+                style={{
+                  width: '100%',
+                  padding: '14px 50px 14px 14px',
+                  border: '2px solid #e0e0e0',
+                  borderRadius: '10px',
+                  fontSize: '16px',
+                  outline: 'none'
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirm(!showConfirm)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '20px'
+                }}
+              >
+                {showConfirm ? '🙈' : '👁️'}
+              </button>
+            </div>
+          </div>
+
+          <div style={{marginBottom: '25px'}}>
+            <label style={{display: 'block', marginBottom: '6px', fontWeight: '600', color: '#333'}}>
+              Referral Code <span style={{color: '#999', fontWeight: '400'}}>(Optional)</span>
+            </label>
+            <input
+              type="text"
+              name="referral"
+              value={form.referral}
+              onChange={handleChange}
+              placeholder="Enter referral code"
+              style={{
+                width: '100%',
+                padding: '14px',
+                border: '2px solid #e0e0e0',
+                borderRadius: '10px',
+                fontSize: '16px',
+                outline: 'none'
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '16px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '10px',
+              fontSize: '16px',
+              fontWeight: '700',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1
+            }}
+          >
+            {loading ? 'Creating Account...' : 'Register'}
+          </button>
+        </form>
+
+        <p style={{textAlign: 'center', marginTop: '20px', fontSize: '14px', color: '#666'}}>
+          Already have an account?{' '}
+          <Link href="/login" style={{color: '#667eea', fontWeight: '600', textDecoration: 'none'}}>
+            Login
           </Link>
         </p>
-      </form>
+      </div>
     </main>
   )
 }

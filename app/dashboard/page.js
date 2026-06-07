@@ -33,7 +33,7 @@ export default function Dashboard() {
  boxSizing: 'border-box'
  }}>
 
- {/* 1 BIG BOX: Welcome + Username + Balance + Avatar */}
+ {/* 1 BIG BOX: Welcome + Username + Phone + Balance + Avatar */}
  <div style={{ 
  background: '#FFFFFF',
  border: '1px solid #E0E0E0',
@@ -44,19 +44,22 @@ export default function Dashboard() {
  position: 'relative',
  minHeight: '120px'
  }}>
- {/* Left side - your 4 lines exactly */}
+ {/* Left side - 4 lines exactly as you wanted */}
  <div>
  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
  Welcome to PALAMEDES PR
  </h2>
  <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
- {user?.phone} {user?.nickname || user?.username || 'User'}
+ Username: {user?.name || user?.nickname || user?.username || 'User'}
+ </p>
+ <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
+ Phone number: {user?.phone || 'Not registered'}
  </p>
  <p style={{ margin: '12px 0 0', fontSize: '14px', fontWeight: '800', color: '#666' }}>
- Available Balance
+ Available balance
  </p>
  <p style={{ margin: '6px 0 0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
- {(user?.balance?.toLocaleString() || 0)} shs
+ {(user?.balance || 0).toLocaleString()} shs
  </p>
  </div>
 
@@ -76,7 +79,7 @@ export default function Dashboard() {
  display: 'grid', 
  gridTemplateColumns: 'repeat(3, 1fr)',
  gap: '12px',
- marginBottom: '20px'  // <- small gap like your screenshot
+ marginBottom: '20px'  // <- small gap before bottom bar
  }}>
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
