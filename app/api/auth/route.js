@@ -32,7 +32,7 @@ export async function POST(request) {
       const newUser = {
         id: Date.now(),
         username,
-        phone, // we keep phone in DB
+        phone, // keep phone in DB
         password,
         referral: referral || '',
         balance: 0,
@@ -43,7 +43,12 @@ export async function POST(request) {
       return Response.json({ 
         success: true, 
         message: 'Account created successfully',
-        user: { username: newUser.username, number: newUser.phone, balance: newUser.balance } // return as number
+        user: { 
+          username: newUser.username, 
+          phone: newUser.phone, // Changed: phone not number
+          name: newUser.username, // Added: name for Dashboard
+          balance: newUser.balance 
+        }
       })
     }
 
@@ -58,7 +63,12 @@ export async function POST(request) {
       return Response.json({ 
         success: true, 
         message: 'Login successful',
-        user: { username: user.username, number: user.phone, balance: user.balance } // return as number
+        user: { 
+          username: user.username, 
+          phone: user.phone, // Changed: phone not number
+          name: user.username, // Added: name for Dashboard
+          balance: user.balance 
+        }
       })
     }
 

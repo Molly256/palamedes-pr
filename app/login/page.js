@@ -8,34 +8,6 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const inputStyle = {
-    width: '100%',
-    maxWidth: '400px',
-    height: '48px',
-    padding: '0 16px',
-    border: '2px solid #d0d0d0',
-    borderRadius: '10px',
-    fontSize: '16px',
-    color: '#000',
-    background: '#fff',
-    outline: 'none',
-    boxSizing: 'border-box'
-  }
-
-  const labelStyle = {
-    display: 'block',
-    color: '#333',
-    fontWeight: '600',
-    marginBottom: '6px',
-    fontSize: '14px'
-  }
-
-  const formGroupStyle = {
-    marginBottom: '18px',
-    width: '100%',
-    maxWidth: '400px'
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -53,13 +25,13 @@ export default function Login() {
       })
 
       const data = await res.json()
-      alert(data.message)
       
       if (data.success && data.user) {
+        // Save with NAME for Dashboard
         localStorage.setItem('palamedes_user', JSON.stringify({
+          name: data.user.name || data.user.username, // Added name
           username: data.user.username,
           phone: data.user.phone,
-          nickname: data.user.nickname || data.user.username,
           balance: data.user.balance || 0,
           vip: data.user.vip || 0,
           avatar: data.user.avatar || ''
@@ -69,7 +41,7 @@ export default function Login() {
         setError(data.message || 'Invalid phone or password')
       }
     } catch (err) {
-      alert('Network error. Try again')
+      setError('Network error. Try again')
     } finally {
       setLoading(false)
     }
@@ -78,80 +50,54 @@ export default function Login() {
   return (
     <main style={{ 
       minHeight: '100vh', 
-      background: '#f8f9fa', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      padding: '40px 20px',
-      margin: 0
+      background: '#ffffff', // White only
+      padding: '40px 20px'
     }}>
-      <form onSubmit={handleSubmit} style={{ 
-        width: '100%', 
-        maxWidth: '420px',
-        background: 'transparent',
-        padding: '0',
-        border: 'none',
-        boxShadow: 'none',
-        borderRadius: '0'
-      }}>
-        
-        <p style={{ textAlign: 'center', fontSize: '16px', color: '#666', marginBottom: '4px' }}>
-          welcome to
-        </p>
+      <h1 style={{ textAlign: 'center', fontSize: '28px', color: '#000', marginBottom: '20px' }}>
+        PALAMEDES PR
+      </h1>
 
-        <h1 style={{ textAlign: 'center', fontSize: '32px', fontWeight: '900', color: '#87CEEB', marginBottom: '32px', letterSpacing: '1px' }}>
-          PALAMEDES PR
-        </h1>
+      <h2 style={{ color: '#000', fontSize: '24px', textAlign: 'center', marginBottom: '30px' }}>
+        Login
+      </h2>
 
-        <h2 style={{ color: '#000', fontSize: '24px', fontWeight: '700', marginBottom: '24px' }}>
-          Login
-        </h2>
+      {error && <p style={{ color: 'red', textAlign: 'center', marginBottom: '20px' }}>{error}</p>}
 
-        {error && <p style={{ color: 'red', fontSize: '14px', marginBottom: '15px', padding: '10px', background: '#ffe6e6', borderRadius: '6px' }}>{error}</p>}
-
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Phone Number</label>
+      <form onSubmit={handleSubmit} style={{ maxWidth: '400px', margin: '0 auto' }}>
+        <div style={{marginBottom: '15px'}}>
+          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Phone Number</label>
           <input 
             type="tel"
             required
             value={form.phone}
             onChange={(e) => setForm({...form, phone: e.target.value})}
             placeholder="07XXXXXXXXX"
-            style={inputStyle}
+            style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
           />
         </div>
 
-        <div style={formGroupStyle}>
-          <label style={labelStyle}>Password</label>
+        <div style={{marginBottom: '20px'}}>
+          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Password</label>
           <div style={{ position: 'relative' }}>
             <input 
               type={showPass ? 'text' : 'password'}
               required
               value={form.password}
               onChange={(e) => setForm({...form, password: e.target.value})}
-              style={{...inputStyle, paddingRight: '50px'}}
+              style={{width: '100%', padding: '12px 40px 12px 12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
             />
             <button 
               type="button"
               onClick={() => setShowPass(!showPass)}
-              style={{ 
-                position: 'absolute', 
-                right: '12px', 
-                top: '50%', 
-                transform: 'translateY(-50%)', 
-                background: 'none', 
-                border: 'none', 
-                fontSize: '20px', 
-                cursor: 'pointer' 
-              }}
+              style={{ position: 'absolute', right: '10px', top: '12px', background: 'none', border: 'none', cursor: 'pointer' }}
             >
               {showPass ? '🙈' : '👁️'}
             </button>
           </div>
         </div>
 
-        <p style={{ textAlign: 'right', marginBottom: '24px', marginTop: '8px' }}>
-          <Link href="/register" style={{ color: '#00BFFF', fontWeight: '600', fontSize: '14px', textDecoration: 'none' }}>
+        <p style={{ textAlign: 'right', marginBottom: '20px' }}>
+          <Link href="/register" style={{ color: '#000' }}>
             No account? Register
           </Link>
         </p>
@@ -161,16 +107,11 @@ export default function Login() {
           disabled={loading} 
           style={{
             width: '100%',
-            maxWidth: '400px',
-            height: '50px',
-            background: 'linear-gradient(135deg, #87CEEB 0%, #00BFFF 100%)',
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '50px', 
-            fontSize: '16px', 
-            fontWeight: '700',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.7 : 1
+            padding: '14px',
+            background: '#000', // Black only
+            color: '#fff', 
+            border: 'none',
+            cursor: 'pointer'
           }}
         >
           {loading ? 'Logging in...' : 'Login'}
