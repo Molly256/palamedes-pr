@@ -140,7 +140,7 @@ export default function SettingsPage() {
     <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', paddingBottom: '96px'}}>
       <h1 style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', padding: '16px', backgroundColor: '#00BFFF', color: 'black'}}>Settings</h1>
 
-      {/* Top Right: Avatar + Username */}
+      {/* Top Right: Avatar circle + VIP badge, Username below */}
       <div style={{...sectionStyle, display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
         <div onClick={handleAvatarClick} style={{cursor: user.vip >= 1? 'pointer' : 'default'}}>
           <AvatarWithBadge
@@ -156,7 +156,7 @@ export default function SettingsPage() {
       </div>
       <input type="file" ref={fileInputRef} accept="image/*" onChange={handleAvatarChange} style={{display: 'none'}} />
 
-      {/* Phone + Nickname */}
+      {/* Left side below: Phone locked + Nickname editable */}
       <div style={sectionStyle}>
         <p style={labelStyle}>Phone number</p>
         <input style={{...inputStyle, backgroundColor: '#e5e7eb'}} value={user.phone} readOnly />
@@ -193,7 +193,7 @@ export default function SettingsPage() {
         {!user.bankAirtel && <button style={btnStyle} onClick={() => saveBank('airtel')}>Save</button>}
       </div>
 
-      {/* Modify Password */}
+      {/* Modify password */}
       <div style={sectionStyle}>
         <p style={labelStyle}>Modify password</p>
         <input style={inputStyle} type="password" placeholder="Old password" value={oldPass} onChange={(e) => setOldPass(e.target.value)} />
@@ -202,7 +202,7 @@ export default function SettingsPage() {
         <button style={btnStyle} onClick={changePassword}>Save</button>
       </div>
 
-      {/* VIP Popup */}
+      {/* VIP Popup - only shows if no VIP */}
       {showVipPopup && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -218,7 +218,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Logout */}
+      {/* Cute small logout button */}
       <div style={{textAlign: 'center', padding: '16px'}}>
         <button style={logoutBtn} onClick={logout}>Logout</button>
       </div>
