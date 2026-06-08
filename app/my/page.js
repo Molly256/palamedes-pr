@@ -8,7 +8,6 @@ export default function MyPage() {
   const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
   const [transactions, setTransactions] = useState([])
 
-  // Get date parts in Uganda timezone
   const getUGDate = (date = new Date()) => {
     const parts = new Intl.DateTimeFormat('en-UG', {
       timeZone: TZ,
@@ -41,28 +40,26 @@ export default function MyPage() {
     return `Effective date:${formatDate(start)} ~ ${formatDate(end)}`
   }
 
-  const getUGDay = (date) => {
-    return new Intl.DateTimeFormat('en-UG', {
+  const isWeekend = (date) => {
+    const day = new Intl.DateTimeFormat('en-UG', {
       timeZone: TZ,
       weekday: 'short'
     }).format(date)
+    return day === 'Sat' || day === 'Sun'
   }
 
-  // Auto calculation with UG timezone
   const calculateEarnings = () => {
     if (!vipPurchaseDate || !transactions.length) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0, 
       total: 0, invitation: 0, deposit: 0, balance: 0
     }
 
-    const nowUG = getUGDate()
     const todayUG = getUGDate()
     const yesterdayUG = new Date(todayUG)
     yesterdayUG.setDate(yesterdayUG.getDate() - 1)
     
-    // Week starts Monday in Uganda calendar
     const weekStartUG = new Date(todayUG)
-    const dayOfWeek = todayUG.getDay() // 0=Sun, 1=Mon
+    const dayOfWeek = todayUG.getDay()
     const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
     weekStartUG.setDate(todayUG.getDate() - daysToMonday)
     
@@ -74,48 +71,29 @@ export default function MyPage() {
     transactions.forEach(tx => {
       const txDateUG = getUGDate(new Date(tx.date))
       
-      // Only count after VIP purchase
+      // Skip weekends - Mon to Fri only
+      if (isWeekend(txDateUG)) return
+      
       if (txDateUG >= vipStart && tx.type === 'task') {
         totalAmt += tx.amount
-        
         if (txDateUG.getTime() === todayUG.getTime()) todayAmt += tx.amount
         if (txDateUG.getTime() === yesterdayUG.getTime()) yesterdayAmt += tx.amount
         if (txDateUG >= weekStartUG) weekAmt += tx.amount
         if (txDateUG >= monthStartUG) monthAmt += tx.amount
       }
       
-      // Invitation rewards - 5% 2% 1%
-      if (txDateUG >= vipStart && tx.type === 'invite_reward') {
-        inviteAmt += tx.amount
-      }
-      
-      // Job security deposit = VIP level amount
-      if (tx.type === 'vip_purchase') {
-        deposit = tx.amount
-      }
+      if (txDateUG >= vipStart && tx.type === 'invite_reward') inviteAmt += tx.amount
+      if (tx.type === 'vip_purchase') deposit = tx.amount
     })
 
-    // Weekend logic: Sat=6, Sun=0 in UG calendar. Monday yesterday = 0
-    const yesterdayDay = yesterdayUG.getDay()
-    if (yesterdayDay === 0 || yesterdayDay === 6) {
-      yesterdayAmt = 0
-    }
+    if (isWeekend(yesterdayUG)) yesterdayAmt = 0
+    if (isWeekend(todayUG)) todayAmt = 0
 
-    // Available balance = all income - withdrawals
     const balance = totalAmt + inviteAmt - transactions
       .filter(t => t.type === 'withdraw')
       .reduce((sum, t) => sum + t.amount, 0)
 
-    return {
-      yesterday: yesterdayAmt,
-      today: todayAmt,
-      thisWeek: weekAmt,
-      thisMonth: monthAmt,
-      total: totalAmt,
-      invitation: inviteAmt,
-      deposit: deposit,
-      balance: balance
-    }
+    return { yesterday: yesterdayAmt, today: todayAmt, thisWeek: weekAmt, thisMonth: monthAmt, total: totalAmt, invitation: inviteAmt, deposit, balance }
   }
 
   const earnings = calculateEarnings()
@@ -124,35 +102,54 @@ export default function MyPage() {
     const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     const tx = JSON.parse(localStorage.getItem('transactions') || '[]')
     const vipDate = localStorage.getItem('vip_purchase_date')
-    
     setUserData(user)
     setTransactions(tx)
     setVipPurchaseDate(vipDate)
   }, [])
 
+  // Inline styles so boxes show even without Tailwind
+  const boxStyle = {
+    backgroundColor: '#00BFFF',
+    borderRadius: '12px',
+    padding: '16px',
+    textAlign: 'center',
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+  }
+
+  const boxTitle = { fontSize: '14px', fontWeight: '300', color: 'black', marginBottom: '4px' }
+  const boxSub = { fontSize: '12px', fontWeight: '300', color: 'black', marginBottom: '8px' }
+  const boxAmount = { fontSize: '24px', fontWeight: 'bold', color: 'black' }
+
   const Box = ({ title, subtitle, amount, isBig = false }) => (
-    <div className={`${isBig ? 'col-span-2' : ''} bg-[#00BFFF] rounded-xl p-4 text-center shadow-md`}>
-      <p className="text-sm font-light text-black mb-1">{title}</p>
-      {subtitle && <p className="text-xs font-light text-black mb-2">{subtitle}</p>}
-      <p className="text-2xl font-bold text-black">{amount.toLocaleString()}shs</p>
+    <div style={{...boxStyle, gridColumn: isBig ? 'span 2' : 'span 1'}}>
+      <p style={boxTitle}>{title}</p>
+      {subtitle && <p style={boxSub}>{subtitle}</p>}
+      <p style={boxAmount}>{amount.toLocaleString()}shs</p>
     </div>
   )
 
+  const todayUG = getUGDate()
+  const isTodayWeekend = isWeekend(todayUG)
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4 pb-24">
-      <div className="max-w-md mx-auto">
-        <h1 className="text-2xl font-bold text-center mb-4">My</h1>
+    <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
+      <div style={{maxWidth: '448px', margin: '0 auto'}}>
+        <h1 style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', marginBottom: '16px'}}>My</h1>
 
         {/* Avatar + VIP Badge */}
-        <div className="flex flex-col items-center mb-4">
-          <div className="relative">
+        <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '16px'}}>
+          <div style={{position: 'relative'}}>
             <img 
               src={userData?.avatar || '/avatar-default.png'} 
               alt="avatar"
-              className="w-20 h-20 rounded-full border-4 border-[#00BFFF]"
+              style={{width: '80px', height: '80px', borderRadius: '50%', border: '4px solid #00BFFF'}}
             />
             {userData?.vip_level && (
-              <span className="absolute -bottom-1 -right-1 bg-yellow-400 text-black text-xs font-bold px-2 py-0.5 rounded-full border-2 border-white">
+              <span style={{
+                position: 'absolute', bottom: '-4px', right: '-4px',
+                backgroundColor: '#facc15', color: 'black', fontSize: '12px', fontWeight: 'bold',
+                padding: '2px 8px', borderRadius: '999px', border: '2px solid white'
+              }}>
                 VIP {userData.vip_level}
               </span>
             )}
@@ -160,20 +157,24 @@ export default function MyPage() {
         </div>
 
         {/* Available Balance */}
-        <div className="bg-white rounded-xl p-4 mb-4 text-center shadow">
-          <p className="text-sm text-gray-600">Available Balance</p>
-          <p className="text-3xl font-bold text-[#00BFFF]">{earnings.balance.toLocaleString()}shs</p>
+        <div style={{backgroundColor: 'white', borderRadius: '12px', padding: '16px', marginBottom: '16px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)'}}>
+          <p style={{fontSize: '14px', color: '#4b5563'}}>Available Balance</p>
+          <p style={{fontSize: '30px', fontWeight: 'bold', color: '#00BFFF'}}>{earnings.balance.toLocaleString()}shs</p>
         </div>
 
-        {/* Effective Date - Uganda format */}
+        {/* Effective Date */}
         {vipPurchaseDate && (
-          <p className="text-center text-sm text-gray-400 mb-4">
+          <p style={{textAlign: 'center', fontSize: '14px', color: '#9ca3af', marginBottom: '16px'}}>
             {getVipPeriod(vipPurchaseDate)}
           </p>
         )}
 
-        {/* 7 Boxes Grid */}
-        <div className="grid grid-cols-2 gap-3">
+        {isTodayWeekend && (
+          <p style={{textAlign: 'center', fontSize: '12px', color: '#ef4444', marginBottom: '12px'}}>No tasks available on weekends</p>
+        )}
+
+        {/* 7 Boxes Grid with inline grid */}
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
           <Box title="Yesterday's income" amount={earnings.yesterday} />
           <Box title="Today's income" amount={earnings.today} />
 
