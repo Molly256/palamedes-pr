@@ -62,6 +62,27 @@ export default function InvitePage() {
     { level: "VIP 10", deposit: 8000000, books: 5, rate: 60000 },
   ]
 
+  const salaryLevels = [
+    { 
+      people: "50 + 50 + 50", 
+      team: "Team A: 50, Team B: 50, Team C: 50", 
+      salary: "1,000,000shs", 
+      position: "Team Leader"
+    },
+    { 
+      people: "100 + 100 + 100", 
+      team: "Team A: 100, Team B: 100, Team C: 100", 
+      salary: "2,000,000shs", 
+      position: "Regional Manager"
+    },
+    { 
+      people: "200 + 200 + 200", 
+      team: "Team A: 200, Team B: 200, Team C: 200", 
+      salary: "4,000,000shs", 
+      position: "Director"
+    },
+  ]
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-4xl mx-auto">
@@ -126,12 +147,11 @@ export default function InvitePage() {
             </div>
           </div>
 
-          {/* VIP TABLE - NO WRAPPER BORDER, TABLE WIDTH AUTO */}
+          {/* VIP TABLE */}
           <div className="mt-8">
             <h2 className="text-xl font-bold text-[#00BFFF] mb-4">VIP Levels & Income</h2>
             <div className="overflow-x-auto">
               <table className="text-sm" style={{borderCollapse: 'collapse', width: 'auto'}}>
-                {/* Headers hot skyblue */}
                 <thead>
                   <tr style={{backgroundColor: '#00BFFF'}}>
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>VIP LEVELS</th>
@@ -142,13 +162,11 @@ export default function InvitePage() {
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>INCOME PER YEAR</th>
                   </tr>
                 </thead>
-
                 <tbody>
                   {vipLevels.map((v, i) => {
                     const daily = v.books * v.rate
                     const monthly = daily * 30
                     const yearly = daily * 365
-
                     return (
                       <tr key={i}>
                         <td style={{border: '1px solid black', padding: '8px 12px', fontWeight: '600', color: '#111', whiteSpace: 'nowrap'}}>{v.level}</td>
@@ -166,6 +184,34 @@ export default function InvitePage() {
               </table>
             </div>
             <p className="text-xs text-gray-600 mt-2">* VIP 0 is free. Tap to activate and get 4 books immediately.</p>
+          </div>
+
+          {/* SALARY TABLE */}
+          <div className="mt-12">
+            <h2 className="text-xl font-bold text-[#00BFFF] mb-4">SALARY TABLE</h2>
+            <div className="overflow-x-auto">
+              <table className="text-sm" style={{borderCollapse: 'collapse', width: 'auto'}}>
+                <thead>
+                  <tr style={{backgroundColor: '#00BFFF'}}>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Number of people</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Team</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Monthly salary</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Position</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {salaryLevels.map((s, i) => (
+                    <tr key={i}>
+                      <td style={{border: '1px solid black', padding: '8px 12px', fontWeight: '600', color: '#111', whiteSpace: 'nowrap'}}>{s.people}</td>
+                      <td style={{border: '1px solid black', padding: '8px 12px', color: '#333', whiteSpace: 'nowrap'}}>{s.team}</td>
+                      <td style={{border: '1px solid black', padding: '8px 12px', color: '#15803d', fontWeight: '700', whiteSpace: 'nowrap'}}>{s.salary}</td>
+                      <td style={{border: '1px solid black', padding: '8px 12px', color: '#333', fontWeight: '600', whiteSpace: 'nowrap'}}>{s.position}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-gray-600 mt-2">* Note: Each position requires 30% of Team A to be VIP 1 to qualify for benefits</p>
           </div>
         </div>
       </div>
