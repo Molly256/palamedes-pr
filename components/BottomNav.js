@@ -15,7 +15,7 @@ export default function BottomNav() {
     { href: '/dashboard', icon: '🏠', label: 'Home', color: '#FFB800' },
     { href: '/tasks', icon: '📋', label: 'Tasks', color: '#00D26A' }, // FIXED: was /viptasks
     { href: '/hot', icon: '🔥', label: 'Hot', color: '#FF2E2E' },
-    { href: '/myteam', icon: '👤', label: 'My', color: '#007AFF' },
+    { href: '/my', icon: '👤', label: 'My', color: '#007AFF' },
     { href: '/settings', icon: '⚙️', label: 'Settings', color: '#BF5AF2' },
   ]
 
