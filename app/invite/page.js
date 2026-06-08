@@ -105,7 +105,7 @@ export default function InvitePage() {
             </div>
           </div>
 
-          {/* Step 3 + WhatsApp button moved here under Team C */}
+          {/* Step 3 + WhatsApp button under Team C */}
           <div className="flex gap-3 mb-8">
             <span style={numberStyle}>3</span>
             <div className="flex-1">
@@ -117,7 +117,6 @@ export default function InvitePage() {
                 <p className="text-sm text-gray-700"><b style={{color: '#00BFFF'}}>Team C</b> successful invites get you 1%</p>
               </div>
               
-              {/* Button moved here */}
               <button
                 onClick={shareWhatsApp}
                 className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold"
@@ -127,24 +126,23 @@ export default function InvitePage() {
             </div>
           </div>
 
-          {/* REAL TABLE WITH VISIBLE ROWS & COLUMNS */}
+          {/* VIP TABLE WITH LIGHT WEIGHT BLACK BORDERS */}
           <div className="mt-8">
             <h2 className="text-xl font-bold text-[#00BFFF] mb-4">VIP Levels & Income</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm border-gray-400">
-                {/* Headers on top - bold skyblue hot color */}
+            <div className="overflow-x-auto border-black rounded-lg">
+              <table className="w-full border-collapse text-sm">
+                {/* Headers hot skyblue */}
                 <thead>
                   <tr style={{backgroundColor: '#00BFFF'}}>
-                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">VIP LEVELS</th>
-                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">DEPOSITS</th>
-                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">NUMBER OF BOOKS PER DAY</th>
-                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">DAILY INCOME</th>
-                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">MONTHLY INCOME</th>
-                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">INCOME PER YEAR</th>
+                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">VIP LEVELS</th>
+                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">DEPOSITS</th>
+                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">NUMBER OF BOOKS PER DAY</th>
+                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">DAILY INCOME</th>
+                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">MONTHLY INCOME</th>
+                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">INCOME PER YEAR</th>
                   </tr>
                 </thead>
 
-                {/* Details under each header */}
                 <tbody>
                   {vipLevels.map((v, i) => {
                     const daily = v.books * v.rate
@@ -152,15 +150,15 @@ export default function InvitePage() {
                     const yearly = daily * 365
 
                     return (
-                      <tr key={i} className="hover:bg-gray-100">
-                        <td className="border border-gray-400 px-3 py-2 font-semibold text-gray-900">{v.level}</td>
-                        <td className="border border-gray-400 px-3 py-2 text-gray-800">
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="border border-black px-3 py-2 font-semibold text-gray-900">{v.level}</td>
+                        <td className="border border-black px-3 py-2 text-gray-800">
                           {v.deposit === 0? "FREE" : v.deposit.toLocaleString() + "shs"}
                         </td>
-                        <td className="border border-gray-400 px-3 py-2 text-gray-800">{v.books} books @ {v.rate.toLocaleString()}shs</td>
-                        <td className="border border-gray-400 px-3 py-2 text-green-700 font-semibold">{daily.toLocaleString()}shs</td>
-                        <td className="border border-gray-400 px-3 py-2 text-gray-800">{monthly.toLocaleString()}shs</td>
-                        <td className="border border-gray-400 px-3 py-2 text-gray-800 font-semibold">{yearly.toLocaleString()}shs</td>
+                        <td className="border border-black px-3 py-2 text-gray-800">{v.books} books @ {v.rate.toLocaleString()}shs</td>
+                        <td className="border border-black px-3 py-2 text-green-700 font-semibold">{daily.toLocaleString()}shs</td>
+                        <td className="border border-black px-3 py-2 text-gray-800">{monthly.toLocaleString()}shs</td>
+                        <td className="border border-black px-3 py-2 text-gray-800 font-semibold">{yearly.toLocaleString()}shs</td>
                       </tr>
                     )
                   })}
