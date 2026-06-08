@@ -64,20 +64,20 @@ export default function InvitePage() {
 
   const salaryLevels = [
     { 
-      people: "50 + 50 + 50", 
-      team: "Team A: 50, Team B: 50, Team C: 50", 
+      people: "50 + 25 + 25", 
+      team: "Team A: 50, Team B: 25, Team C: 25", 
       salary: "1,000,000shs", 
       position: "Team Leader"
     },
     { 
-      people: "100 + 100 + 100", 
-      team: "Team A: 100, Team B: 100, Team C: 100", 
+      people: "100 + 50 + 50", 
+      team: "Team A: 100, Team B: 50, Team C: 50", 
       salary: "2,000,000shs", 
       position: "Regional Manager"
     },
     { 
-      people: "200 + 200 + 200", 
-      team: "Team A: 200, Team B: 200, Team C: 200", 
+      people: "200 + 100 + 100", 
+      team: "Team A: 200, Team B: 100, Team C: 100", 
       salary: "4,000,000shs", 
       position: "Director"
     },
@@ -186,14 +186,14 @@ export default function InvitePage() {
             <p className="text-xs text-gray-600 mt-2">* VIP 0 is free. Tap to activate and get 4 books immediately.</p>
           </div>
 
-          {/* SALARY TABLE */}
+          {/* SALARY TABLE - FIXED */}
           <div className="mt-12">
             <h2 className="text-xl font-bold text-[#00BFFF] mb-4">SALARY TABLE</h2>
             <div className="overflow-x-auto">
               <table className="text-sm" style={{borderCollapse: 'collapse', width: 'auto'}}>
                 <thead>
                   <tr style={{backgroundColor: '#00BFFF'}}>
-                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Number of people</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Number of pipo</th>
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Team</th>
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Monthly salary</th>
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Position</th>
