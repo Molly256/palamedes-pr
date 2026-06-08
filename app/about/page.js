@@ -23,6 +23,16 @@ export default function AboutPage() {
           <p>Norfolk House, 22-24 Market Place, Swaffham, England, PE37 7QH</p>
         </div>
 
+        {/* Certificate Image */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-[#00BFFF] mb-4">Certification</h3>
+          <img 
+            src="/certificate.jpg" 
+            alt="Palamedes PR Certificate" 
+            className="w-full h-auto border-gray-200 rounded-lg shadow-md"
+          />
+        </div>
+
         <div className="text-sm">
           <p className="mb-2">Privacy policy           Cookie policy</p>
           <p className="mb-4">Website Terms of Use</p>
