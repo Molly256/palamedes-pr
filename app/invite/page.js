@@ -126,10 +126,10 @@ export default function InvitePage() {
             </div>
           </div>
 
-          {/* VIP TABLE WITH FORCED BLACK GRID LINES */}
+          {/* VIP TABLE WITH BLACK BORDER, NO ROUNDED EMPTY SPACE */}
           <div className="mt-8">
             <h2 className="text-xl font-bold text-[#00BFFF] mb-4">VIP Levels & Income</h2>
-            <div className="overflow-x-auto" style={{border: '1px solid black', borderRadius: '8px'}}>
+            <div className="overflow-x-auto" style={{border: '1px solid black'}}>
               <table className="w-full text-sm" style={{borderCollapse: 'collapse'}}>
                 {/* Headers hot skyblue */}
                 <thead>
