@@ -126,20 +126,20 @@ export default function InvitePage() {
             </div>
           </div>
 
-          {/* VIP TABLE WITH LIGHT WEIGHT BLACK BORDERS */}
+          {/* VIP TABLE WITH FORCED BLACK GRID LINES */}
           <div className="mt-8">
             <h2 className="text-xl font-bold text-[#00BFFF] mb-4">VIP Levels & Income</h2>
-            <div className="overflow-x-auto border-black rounded-lg">
-              <table className="w-full border-collapse text-sm">
+            <div className="overflow-x-auto" style={{border: '1px solid black', borderRadius: '8px'}}>
+              <table className="w-full text-sm" style={{borderCollapse: 'collapse'}}>
                 {/* Headers hot skyblue */}
                 <thead>
                   <tr style={{backgroundColor: '#00BFFF'}}>
-                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">VIP LEVELS</th>
-                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">DEPOSITS</th>
-                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">NUMBER OF BOOKS PER DAY</th>
-                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">DAILY INCOME</th>
-                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">MONTHLY INCOME</th>
-                    <th className="border border-black px-3 py-3 font-extrabold text-left text-white">INCOME PER YEAR</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white'}}>VIP LEVELS</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white'}}>DEPOSITS</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white'}}>NUMBER OF BOOKS PER DAY</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white'}}>DAILY INCOME</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white'}}>MONTHLY INCOME</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white'}}>INCOME PER YEAR</th>
                   </tr>
                 </thead>
 
@@ -150,15 +150,15 @@ export default function InvitePage() {
                     const yearly = daily * 365
 
                     return (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="border border-black px-3 py-2 font-semibold text-gray-900">{v.level}</td>
-                        <td className="border border-black px-3 py-2 text-gray-800">
+                      <tr key={i}>
+                        <td style={{border: '1px solid black', padding: '8px 12px', fontWeight: '600', color: '#111'}}>{v.level}</td>
+                        <td style={{border: '1px solid black', padding: '8px 12px', color: '#333'}}>
                           {v.deposit === 0? "FREE" : v.deposit.toLocaleString() + "shs"}
                         </td>
-                        <td className="border border-black px-3 py-2 text-gray-800">{v.books} books @ {v.rate.toLocaleString()}shs</td>
-                        <td className="border border-black px-3 py-2 text-green-700 font-semibold">{daily.toLocaleString()}shs</td>
-                        <td className="border border-black px-3 py-2 text-gray-800">{monthly.toLocaleString()}shs</td>
-                        <td className="border border-black px-3 py-2 text-gray-800 font-semibold">{yearly.toLocaleString()}shs</td>
+                        <td style={{border: '1px solid black', padding: '8px 12px', color: '#333'}}>{v.books} books @ {v.rate.toLocaleString()}shs</td>
+                        <td style={{border: '1px solid black', padding: '8px 12px', color: '#15803d', fontWeight: '600'}}>{daily.toLocaleString()}shs</td>
+                        <td style={{border: '1px solid black', padding: '8px 12px', color: '#333'}}>{monthly.toLocaleString()}shs</td>
+                        <td style={{border: '1px solid black', padding: '8px 12px', color: '#333', fontWeight: '600'}}>{yearly.toLocaleString()}shs</td>
                       </tr>
                     )
                   })}
