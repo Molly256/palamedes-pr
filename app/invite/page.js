@@ -11,10 +11,6 @@ export default function InvitePage() {
     return `PM${last6}`
   }
 
-  const isValidInviteCode = (code) => {
-    return /^PM\d{6}$/.test(code)
-  }
-
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (userData.phone) {
@@ -52,7 +48,6 @@ export default function InvitePage() {
     minWidth: '24px'
   }
 
-  // VIP TABLE DATA - auto calculates monthly & yearly
   const vipLevels = [
     { level: "VIP 0", deposit: 0, books: 4, rate: 625 },
     { level: "VIP 1", deposit: 80000, books: 4, rate: 625 },
@@ -110,34 +105,42 @@ export default function InvitePage() {
             </div>
           </div>
 
-          {/* Step 3 */}
-          <div className="flex gap-3 mb-4">
+          {/* Step 3 + WhatsApp button moved here under Team C */}
+          <div className="flex gap-3 mb-8">
             <span style={numberStyle}>3</span>
-            <div>
+            <div className="flex-1">
               <p style={stepStyle}>Earn Rewards:</p>
               <p className="text-sm text-gray-700 mb-2">Earn rewards as follows:</p>
-              <div className="space-y-2 ml-2">
+              <div className="space-y-2 ml-2 mb-4">
                 <p className="text-sm text-gray-700"><b style={{color: '#00BFFF'}}>Team A</b> successful invites get you 5%</p>
                 <p className="text-sm text-gray-700"><b style={{color: '#00BFFF'}}>Team B</b> successful invites get you 2%</p>
                 <p className="text-sm text-gray-700"><b style={{color: '#00BFFF'}}>Team C</b> successful invites get you 1%</p>
               </div>
+              
+              {/* Button moved here */}
+              <button
+                onClick={shareWhatsApp}
+                className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold"
+              >
+                Share on WhatsApp
+              </button>
             </div>
           </div>
 
-          {/* VIP LEVELS TABLE - Headers on top, details under each */}
+          {/* REAL TABLE WITH VISIBLE ROWS & COLUMNS */}
           <div className="mt-8">
             <h2 className="text-xl font-bold text-[#00BFFF] mb-4">VIP Levels & Income</h2>
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm min-w-[800px]">
-                {/* Headers on top - bold skyblue */}
+              <table className="w-full border-collapse text-sm border-gray-400">
+                {/* Headers on top - bold skyblue hot color */}
                 <thead>
-                  <tr className="bg-[#00BFFF] text-white">
-                    <th className="border border-gray-300 px-3 py-3 font-bold text-left">VIP LEVELS</th>
-                    <th className="border border-gray-300 px-3 py-3 font-bold text-left">DEPOSITS</th>
-                    <th className="border border-gray-300 px-3 py-3 font-bold text-left">NUMBER OF BOOKS PER DAY</th>
-                    <th className="border border-gray-300 px-3 py-3 font-bold text-left">DAILY INCOME</th>
-                    <th className="border border-gray-300 px-3 py-3 font-bold text-left">MONTHLY INCOME</th>
-                    <th className="border border-gray-300 px-3 py-3 font-bold text-left">INCOME PER YEAR</th>
+                  <tr style={{backgroundColor: '#00BFFF'}}>
+                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">VIP LEVELS</th>
+                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">DEPOSITS</th>
+                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">NUMBER OF BOOKS PER DAY</th>
+                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">DAILY INCOME</th>
+                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">MONTHLY INCOME</th>
+                    <th className="border border-gray-400 px-3 py-3 font-bold text-left text-white">INCOME PER YEAR</th>
                   </tr>
                 </thead>
 
@@ -149,30 +152,23 @@ export default function InvitePage() {
                     const yearly = daily * 365
 
                     return (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="border border-gray-300 px-3 py-2 font-semibold text-gray-800">{v.level}</td>
-                        <td className="border border-gray-300 px-3 py-2 text-gray-700">
+                      <tr key={i} className="hover:bg-gray-100">
+                        <td className="border border-gray-400 px-3 py-2 font-semibold text-gray-900">{v.level}</td>
+                        <td className="border border-gray-400 px-3 py-2 text-gray-800">
                           {v.deposit === 0? "FREE" : v.deposit.toLocaleString() + "shs"}
                         </td>
-                        <td className="border border-gray-300 px-3 py-2 text-gray-700">{v.books} books @ {v.rate.toLocaleString()}shs</td>
-                        <td className="border border-gray-300 px-3 py-2 text-green-600 font-semibold">{daily.toLocaleString()}shs</td>
-                        <td className="border border-gray-300 px-3 py-2 text-gray-700">{monthly.toLocaleString()}shs</td>
-                        <td className="border border-gray-300 px-3 py-2 text-gray-700 font-semibold">{yearly.toLocaleString()}shs</td>
+                        <td className="border border-gray-400 px-3 py-2 text-gray-800">{v.books} books @ {v.rate.toLocaleString()}shs</td>
+                        <td className="border border-gray-400 px-3 py-2 text-green-700 font-semibold">{daily.toLocaleString()}shs</td>
+                        <td className="border border-gray-400 px-3 py-2 text-gray-800">{monthly.toLocaleString()}shs</td>
+                        <td className="border border-gray-400 px-3 py-2 text-gray-800 font-semibold">{yearly.toLocaleString()}shs</td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-gray-500 mt-2">* VIP 0 is free. Tap to activate and get 4 books immediately.</p>
+            <p className="text-xs text-gray-600 mt-2">* VIP 0 is free. Tap to activate and get 4 books immediately.</p>
           </div>
-
-          <button
-            onClick={shareWhatsApp}
-            className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold mt-6"
-          >
-            Share on WhatsApp
-          </button>
         </div>
       </div>
     </div>
