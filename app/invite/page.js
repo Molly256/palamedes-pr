@@ -193,7 +193,7 @@ export default function InvitePage() {
               <table className="text-sm" style={{borderCollapse: 'collapse', width: 'auto'}}>
                 <thead>
                   <tr style={{backgroundColor: '#00BFFF'}}>
-                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Number of pipo</th>
+                    <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Number of people</th>
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Team</th>
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Monthly salary</th>
                     <th style={{border: '1px solid black', padding: '12px', textAlign: 'left', fontWeight: '800', color: 'white', whiteSpace: 'nowrap'}}>Position</th>
