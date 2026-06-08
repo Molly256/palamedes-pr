@@ -58,34 +58,25 @@ export default function VipTask() {
  const newPrice = selectedVip.price
  const prevPrice = vips[user.vip].price
 
- // 1. User must have full amount
  if ((user.balance || 0) < newPrice) {
  alert('Insufficient balance. Need full amount to upgrade')
  return
  }
 
- // 2. Get all users
  const all = JSON.parse(localStorage.getItem('palamedes_all_users') || '[]')
  const userIndex = all.findIndex(u => u.phone === user.phone)
  if (userIndex === -1) return alert('User not found')
 
- // 3. Deduct full new VIP price
  all[userIndex].balance = user.balance - newPrice
  all[userIndex].vip = selectedVip.level
-
- // 4. Refund previous VIP price immediately
  all[userIndex].balance = all[userIndex].balance + prevPrice
 
- // 5. Task distribution rule
  let resetTasks = false
  if ((user.tasks_read_today || 0) === 0 &&!isWeekend()) {
- // Didn't read tasks yet today → new VIP tasks now
  resetTasks = true
  all[userIndex].tasks_read_today = 0
  }
- // If tasksReadToday > 0 → no tasks today
 
- // 6. Company pays inviter if upgrading from VIP 0
  if (user.vip === 0 && user.referrer_phone) {
  const inviterIndex = all.findIndex(u => u.phone === user.referrer_phone)
  if (inviterIndex!== -1) {
@@ -93,7 +84,6 @@ export default function VipTask() {
  }
  }
 
- // 7. Save everything
  localStorage.setItem('palamedes_all_users', JSON.stringify(all))
  localStorage.setItem('palamedes_user', JSON.stringify(all[userIndex]))
  setUser(all[userIndex])
@@ -108,10 +98,10 @@ export default function VipTask() {
  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '30px' }}>
  <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', paddingTop: '8px' }}>← Back</Link>
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
- <AvatarWithBadge username={user.username} vipLevel={Number(user.vip?? 0)} size={60} key={user.vip?? 0} />
+ <AvatarWithBadge username={user.username} vipLevel={Number(user.vip || 0)} size={60} key={user.vip || 0} />
  <div style={{ marginTop: '8px', textAlign: 'left' }}>
  <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>Balance: {user.balance?.toLocaleString() || 0} shs</p>
- <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>{vips[user.vip?? 0].name}</p>
+ <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>{vips[user.vip || 0].name}</p>
  </div>
  </div>
  </div>
@@ -143,7 +133,7 @@ export default function VipTask() {
  background: 'white', fontWeight: '900', cursor: 'pointer', color: '#000'
  }}>BUY</button>
  )}
- {vip.level > user.vip + 1 && <div style={{ fontSize: '28px' }}>🔒</div>}
+ {vip.level > user.vip + 1 && vip.level > 3 && <div style={{ fontSize: '28px' }}>🔒</div>}
  {isCurrent && <div style={{ fontSize: '24px' }}>✅</div>}
  </div>
  </div>
