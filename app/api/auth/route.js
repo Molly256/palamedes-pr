@@ -1,4 +1,4 @@
-import { db } from '../redis.js' // Fixed path
+import { db } from '../redis.js'
 
 export async function POST(request) {
   try {
@@ -6,7 +6,6 @@ export async function POST(request) {
     const { action, username, phone, password, referral } = body
 
     const cleanPhone = phone ? phone.replace(/\s+/g, '') : ''
-    // FIX: Only create keys if value exists, prevents .toLowerCase() crash on login
     const userKey = username ? `user:palamedes:${username.toLowerCase()}` : null
     const phoneKey = cleanPhone ? `phone:palamedes:${cleanPhone}` : null
 
@@ -16,7 +15,6 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username must be 6 letters minimum' }, { status: 400 })
       }
 
-      // FIX: Check if userKey exists before querying KV
       const existingUser = userKey ? await db.hgetall(userKey) : null
       if (existingUser && existingUser.username) {
         return Response.json({ success: false, message: 'Username already taken' }, { status: 400 })
@@ -78,7 +76,7 @@ export async function POST(request) {
       })
     }
 
-    // LOGIN  
+    // LOGIN - FIXED
     if (action === 'login') {
       if (!phoneKey) {
         return Response.json({ success: false, message: 'Phone number required' }, { status: 400 })
@@ -86,11 +84,13 @@ export async function POST(request) {
 
       const user = await db.hgetall(phoneKey)
       
-      if (!user || !user.username) {
-        return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
+      // FIX: KV returns {} not null when key missing. Also check username exists
+      if (!user || !user.username || Object.keys(user).length === 0) {
+        return Response.json({ success: false, message: 'Phone not registered' }, { status: 401 })
       }
       
-      if (user.password !== password) {
+      // FIX: Trim password to handle accidental space
+      if (user.password !== password.trim()) {
         return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
       }
 
