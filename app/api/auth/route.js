@@ -1,5 +1,4 @@
-// Fake DB for testing. Resets on server restart
-let users = []
+import { db } from '../../redis.js' // NEW: import Redis client
 
 export async function POST(request) {
   try {
@@ -14,13 +13,14 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username must be 6 letters minimum' }, { status: 400 })
       }
 
-      const userExists = users.find(u => u.username.toLowerCase() === username.toLowerCase())
-      if (userExists) {
+      // NEW: Check Redis instead of memory array
+      const existingUser = await db.get(`user:${username.toLowerCase()}`)
+      if (existingUser) {
         return Response.json({ success: false, message: 'Username already taken' }, { status: 400 })
       }
 
-      const phoneExists = users.find(u => u.phone === cleanPhone)
-      if (phoneExists) {
+      const existingPhone = await db.get(`phone:${cleanPhone}`)
+      if (existingPhone) {
         return Response.json({ success: false, message: 'Phone number already registered' }, { status: 400 })
       }
 
@@ -31,14 +31,14 @@ export async function POST(request) {
       let teamC = null // Referrer's referrer's referrer - 1%
 
       if (referral && referral.trim() !== '') {
-        const referrer = users.find(u => u.username.toLowerCase() === referral.toLowerCase())
+        const referrer = await db.get(`user:${referral.toLowerCase()}`)
         if (!referrer) {
           return Response.json({ success: false, message: 'Invalid referral code' }, { status: 400 })
         }
         referrerId = referrer.id
         teamA = referrer.id
         teamB = referrer.referrer || null
-        teamC = referrer.teamA || null // TeamB's TeamA = TeamC
+        teamC = referrer.teamA || null
       }
 
       const newUser = {
@@ -47,19 +47,27 @@ export async function POST(request) {
         phone: cleanPhone,
         password,
         referral: referral || '',
-        referrer: referrerId, // NEW: stores who referred this user
-        teamA, // NEW: Level 1 - 5% commission
-        teamB, // NEW: Level 2 - 2% commission  
-        teamC, // NEW: Level 3 - 1% commission
+        referrer: referrerId,
+        teamA,
+        teamB,
+        teamC,
         balance: 0,
-        vip: 0, // NEW: track VIP level
+        vip: 0,
         createdAt: new Date().toISOString()
       }
-      users.push(newUser)
+
+      // NEW: Save to Redis instead of memory
+      await db.set(`user:${username.toLowerCase()}`, JSON.stringify(newUser))
+      await db.set(`phone:${cleanPhone}`, JSON.stringify(newUser))
+      
+      // NEW: TEST - Read it back to prove Redis works
+      const testRead = await db.get(`user:${username.toLowerCase()}`)
+      const redisTestMsg = testRead ? `Redis OK: Saved ${username}` : 'Redis FAIL: Could not read back'
 
       return Response.json({ 
         success: true, 
         message: 'Account created successfully',
+        redisTest: redisTestMsg, // NEW: send to frontend so you see it
         user: { 
           username: newUser.username, 
           phone: newUser.phone,
@@ -72,7 +80,8 @@ export async function POST(request) {
 
     // LOGIN  
     if (action === 'login') {
-      const user = users.find(u => u.phone === cleanPhone)
+      // NEW: Get from Redis
+      const user = await db.get(`phone:${cleanPhone}`)
       
       if (!user || user.password !== password) {
         return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
@@ -95,6 +104,6 @@ export async function POST(request) {
 
   } catch (err) {
     console.error(err)
-    return Response.json({ success: false, message: 'Server error' }, { status: 500 })
+    return Response.json({ success: false, message: 'Server error: ' + err.message }, { status: 500 })
   }
 }
