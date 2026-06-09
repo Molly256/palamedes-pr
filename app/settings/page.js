@@ -70,14 +70,29 @@ export default function SettingsPage() {
   const [showVipPopup, setShowVipPopup] = useState(false)
 
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    setUser(saved)
-    setNickname(saved.nickname || saved.username || '')
-    setMtnNumber(saved.bankMTN?.number || '')
-    setMtnNames(saved.bankMTN?.names || '')
-    setAirtelNumber(saved.bankAirtel?.number || '')
-    setAirtelNames(saved.bankAirtel?.names || '')
+    loadUser()
   }, [])
+
+  const loadUser = async () => {
+    const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    if (!saved.phone) return router.push('/login')
+
+    try {
+      const res = await fetch(`/api/user?phone=${saved.phone}`)
+      const data = await res.json()
+      if (data.success) {
+        setUser(data.user)
+        setNickname(data.user.nickname || data.user.username || '')
+        setMtnNumber(data.user.bankMTN?.number || '')
+        setMtnNames(data.user.bankMTN?.names || '')
+        setAirtelNumber(data.user.bankAirtel?.number || '')
+        setAirtelNames(data.user.bankAirtel?.names || '')
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
   const saveUser = (data) => {
     localStorage.setItem('palamedes_user', JSON.stringify(data))
@@ -92,47 +107,127 @@ export default function SettingsPage() {
     fileInputRef.current?.click()
   }
 
-  const handleAvatarChange = (e) => {
+  const handleAvatarChange = async (e) => {
     const file = e.target.files[0]
     if (file) {
       const reader = new FileReader()
-      reader.onload = () => {
+      reader.onload = async () => {
         const base64 = reader.result
-        const updated = {...user, avatar: base64}
-        saveUser(updated)
+
+        const res = await fetch('/api/user', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            action: 'updateProfile',
+            phone: user.phone,
+            field: 'avatar',
+            value: base64
+          })
+        })
+        const data = await res.json()
+
+        if (data.success) {
+          const updated = {...user, avatar: base64}
+          saveUser(updated)
+        } else {
+          alert(data.message)
+        }
       }
       reader.readAsDataURL(file)
     }
   }
 
-  const saveNickname = () => {
+  const saveNickname = async () => {
     if (nickname.length > 6) return alert('Nickname max 6 letters only')
-    const updated = {...user, nickname}
-    saveUser(updated)
-    alert('Nickname saved')
+
+    const res = await fetch('/api/user', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        action: 'updateProfile',
+        phone: user.phone,
+        field: 'nickname',
+        value: nickname
+      })
+    })
+    const data = await res.json()
+    alert(data.message)
+
+    if (data.success) {
+      const updated = {...user, nickname}
+      saveUser(updated)
+    }
   }
 
-  const saveBank = (method) => {
+  const saveBank = async (method) => {
     if (method === 'mtn' &&!user.bankMTN) {
       if (!mtnNumber ||!mtnNames) return alert('Fill all MTN fields')
-      const updated = {...user, bankMTN: {number: mtnNumber, names: mtnNames}}
-      saveUser(updated)
+      const bankData = {number: mtnNumber, names: mtnNames}
+
+      const res = await fetch('/api/user', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          action: 'updateProfile',
+          phone: user.phone,
+          field: 'bankMTN',
+          value: JSON.stringify(bankData)
+        })
+      })
+      const data = await res.json()
+      alert(data.message)
+      if (data.success) {
+        const updated = {...user, bankMTN: bankData}
+        saveUser(updated)
+      }
     }
+
     if (method === 'airtel' &&!user.bankAirtel) {
       if (!airtelNumber ||!airtelNames) return alert('Fill all Airtel fields')
-      const updated = {...user, bankAirtel: {number: airtelNumber, names: airtelNames}}
-      saveUser(updated)
+      const bankData = {number: airtelNumber, names: airtelNames}
+
+      const res = await fetch('/api/user', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          action: 'updateProfile',
+          phone: user.phone,
+          field: 'bankAirtel',
+          value: JSON.stringify(bankData)
+        })
+      })
+      const data = await res.json()
+      alert(data.message)
+      if (data.success) {
+        const updated = {...user, bankAirtel: bankData}
+        saveUser(updated)
+      }
     }
   }
 
-  const changePassword = () => {
+  const changePassword = async () => {
     if (oldPass!== user.password) return alert('Old password incorrect')
     if (newPass.length < 4) return alert('New password too short')
     if (newPass!== repeatPass) return alert('New passwords do not match')
-    const updated = {...user, password: newPass}
-    saveUser(updated)
-    setOldPass(''); setNewPass(''); setRepeatPass('')
-    alert('Password changed successfully')
+
+    const res = await fetch('/api/user', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        action: 'changePassword',
+        phone: user.phone,
+        oldPass,
+        newPass
+      })
+    })
+    const data = await res.json()
+    alert(data.message)
+
+    if (data.success) {
+      const updated = {...user, password: newPass}
+      saveUser(updated)
+      setOldPass(''); setNewPass(''); setRepeatPass('')
+    }
   }
 
   const logout = () => {
@@ -144,7 +239,6 @@ export default function SettingsPage() {
     <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', paddingBottom: '96px'}}>
       <h1 style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', padding: '16px', backgroundColor: 'white', color: 'black', borderBottom: '1px solid #e5e7eb'}}>Settings</h1>
 
-      {/* Top Right: Avatar circle + VIP badge, Username below */}
       <div style={{...sectionStyle, display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
         <div onClick={handleAvatarClick} style={{cursor: user.vip >= 1? 'pointer' : 'default'}}>
           <AvatarWithBadge
@@ -160,7 +254,6 @@ export default function SettingsPage() {
       </div>
       <input type="file" ref={fileInputRef} accept="image/*" onChange={handleAvatarChange} style={{display: 'none'}} />
 
-      {/* Left side below: Phone locked + Nickname editable */}
       <div style={sectionStyle}>
         <p style={labelStyle}>Phone number</p>
         <input style={{...inputStyle, backgroundColor: '#f3f4f6'}} value={user.phone} readOnly />
@@ -171,7 +264,6 @@ export default function SettingsPage() {
         <button style={btnStyle} onClick={saveNickname}>Save</button>
       </div>
 
-      {/* Bank Details */}
       <div style={sectionStyle}>
         <p style={labelStyle}>Bank details</p>
 
@@ -202,7 +294,6 @@ export default function SettingsPage() {
         {!user.bankAirtel && <button style={btnStyle} onClick={() => saveBank('airtel')}>Save</button>}
       </div>
 
-      {/* Modify password */}
       <div style={sectionStyle}>
         <p style={labelStyle}>Modify password</p>
         <input style={inputStyle} type="password" placeholder="Old password" value={oldPass} onChange={(e) => setOldPass(e.target.value)} />
@@ -214,7 +305,6 @@ export default function SettingsPage() {
         <button style={btnStyle} onClick={changePassword}>Save</button>
       </div>
 
-      {/* VIP Popup - only shows if no VIP */}
       {showVipPopup && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -230,7 +320,6 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* Cute small logout button */}
       <div style={{textAlign: 'center', padding: '16px'}}>
         <button style={logoutBtn} onClick={logout}>Logout</button>
       </div>

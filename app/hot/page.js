@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const cardStyle = {
   backgroundColor: 'white',
@@ -32,6 +32,7 @@ const labelStyle = { fontSize: '13px', fontWeight: '300', color: 'black', margin
 
 export default function HotPage() {
   const [invested, setInvested] = useState({})
+  const [phone, setPhone] = useState('')
 
   const dividends = [
     {
@@ -40,7 +41,7 @@ export default function HotPage() {
       cycle: '30days',
       profit: '1%',
       min: '50,000shs',
-      img: '/images/pride.jpg' // upload your image here
+      img: '/images/pride.jpg'
     },
     {
       id: 'hegel',
@@ -48,7 +49,7 @@ export default function HotPage() {
       cycle: '120days',
       profit: '3%',
       min: '50,000shs',
-      img: '/images/hegel.jpg' // upload your image here
+      img: '/images/hegel.jpg'
     },
     {
       id: 'whale',
@@ -56,13 +57,71 @@ export default function HotPage() {
       cycle: '180days',
       profit: '5%',
       min: '50,000shs',
-      img: '/images/whale.jpg' // upload your image here
+      img: '/images/whale.jpg'
     }
   ]
 
-  const handleInvest = (id) => {
-    setInvested({...invested, [id]: true})
-    alert('Investment request sent')
+  // Load user phone + check owned shares on mount
+  useEffect(() => {
+    const userData = JSON.parse(localStorage.getItem('user') || '{}')
+    setPhone(userData.phone || '')
+    loadShares(userData.phone)
+  }, [])
+
+  const loadShares = async (userPhone) => {
+    if (!userPhone) return
+    try {
+      const res = await fetch(`/api/user?action=getShares&phone=${userPhone}`)
+      const data = await res.json()
+      if (data.success && data.shares) {
+        const owned = {}
+        Object.keys(data.shares).forEach(id => owned[id] = true)
+        setInvested(owned)
+      }
+    } catch (err) {
+      console.error('Load shares error:', err)
+    }
+  }
+
+  const handleInvest = async (item) => {
+    if (!phone) {
+      alert('Please login first')
+      return
+    }
+
+    const btn = document.getElementById(`btn-${item.id}`)
+    if (btn) btn.disabled = true
+
+    try {
+      const res = await fetch('/api/user', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          action: 'buyShare',
+          phone: phone,
+          shareId: item.id,
+          shareName: item.name
+        })
+      })
+      const data = await res.json()
+
+      if (data.success) {
+        setInvested({...invested, [item.id]: true})
+        alert(`Success! ${item.name} purchased. New balance: ${data.balance}shs`)
+        
+        // Update dashboard balance if you have it in localStorage
+        const user = JSON.parse(localStorage.getItem('user') || '{}')
+        user.balance = data.balance
+        localStorage.setItem('user', JSON.stringify(user))
+      } else {
+        alert(data.message)
+      }
+    } catch (err) {
+      alert('Network error. Try again')
+      console.error(err)
+    } finally {
+      if (btn) btn.disabled = false
+    }
   }
 
   return (
@@ -80,10 +139,8 @@ export default function HotPage() {
 
         {dividends.map(item => (
           <div key={item.id} style={cardStyle}>
-            {/* Left: Image */}
             <img src={item.img} alt={item.name} style={imgStyle} />
 
-            {/* Right: Info */}
             <div style={{flex: 1}}>
               <p style={{fontSize: '14px', fontWeight: 'bold', color: 'black', marginBottom: '4px'}}>{item.name}</p>
               <p style={labelStyle}>Investment cycle: {item.cycle}</p>
@@ -91,8 +148,18 @@ export default function HotPage() {
               <p style={labelStyle}>Minimum deposit: {item.min}</p>
               <p style={labelStyle}>Can buy multiple shares</p>
 
-              {!invested[item.id] && (
-                <button style={btnStyle} onClick={() => handleInvest(item.id)}>Invest now</button>
+              {!invested[item.id] ? (
+                <button 
+                  id={`btn-${item.id}`}
+                  style={btnStyle} 
+                  onClick={() => handleInvest(item)}
+                >
+                  Invest now
+                </button>
+              ) : (
+                <button style={{...btnStyle, backgroundColor: '#22c55e', cursor: 'default'}} disabled>
+                  Owned
+                </button>
               )}
             </div>
           </div>

@@ -6,14 +6,49 @@ import Card from '../../components/Card'
 
 export default function Dashboard() {
  const [user, setUser] = useState(null)
+ const [loading, setLoading] = useState(true)
  const [deferredPrompt, setDeferredPrompt] = useState(null)
 
+ const loadUser = async () => {
+   const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+   const cleanPhone = localUser.phone ? localUser.phone.replace(/\s+/g, '') : ''
+   
+   if (!cleanPhone) {
+     setUser(localUser)
+     setLoading(false)
+     return
+   }
+   
+   try {
+     // Fetch from api/user using phone:palamedes:{phone} key
+     const res = await fetch(`/api/user?phone=${cleanPhone}`)
+     const data = await res.json()
+     
+     if (data.success && data.user) {
+       // KV stores balance/vip as strings, convert to number
+       const userData = {
+         ...data.user,
+         balance: Number(data.user.balance) || 0,
+         vip: Number(data.user.vip) || 0
+       }
+       localStorage.setItem('palamedes_user', JSON.stringify(userData))
+       setUser(userData)
+     } else {
+       setUser(localUser)
+     }
+   } catch (e) {
+     console.log('KV fetch failed:', e)
+     setUser(localUser)
+   }
+   setLoading(false)
+ }
+
  useEffect(() => {
- const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
- setUser(userData)
+   loadUser()
+   window.addEventListener('focus', loadUser) // refresh on tab focus
+   return () => window.removeEventListener('focus', loadUser)
  }, [])
 
- // Listen for PWA install prompt
  useEffect(() => {
    const handler = (e) => {
      e.preventDefault()
@@ -54,7 +89,6 @@ export default function Dashboard() {
  boxSizing: 'border-box'
  }}>
 
- {/* 1 BIG BOX: Welcome + Username + Phone + Balance + Avatar */}
  <div style={{ 
  background: '#FFFFFF',
  border: '1px solid #E0E0E0',
@@ -65,13 +99,12 @@ export default function Dashboard() {
  position: 'relative',
  minHeight: '140px'
  }}>
- {/* Left side - 4 lines exactly */}
  <div style={{ paddingRight: '90px' }}>
  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
  Welcome to PALAMEDES PR
  </h2>
  <p style={{ margin: '8px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
- Username: {user?.name || user?.nickname || user?.username || 'User'}
+ Username: {loading ? 'Loading...' : user?.username || 'User'}
  </p>
  <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
  Phone number: {user?.phone || 'Not registered'}
@@ -80,21 +113,15 @@ export default function Dashboard() {
  Available balance
  </p>
  <p style={{ margin: '0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
- {(user?.balance || 0).toLocaleString()} shs
+ {loading ? '0' : (user?.balance || 0).toLocaleString()} shs
  </p>
  </div>
 
- {/* Right side - Avatar top-right, bigger 72px */}
- <div style={{ 
- position: 'absolute', 
- top: '20px', 
- right: '18px'
- }}>
+ <div style={{ position: 'absolute', top: '20px', right: '18px' }}>
  <AvatarWithBadge username={user?.username} vipLevel={user?.vip || 0} size={72} avatar={user?.avatar || ''} />
  </div>
  </div>
 
- {/* 9 Buttons - 3x3 with spacing like your green boxes */}
  <div style={{ 
  display: 'grid', 
  gridTemplateColumns: 'repeat(3, 1fr)',
@@ -125,7 +152,7 @@ export default function Dashboard() {
  </Link>
  ))}
 
- {/* 3 empty boxes on last row like sketch */}
+ {/* 3 EMPTY BOXES - KEEP THEM FOR BOTTOMNAV SPACING */}
  {[...Array(3)].map((_, i) => (
  <div key={`empty-${i}`} style={{ height: '95px' }}></div>
  ))}

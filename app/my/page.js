@@ -8,6 +8,7 @@ export default function MyPage() {
   const [userData, setUserData] = useState(null)
   const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
   const [transactions, setTransactions] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const getUGDate = (date = new Date()) => {
     const parts = new Intl.DateTimeFormat('en-UG', {
@@ -43,7 +44,7 @@ export default function MyPage() {
   const calculateEarnings = () => {
     if (!vipPurchaseDate ||!transactions.length) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
-      total: 0, invitation: 0, deposit: 0, balance: 0
+      total: 0, invitation: 0, deposit: 0, balance: userData?.balance || 0
     }
 
     const todayUG = getUGDate()
@@ -73,15 +74,13 @@ export default function MyPage() {
       }
 
       if (txDateUG >= vipStart && tx.type === 'invite_reward') inviteAmt += tx.amount
-      if (tx.type === 'vip_purchase') deposit = tx.amount
+      if (tx.type === 'vip') deposit = Math.abs(tx.amount)
     })
 
     if (isWeekend(yesterdayUG)) yesterdayAmt = 0
     if (isWeekend(todayUG)) todayAmt = 0
 
-    const balance = totalAmt + inviteAmt - transactions
-     .filter(t => t.type === 'withdraw')
-     .reduce((sum, t) => sum + t.amount, 0)
+    const balance = userData?.balance || 0
 
     return { yesterday: yesterdayAmt, today: todayAmt, thisWeek: weekAmt, thisMonth: monthAmt, total: totalAmt, invitation: inviteAmt, deposit, balance }
   }
@@ -89,15 +88,32 @@ export default function MyPage() {
   const earnings = calculateEarnings()
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    const tx = JSON.parse(localStorage.getItem('transactions') || '[]')
-    const vipDate = localStorage.getItem('vip_purchase_date')
-    setUserData(user)
-    setTransactions(tx)
-    setVipPurchaseDate(vipDate)
+    loadDashboard()
   }, [])
 
-  // Box styles - hot sky blue + black lightweight text
+  const loadDashboard = async () => {
+    const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    if (!user.phone) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/user?action=getDashboard&phone=${user.phone}`)
+      const data = await res.json()
+
+      if (data.success) {
+        setUserData(data.user) // USE API USER WITH REAL BALANCE
+        setTransactions(data.transactions || [])
+        setVipPurchaseDate(data.vipPurchaseDate)
+      }
+    } catch (err) {
+      console.error('Load dashboard error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const boxStyle = {
     backgroundColor: '#00BFFF',
     borderRadius: '12px',
@@ -120,28 +136,29 @@ export default function MyPage() {
   const todayUG = getUGDate()
   const isTodayWeekend = isWeekend(todayUG)
 
+  if (loading) {
+    return <div style={{minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>Loading...</div>
+  }
+
   return (
     <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
       <div style={{maxWidth: '448px', margin: '0 auto'}}>
         <h1 style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', marginBottom: '16px'}}>My</h1>
 
-        {/* Avatar with STAR badge - now imported from /components */}
         <div style={{display: 'flex', justifyContent: 'center', marginBottom: '16px'}}>
           <AvatarWithBadge
             username={userData?.username}
-            vipLevel={userData?.vip_level || 0}
+            vipLevel={userData?.vip || 0}
             avatar={userData?.avatar}
             size={80}
           />
         </div>
 
-        {/* Available Balance - hot sky blue */}
         <div style={{...boxStyle, marginBottom: '16px'}}>
           <p style={boxTitle}>Available Balance</p>
           <p style={boxAmount}>{earnings.balance.toLocaleString()}shs</p>
         </div>
 
-        {/* Effective Date */}
         {vipPurchaseDate && (
           <p style={{textAlign: 'center', fontSize: '14px', color: '#9ca3af', marginBottom: '16px'}}>
             {getVipPeriod(vipPurchaseDate)}
@@ -152,7 +169,6 @@ export default function MyPage() {
           <p style={{textAlign: 'center', fontSize: '12px', color: '#ef4444', marginBottom: '12px'}}>No tasks available on weekends</p>
         )}
 
-        {/* 7 Boxes Grid */}
         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
           <Box title="Yesterday's income" amount={earnings.yesterday} />
           <Box title="Today's income" amount={earnings.today} />
