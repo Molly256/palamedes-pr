@@ -6,8 +6,9 @@ export async function POST(request) {
     const { action, username, phone, password, referral } = body
 
     const cleanPhone = phone ? phone.replace(/\s+/g, '') : ''
-    const userKey = `user:palamedes:${username.toLowerCase()}`
-    const phoneKey = `phone:palamedes:${cleanPhone}`
+    // FIX: Only create keys if value exists, prevents .toLowerCase() crash on login
+    const userKey = username ? `user:palamedes:${username.toLowerCase()}` : null
+    const phoneKey = cleanPhone ? `phone:palamedes:${cleanPhone}` : null
 
     // REGISTER
     if (action === 'register') {
@@ -15,12 +16,13 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username must be 6 letters minimum' }, { status: 400 })
       }
 
-      const existingUser = await db.hgetall(userKey)
+      // FIX: Check if userKey exists before querying KV
+      const existingUser = userKey ? await db.hgetall(userKey) : null
       if (existingUser && existingUser.username) {
         return Response.json({ success: false, message: 'Username already taken' }, { status: 400 })
       }
 
-      const existingPhone = await db.hgetall(phoneKey)
+      const existingPhone = phoneKey ? await db.hgetall(phoneKey) : null
       if (existingPhone && existingPhone.username) {
         return Response.json({ success: false, message: 'Phone number already registered' }, { status: 400 })
       }
@@ -78,6 +80,10 @@ export async function POST(request) {
 
     // LOGIN  
     if (action === 'login') {
+      if (!phoneKey) {
+        return Response.json({ success: false, message: 'Phone number required' }, { status: 400 })
+      }
+
       const user = await db.hgetall(phoneKey)
       
       if (!user || !user.username) {
