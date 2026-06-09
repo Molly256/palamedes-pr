@@ -6,6 +6,8 @@ export async function POST(request) {
     const { action, username, phone, password, referral } = body
 
     const cleanPhone = phone ? phone.replace(/\s+/g, '') : ''
+    const userKey = `user:palamedes:${username.toLowerCase()}`
+    const phoneKey = `phone:palamedes:${cleanPhone}`
 
     // REGISTER
     if (action === 'register') {
@@ -13,13 +15,13 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username must be 6 letters minimum' }, { status: 400 })
       }
 
-      const existingUser = await db.get(`user:${username.toLowerCase()}`)
-      if (existingUser) {
+      const existingUser = await db.hgetall(userKey)
+      if (existingUser && existingUser.username) {
         return Response.json({ success: false, message: 'Username already taken' }, { status: 400 })
       }
 
-      const existingPhone = await db.get(`phone:${cleanPhone}`)
-      if (existingPhone) {
+      const existingPhone = await db.hgetall(phoneKey)
+      if (existingPhone && existingPhone.username) {
         return Response.json({ success: false, message: 'Phone number already registered' }, { status: 400 })
       }
 
@@ -29,11 +31,10 @@ export async function POST(request) {
       let teamC = null
 
       if (referral && referral.trim() !== '') {
-        const referrerStr = await db.get(`user:${referral.toLowerCase()}`)
-        if (!referrerStr) {
+        const referrer = await db.hgetall(`user:palamedes:${referral.toLowerCase()}`)
+        if (!referrer || !referrer.id) {
           return Response.json({ success: false, message: 'Invalid referral code' }, { status: 400 })
         }
-        const referrer = JSON.parse(referrerStr) // Parse Redis string to object
         referrerId = referrer.id
         teamA = referrer.id
         teamB = referrer.referrer || null
@@ -41,25 +42,25 @@ export async function POST(request) {
       }
 
       const newUser = {
-        id: Date.now(),
+        id: Date.now().toString(),
         username,
         phone: cleanPhone,
         password,
         referral: referral || '',
-        referrer: referrerId,
-        teamA,
-        teamB,
-        teamC,
-        balance: 0,
-        vip: 0,
+        referrer: referrerId || '',
+        teamA: teamA || '',
+        teamB: teamB || '',
+        teamC: teamC || '',
+        balance: '0',
+        vip: '0',
         createdAt: new Date().toISOString()
       }
 
-      await db.set(`user:${username.toLowerCase()}`, JSON.stringify(newUser))
-      await db.set(`phone:${cleanPhone}`, JSON.stringify(newUser))
+      await db.hset(userKey, newUser)
+      await db.hset(phoneKey, newUser)
       
-      const testRead = await db.get(`user:${username.toLowerCase()}`)
-      const redisTestMsg = testRead ? `Redis OK: Saved ${username}` : 'Redis FAIL: Could not read back'
+      const testRead = await db.hgetall(userKey)
+      const redisTestMsg = testRead && testRead.username ? `KV OK: Saved ${username}` : 'KV FAIL: Could not read back'
 
       return Response.json({ 
         success: true, 
@@ -77,13 +78,11 @@ export async function POST(request) {
 
     // LOGIN  
     if (action === 'login') {
-      const userStr = await db.get(`phone:${cleanPhone}`)
+      const user = await db.hgetall(phoneKey)
       
-      if (!userStr) {
+      if (!user || !user.username) {
         return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
       }
-      
-      const user = JSON.parse(userStr) // Parse Redis string to object
       
       if (user.password !== password) {
         return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
