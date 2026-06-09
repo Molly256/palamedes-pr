@@ -1,4 +1,4 @@
-import { db } from '../../redis.js' // NEW: import Redis client
+import { db } from '../redis.js' // Fixed path
 
 export async function POST(request) {
   try {
@@ -13,7 +13,6 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username must be 6 letters minimum' }, { status: 400 })
       }
 
-      // NEW: Check Redis instead of memory array
       const existingUser = await db.get(`user:${username.toLowerCase()}`)
       if (existingUser) {
         return Response.json({ success: false, message: 'Username already taken' }, { status: 400 })
@@ -24,17 +23,17 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone number already registered' }, { status: 400 })
       }
 
-      // NEW: Validate referral and build team chain
       let referrerId = null
-      let teamA = null // Direct referrer - 5%
-      let teamB = null // Referrer's referrer - 2%
-      let teamC = null // Referrer's referrer's referrer - 1%
+      let teamA = null
+      let teamB = null
+      let teamC = null
 
       if (referral && referral.trim() !== '') {
-        const referrer = await db.get(`user:${referral.toLowerCase()}`)
-        if (!referrer) {
+        const referrerStr = await db.get(`user:${referral.toLowerCase()}`)
+        if (!referrerStr) {
           return Response.json({ success: false, message: 'Invalid referral code' }, { status: 400 })
         }
+        const referrer = JSON.parse(referrerStr) // Parse Redis string to object
         referrerId = referrer.id
         teamA = referrer.id
         teamB = referrer.referrer || null
@@ -56,18 +55,16 @@ export async function POST(request) {
         createdAt: new Date().toISOString()
       }
 
-      // NEW: Save to Redis instead of memory
       await db.set(`user:${username.toLowerCase()}`, JSON.stringify(newUser))
       await db.set(`phone:${cleanPhone}`, JSON.stringify(newUser))
       
-      // NEW: TEST - Read it back to prove Redis works
       const testRead = await db.get(`user:${username.toLowerCase()}`)
       const redisTestMsg = testRead ? `Redis OK: Saved ${username}` : 'Redis FAIL: Could not read back'
 
       return Response.json({ 
         success: true, 
         message: 'Account created successfully',
-        redisTest: redisTestMsg, // NEW: send to frontend so you see it
+        redisTest: redisTestMsg,
         user: { 
           username: newUser.username, 
           phone: newUser.phone,
@@ -80,10 +77,15 @@ export async function POST(request) {
 
     // LOGIN  
     if (action === 'login') {
-      // NEW: Get from Redis
-      const user = await db.get(`phone:${cleanPhone}`)
+      const userStr = await db.get(`phone:${cleanPhone}`)
       
-      if (!user || user.password !== password) {
+      if (!userStr) {
+        return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
+      }
+      
+      const user = JSON.parse(userStr) // Parse Redis string to object
+      
+      if (user.password !== password) {
         return Response.json({ success: false, message: 'Invalid phone or password' }, { status: 401 })
       }
 
