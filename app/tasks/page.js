@@ -32,7 +32,7 @@ export default function TasksPage() {
         const books = bookKeys.map((k, i) => ({
           id: i + 1,
           status: data.tasks[k],
-        ...booksData[i % booksData.length]
+         ...booksData[i % booksData.length]
         }))
         setTodayBooks(books)
       }
@@ -44,14 +44,17 @@ export default function TasksPage() {
     const t = setTimeout(() => setTimer(timer - 1), 1000)
 
     if(timer === 1) {
-      // Mark book as read locally in both states so Submit becomes clickable
+      const bookKey = `book${readingBook.id}`
+
+      // Only mark as read if the key exists in tasks
+      setTasks(prev => {
+        if (!prev ||!(bookKey in prev)) return prev
+        return {...prev, [bookKey]: 'read' }
+      })
+
       setTodayBooks(prev => prev.map(b =>
         b.id === readingBook.id? {...b, status: 'read' } : b
       ))
-      setTasks(prev => ({
-       ...prev,
-        [`book${readingBook.id}`]: 'read'
-      }))
       setShowPopup(true)
     }
     return () => clearTimeout(t)
@@ -71,8 +74,23 @@ export default function TasksPage() {
   }
 
   const handleSubmit = async (bookNumber) => {
-    if (!user ||!tasks) return
-    if (tasks[`book${bookNumber}`] === 'submitted') return
+    if (!user) return
+    if (loading) return
+
+    // Re-fetch latest tasks before submit to avoid stale state
+    const fresh = await fetch(`/api/user?phone=${user.phone}`)
+    const freshData = await fresh.json()
+    if (!freshData.success) {
+      alert('Failed to refresh tasks')
+      return
+    }
+
+    const bookKey = `book${bookNumber}`
+    if (freshData.tasks[bookKey] === 'submitted') {
+      await fetchTasks(user.phone)
+      alert('Already submitted')
+      return
+    }
 
     setLoading(true)
     try {
@@ -95,7 +113,6 @@ export default function TasksPage() {
         localStorage.setItem('palamedes_user', JSON.stringify({...user, balance: data.balance}))
 
         await fetchTasks(user.phone)
-
         alert(`+${data.balance - oldBalance}shs added!`)
       } else {
         alert(data.message || 'Failed to submit task')
