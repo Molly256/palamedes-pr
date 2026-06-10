@@ -52,7 +52,7 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (user.password !== password) {
+      if (String(user.password) !== String(password)) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
