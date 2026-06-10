@@ -85,7 +85,7 @@ export default function VipTask() {
    return
  }
 
- // Set user from API response
+ // Set user from API response immediately
  setUser(data.user)
  localStorage.setItem('palamedes_user', JSON.stringify(data.user))
  setShowBuyPopup(false)
@@ -93,7 +93,7 @@ export default function VipTask() {
 
  // Force re-fetch from server to confirm KV wrote correctly
  setTimeout(async () => {
-   const refreshRes = await fetch(`/api/user?phone=${user.phone}`)
+   const refreshRes = await fetch(`/api/user?phone=${user.phone}&t=${Date.now()}`)
    const refreshData = await refreshRes.json()
    if (refreshData.success) {
      setUser(refreshData.user)
