@@ -1,4 +1,4 @@
-import { db } from '../redis.js'
+import { kv } from '@vercel/kv'
 
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
@@ -40,11 +40,11 @@ export async function GET(request) {
 
     if (!phone) return Response.json({ success: false, message: 'Phone required' })
 
-    const user = await db.hgetall(`phone:palamedes:${phone}`)
+    const user = await kv.hgetall(`phone:palamedes:${phone}`)
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
     if (action === 'getShares') {
-      const shares = await db.hgetall(`share:palamedes:${phone}`)
+      const shares = await kv.hgetall(`share:palamedes:${phone}`)
       const parsedShares = {}
       for (const [id, data] of Object.entries(shares || {})) {
         parsedShares[id] = JSON.parse(data)
@@ -52,9 +52,8 @@ export async function GET(request) {
       return Response.json({ success: true, shares: parsedShares })
     }
 
-    // GET DASHBOARD DATA - for My tab
     if (action === 'getDashboard') {
-      const txList = await db.lrange(`tx:palamedes:${phone}`, 0, -1)
+      const txList = await kv.lrange(`tx:palamedes:${phone}`, 0, -1)
       const transactions = txList.map(t => JSON.parse(t))
 
       const vipTx = transactions.find(t => t.type === 'vip')
@@ -79,7 +78,7 @@ export async function GET(request) {
     const vipLevel = Number(user.vip) || 0
 
     if (isWeekdayKampala() && user.vipLocked!== 'true') {
-      tasks = await db.hgetall(getTodayKey(phone))
+      tasks = await kv.hgetall(getTodayKey(phone))
 
       if (!tasks) {
         const config = VIP_CONFIG[vipLevel]
@@ -88,9 +87,9 @@ export async function GET(request) {
           taskObj[`book${i}`] = 'pending'
         }
         taskObj.income = String(config.books * config.perBook)
-        await db.hset(getTodayKey(phone), taskObj)
+        await kv.hset(getTodayKey(phone), taskObj)
         tasks = taskObj
-        await db.hset(`phone:palamedes:${phone}`, 'tasksCompleted', '0')
+        await kv.hset(`phone:palamedes:${phone}`, 'tasksCompleted', '0')
       }
     }
 
@@ -127,7 +126,7 @@ export async function POST(request) {
 
     if (!cleanPhone) return Response.json({ success: false, message: 'Phone required' })
 
-    const user = await db.hgetall(userKey)
+    const user = await kv.hgetall(userKey)
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
     if (action === 'submitTask') {
@@ -135,7 +134,7 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'No tasks on weekends' })
       }
 
-      const tasks = await db.hgetall(getTodayKey(cleanPhone))
+      const tasks = await kv.hgetall(getTodayKey(cleanPhone))
       const vipLevel = Number(user.vip) || 0
       const perBook = VIP_CONFIG[vipLevel].perBook
 
@@ -143,13 +142,13 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Task already submitted or invalid' })
       }
 
-      await db.hset(getTodayKey(cleanPhone), `book${bookNumber}`, 'submitted')
+      await kv.hset(getTodayKey(cleanPhone), `book${bookNumber}`, 'submitted')
 
       const newBalance = Number(user.balance) + perBook
-      await db.hset(userKey, 'balance', String(newBalance))
-      await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'balance', String(newBalance))
+      await kv.hset(userKey, 'balance', String(newBalance))
+      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'balance', String(newBalance))
 
-      await db.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
         type: 'task',
         amount: perBook,
         book: bookNumber,
@@ -157,15 +156,15 @@ export async function POST(request) {
         desc: `VIP${vipLevel} Book ${bookNumber}`
       }))
 
-      const updatedTasks = await db.hgetall(getTodayKey(cleanPhone))
+      const updatedTasks = await kv.hgetall(getTodayKey(cleanPhone))
       const totalBooks = VIP_CONFIG[vipLevel].books
       const done = Object.keys(updatedTasks).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
 
       if (done === totalBooks) {
-        await db.hset(userKey, 'vipLocked', 'true', 'tasksCompleted', String(done))
-        await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'vipLocked', 'true', 'tasksCompleted', String(done))
+        await kv.hset(userKey, 'vipLocked', 'true', 'tasksCompleted', String(done))
+        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'vipLocked', 'true', 'tasksCompleted', String(done))
       } else {
-        await db.hset(userKey, 'tasksCompleted', String(done))
+        await kv.hset(userKey, 'tasksCompleted', String(done))
       }
 
       return Response.json({ success: true, balance: newBalance, done, totalBooks })
@@ -187,14 +186,14 @@ export async function POST(request) {
 
       const refundedBalance = balance + currentPricePaid - newPrice
 
-      await db.hset(userKey,
+      await kv.hset(userKey,
         'balance', String(refundedBalance),
         'vip', String(vipLevel),
         'vipPricePaid', String(newPrice),
         'vipLocked', 'false',
         'tasksCompleted', '0'
       )
-      await db.hset(`user:palamedes:${user.username.toLowerCase()}`,
+      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`,
         'balance', String(refundedBalance),
         'vip', String(vipLevel),
         'vipPricePaid', String(newPrice),
@@ -202,24 +201,24 @@ export async function POST(request) {
         'tasksCompleted', '0'
       )
 
-      await db.del(getTodayKey(cleanPhone))
+      await kv.del(getTodayKey(cleanPhone))
       if (isWeekdayKampala()) {
         const config = VIP_CONFIG[vipLevel]
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
         taskObj.income = String(config.books * config.perBook)
-        await db.hset(getTodayKey(cleanPhone), taskObj)
+        await kv.hset(getTodayKey(cleanPhone), taskObj)
       }
 
       if (currentPricePaid > 0) {
-        await db.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+        await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
           type: 'refund',
           amount: currentPricePaid,
           date: getKampalaTime(),
           desc: `VIP${currentVip} refund on upgrade`
         }))
       }
-      await db.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
         type: 'vip',
         amount: -newPrice,
         date: getKampalaTime(),
@@ -244,16 +243,16 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Insufficient balance. Need 50,000shs' })
       }
 
-      const existingShare = await db.hget(`share:palamedes:${cleanPhone}`, shareId)
+      const existingShare = await kv.hget(`share:palamedes:${cleanPhone}`, shareId)
       if (existingShare) {
         return Response.json({ success: false, message: 'You already own this share' })
       }
 
       const newBalance = balance - price
-      await db.hset(userKey, 'balance', String(newBalance))
-      await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'balance', String(newBalance))
+      await kv.hset(userKey, 'balance', String(newBalance))
+      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'balance', String(newBalance))
 
-      await db.hset(`share:palamedes:${cleanPhone}`, shareId, JSON.stringify({
+      await kv.hset(`share:palamedes:${cleanPhone}`, shareId, JSON.stringify({
         name: config.name,
         price: price,
         daily: config.daily,
@@ -262,7 +261,7 @@ export async function POST(request) {
         lastClaim: getKampalaTime()
       }))
 
-      await db.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
         type: 'share',
         amount: -price,
         date: getKampalaTime(),
@@ -275,40 +274,40 @@ export async function POST(request) {
     if (action === 'updateProfile') {
       if (field === 'nickname') {
         if (value.length > 6) return Response.json({ success: false, message: 'Nickname max 6 letters' })
-        await db.hset(userKey, 'nickname', value)
-        await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'nickname', value)
+        await kv.hset(userKey, 'nickname', value)
+        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'nickname', value)
         return Response.json({ success: true, message: 'Nickname saved' })
       }
 
       if (field === 'bankMTN') {
-        await db.hset(userKey, 'bankMTN', value)
-        await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'bankMTN', value)
+        await kv.hset(userKey, 'bankMTN', value)
+        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'bankMTN', value)
         return Response.json({ success: true, message: 'MTN bank saved' })
       }
 
       if (field === 'bankAirtel') {
-        await db.hset(userKey, 'bankAirtel', value)
-        await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'bankAirtel', value)
+        await kv.hset(userKey, 'bankAirtel', value)
+        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'bankAirtel', value)
         return Response.json({ success: true, message: 'Airtel bank saved' })
       }
 
       if (field === 'avatar') {
-        await db.hset(userKey, 'avatar', value)
-        await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'avatar', value)
+        await kv.hset(userKey, 'avatar', value)
+        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'avatar', value)
         return Response.json({ success: true, message: 'Avatar updated' })
       }
     }
 
     if (action === 'changePassword') {
-      if (user.password!== oldPass) {
+      if (String(user.password)!== String(oldPass)) {
         return Response.json({ success: false, message: 'Old password incorrect' })
       }
       if (newPass.length < 4) {
         return Response.json({ success: false, message: 'New password too short' })
       }
 
-      await db.hset(userKey, 'password', newPass)
-      await db.hset(`user:palamedes:${user.username.toLowerCase()}`, 'password', newPass)
+      await kv.hset(userKey, 'password', newPass)
+      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'password', newPass)
       return Response.json({ success: true, message: 'Password changed' })
     }
 

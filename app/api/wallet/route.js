@@ -1,4 +1,4 @@
-import { db } from '../redis.js'
+import { kv } from '@vercel/kv'
 
 function getKampalaTime() {
   return new Date().toLocaleString('en-GB', {
@@ -15,7 +15,7 @@ export async function GET(request) {
 
     if (!phone) return Response.json({ success: false, message: 'Phone required' })
 
-    const txList = await db.lrange(`tx:palamedes:${phone}`, 0, 99)
+    const txList = await kv.lrange(`tx:palamedes:${phone}`, 0, 99)
     const transactions = txList.map(tx => JSON.parse(tx))
 
     return Response.json({ success: true, transactions })
@@ -33,7 +33,7 @@ export async function POST(request) {
 
     if (!cleanPhone) return Response.json({ success: false, message: 'Phone required' })
 
-    const user = await db.hgetall(userKey)
+    const user = await kv.hgetall(userKey)
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
     let newBalance = Number(user.balance) || 0
@@ -45,10 +45,10 @@ export async function POST(request) {
       if (!amt || amt <= 0) return Response.json({ success: false, message: 'Invalid amount' })
 
       newBalance += amt
-      await db.hset(userKey, 'balance', String(newBalance))
-      await db.hset(`user:palamedes:${username.toLowerCase()}`, 'balance', String(newBalance))
+      await kv.hset(userKey, 'balance', String(newBalance))
+      await kv.hset(`user:palamedes:${username.toLowerCase()}`, 'balance', String(newBalance))
 
-      await db.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
         type: 'deposit',
         amount: amt,
         date: getKampalaTime(),
@@ -73,11 +73,11 @@ export async function POST(request) {
       }
 
       newBalance -= totalDeduct
-      await db.hset(userKey, 'balance', String(newBalance))
-      await db.hset(`user:palamedes:${username.toLowerCase()}`, 'balance', String(newBalance))
+      await kv.hset(userKey, 'balance', String(newBalance))
+      await kv.hset(`user:palamedes:${username.toLowerCase()}`, 'balance', String(newBalance))
 
       // Save as -requestedAmt only, fee hidden
-      await db.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
         type: 'withdraw',
         amount: -requestedAmt,
         date: getKampalaTime(),
