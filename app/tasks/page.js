@@ -32,7 +32,7 @@ export default function TasksPage() {
         const books = bookKeys.map((k, i) => ({
           id: i + 1,
           status: data.tasks[k],
-         ...booksData[i % booksData.length]
+        ...booksData[i % booksData.length]
         }))
         setTodayBooks(books)
       }
@@ -44,10 +44,14 @@ export default function TasksPage() {
     const t = setTimeout(() => setTimer(timer - 1), 1000)
 
     if(timer === 1) {
-      // Mark book as read locally when timer finishes
+      // Mark book as read locally in both states so Submit becomes clickable
       setTodayBooks(prev => prev.map(b =>
-        b.id === readingBook.id? {...b, status: 'read'} : b
+        b.id === readingBook.id? {...b, status: 'read' } : b
       ))
+      setTasks(prev => ({
+       ...prev,
+        [`book${readingBook.id}`]: 'read'
+      }))
       setShowPopup(true)
     }
     return () => clearTimeout(t)
@@ -68,7 +72,7 @@ export default function TasksPage() {
 
   const handleSubmit = async (bookNumber) => {
     if (!user ||!tasks) return
-    if (tasks[`book${bookNumber}`]!== 'read' && tasks[`book${bookNumber}`]!== 'pending') return
+    if (tasks[`book${bookNumber}`] === 'submitted') return
 
     setLoading(true)
     try {
@@ -83,6 +87,7 @@ export default function TasksPage() {
       })
 
       const data = await res.json()
+      console.log("API response:", data)
 
       if (data.success) {
         const oldBalance = user.balance
