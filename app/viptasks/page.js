@@ -56,20 +56,29 @@ export default function VipTask() {
  }
 
  try {
- const res = await fetch('/api/vipbuy', {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({
- phone: user.phone,
- vipLevel: selectedVip.level
- })
+ const res = await fetch('/api/user', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({
+     action: 'buyvip',
+     phone: user.phone,
+     vipLevel: selectedVip.level
+   })
  })
 
- const data = await res.json()
+ const text = await res.text()
+ let data
+ try {
+   data = JSON.parse(text)
+ } catch (e) {
+   console.error('API returned non-JSON:', text)
+   alert('Server error. Check console for details.')
+   return
+ }
 
  if (!data.success) {
- alert(data.message)
- return
+   alert(data.message)
+   return
  }
 
  // Update state + localStorage instantly
@@ -94,7 +103,7 @@ export default function VipTask() {
    username={user.username} 
    vipLevel={Number(user.vip || 0)} 
    size={60} 
-   key={user.vip + '-' + user.balance} // Force re-render when VIP changes
+   key={user.vip + '-' + user.balance}
  />
  <div style={{ marginTop: '8px', textAlign: 'left' }}>
  <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>
