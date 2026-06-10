@@ -29,24 +29,30 @@ export default function TasksPage() {
 
       if (data.tasks) {
         const bookKeys = Object.keys(data.tasks).filter(k => k.startsWith('book'))
-        const books = bookKeys.map((k, i) => ({
-          id: i + 1,
-          status: data.tasks[k],
-         ...booksData[i % booksData.length]
-        }))
+
+        // FIX: Use the actual book number from the key, not array index
+        const books = bookKeys.map(k => {
+          const bookNum = Number(k.replace('book', ''))
+          return {
+            id: bookNum,
+            status: data.tasks[k],
+           ...booksData[(bookNum - 1) % booksData.length]
+          }
+        })
         setTodayBooks(books)
+      } else {
+        setTodayBooks([])
       }
     }
   }
 
   useEffect(() => {
-    if(!readingBook || timer === 0) return
+    if (!readingBook || timer === 0) return
     const t = setTimeout(() => setTimer(timer - 1), 1000)
 
-    if(timer === 1) {
+    if (timer === 1) {
       const bookKey = `book${readingBook.id}`
 
-      // Only mark as read if the key exists in tasks
       setTasks(prev => {
         if (!prev ||!(bookKey in prev)) return prev
         return {...prev, [bookKey]: 'read' }
@@ -77,7 +83,6 @@ export default function TasksPage() {
     if (!user) return
     if (loading) return
 
-    // Re-fetch latest tasks before submit to avoid stale state
     const fresh = await fetch(`/api/user?phone=${user.phone}`)
     const freshData = await fresh.json()
     if (!freshData.success) {
@@ -86,6 +91,12 @@ export default function TasksPage() {
     }
 
     const bookKey = `book${bookNumber}`
+    if (!freshData.tasks[bookKey]) {
+      alert('Invalid book number for your VIP level')
+      await fetchTasks(user.phone)
+      return
+    }
+
     if (freshData.tasks[bookKey] === 'submitted') {
       await fetchTasks(user.phone)
       alert('Already submitted')
@@ -96,7 +107,7 @@ export default function TasksPage() {
     try {
       const res = await fetch('/api/user', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'submitTask',
           phone: user.phone,
@@ -109,8 +120,8 @@ export default function TasksPage() {
 
       if (data.success) {
         const oldBalance = user.balance
-        setUser(prev => ({...prev, balance: data.balance}))
-        localStorage.setItem('palamedes_user', JSON.stringify({...user, balance: data.balance}))
+        setUser(prev => ({...prev, balance: data.balance }))
+        localStorage.setItem('palamedes_user', JSON.stringify({...user, balance: data.balance }))
 
         await fetchTasks(user.phone)
         alert(`+${data.balance - oldBalance}shs added!`)
@@ -123,20 +134,20 @@ export default function TasksPage() {
     setLoading(false)
   }
 
-  if (!user) return <div style={{padding: 20}}>Loading...</div>
+  if (!user) return <div style={{ padding: 20 }}>Loading...</div>
 
-  if(readingBook) {
+  if (readingBook) {
     return (
-      <div style={{padding: 20, minHeight: "100vh", background: "#FFFFFF", color: "#000"}}>
-        <button onClick={() => {setReadingBook(null); setTimer(10)}} style={{
+      <div style={{ padding: 20, minHeight: "100vh", background: "#FFFFFF", color: "#000" }}>
+        <button onClick={() => { setReadingBook(null); setTimer(10) }} style={{
           marginBottom: 20, padding: "8px 16px", background: "#F5F5F5", border: "1px solid #E0E0E0",
           borderRadius: 6, color: "#000", cursor: "pointer", fontWeight: "400"
         }}>← Back</button>
 
-        <h2 style={{marginBottom: 15, fontWeight: "400", color: "#000"}}>{readingBook.title}</h2>
-        <p style={{fontSize: 16, lineHeight: 1.7, color: "#333"}}>{readingBook.preview}</p>
+        <h2 style={{ marginBottom: 15, fontWeight: "400", color: "#000" }}>{readingBook.title}</h2>
+        <p style={{ fontSize: 16, lineHeight: 1.7, color: "#333" }}>{readingBook.preview}</p>
 
-        <div style={{position: "fixed", top: 20, right: 20, fontSize: 22, fontWeight: "400", color: SKYBLUE}}>
+        <div style={{ position: "fixed", top: 20, right: 20, fontSize: 22, fontWeight: "400", color: SKYBLUE }}>
           {timer}s
         </div>
 
@@ -145,9 +156,9 @@ export default function TasksPage() {
             position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
             background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100
           }}>
-            <div style={{background: "#FFFFFF", padding: 30, borderRadius: 16, textAlign: "center", border: `2px solid ${SKYBLUE}`}}>
-              <h3 style={{color: "#000", margin: "0 0 10px 0", fontSize: 24, fontWeight: "400"}}>Time Complete ⌛</h3>
-              <p style={{color: "#666", fontSize: 14, marginBottom: 15}}>Tap Submit on tasks page to claim</p>
+            <div style={{ background: "#FFFFFF", padding: 30, borderRadius: 16, textAlign: "center", border: `2px solid ${SKYBLUE}` }}>
+              <h3 style={{ color: "#000", margin: "0 0 10px 0", fontSize: 24, fontWeight: "400" }}>Time Complete ⌛</h3>
+              <p style={{ color: "#666", fontSize: 14, marginBottom: 15 }}>Tap Submit on tasks page to claim</p>
               <button onClick={handlePopupOk} style={{
                 padding: "12px 24px", background: SKYBLUE, border: "none",
                 borderRadius: 8, fontWeight: "400", cursor: "pointer", fontSize: 16, color: "#000"
@@ -165,14 +176,14 @@ export default function TasksPage() {
   const submittedBooks = todayBooks.filter(b => b.status === 'submitted')
 
   return (
-    <div style={{padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000"}}>
-      <h2 style={{marginBottom: 20, fontWeight: "400", color: "#000"}}>
+    <div style={{ padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000" }}>
+      <h2 style={{ marginBottom: 20, fontWeight: "400", color: "#000" }}>
         Today's Tasks - VIP{user.vip}
-        {user.vipLocked === 'true' && <span style={{color: SKYBLUE, fontSize: 14}}> [Locked]</span>}
+        {user.vipLocked === 'true' && <span style={{ color: SKYBLUE, fontSize: 14 }}> [Locked]</span>}
       </h2>
 
       {pendingBooks.length === 0 && submittedBooks.length === 0? (
-        <p style={{textAlign: "center", marginTop: 100, color: "#666"}}>
+        <p style={{ textAlign: "center", marginTop: 100, color: "#666" }}>
           {user.vipLocked === 'true'? "Tasks locked. Wait for next weekday." : "No tasks available"}
         </p>
       ) : (
@@ -188,11 +199,11 @@ export default function TasksPage() {
               <img src={book.cover} alt={book.title} style={{
                 width: 70, height: 100, objectFit: "cover", borderRadius: 8
               }} />
-              <div style={{flex: 1}}>
-                <h4 style={{margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16}}>
+              <div style={{ flex: 1 }}>
+                <h4 style={{ margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
                   {book.title}
                 </h4>
-                <div style={{display: "flex", gap: 10}}>
+                <div style={{ display: "flex", gap: 10 }}>
                   <button
                     onClick={() => handleRead(book)}
                     disabled={isRead}
@@ -232,19 +243,19 @@ export default function TasksPage() {
         })
       )}
 
-      <h2 style={{marginTop: 40, marginBottom: 20, fontWeight: "400", color: "#000"}}>
+      <h2 style={{ marginTop: 40, marginBottom: 20, fontWeight: "400", color: "#000" }}>
         Completed Tasks ({submittedBooks.length}/{todayBooks.length})
       </h2>
       {submittedBooks.length === 0? (
-        <p style={{color: "#666"}}>No completed tasks yet</p>
+        <p style={{ color: "#666" }}>No completed tasks yet</p>
       ) : (
         submittedBooks.map(book => (
           <div key={book.id} style={{
             padding: 12, marginBottom: 10, display: "flex", gap: 12, alignItems: "center",
             borderBottom: "1px solid #E0E0E0"
           }}>
-            <img src={book.cover} style={{width: 50, height: 75, objectFit: "cover", borderRadius: 6}} />
-            <p style={{margin: 0, fontWeight: "400", color: "#000"}}>{book.title}</p>
+            <img src={book.cover} style={{ width: 50, height: 75, objectFit: "cover", borderRadius: 6 }} />
+            <p style={{ margin: 0, fontWeight: "400", color: "#000" }}>{book.title}</p>
           </div>
         ))
       )}
