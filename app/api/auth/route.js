@@ -1,51 +1,58 @@
-import { db } from '../redis.js'
+import { kv } from '@vercel/kv'
 
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, username, password, phone } = body
+    const { action, username, password, phone, referral } = body
     const cleanPhone = phone?.replace(/\s+/g, '')
     const userKey = `phone:palamedes:${cleanPhone}`
     const usernameKey = `user:palamedes:${username?.toLowerCase()}`
 
     // REGISTER
     if (action === 'register') {
-      if (!username ||!password ||!cleanPhone) {
+      if (!username || !password || !cleanPhone) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
-      const exists = await db.exists(userKey)
-      if (exists) return Response.json({ success: false, message: 'Phone already registered' })
+      const exists = await kv.exists(userKey)
+      if (exists) {
+        return Response.json({ success: false, message: 'Phone already registered' })
+      }
 
-      const userExists = await db.exists(usernameKey)
-      if (userExists) return Response.json({ success: false, message: 'Username taken' })
+      const userExists = await kv.exists(usernameKey)
+      if (userExists) {
+        return Response.json({ success: false, message: 'Username taken' })
+      }
 
-      await db.hset(userKey,
-        'username', username,
-        'phone', cleanPhone,
-        'password', password,
-        'balance', '0',
-        'vip', '0',
-        'vipPricePaid', '0',
-        'vipLocked', 'false',
-        'tasksCompleted', '0'
-      )
-      await db.hset(usernameKey, 'phone', cleanPhone)
+      await kv.hset(userKey, {
+        username,
+        phone: cleanPhone,
+        password,
+        balance: '0',
+        vip: '0',
+        vipPricePaid: '0',
+        vipLocked: 'false',
+        tasksCompleted: '0',
+        referral: referral || ''
+      })
+      
+      await kv.hset(usernameKey, { phone: cleanPhone })
 
       return Response.json({ success: true, message: 'Registered successfully' })
     }
 
     // LOGIN
     if (action === 'login') {
-      if (!cleanPhone ||!password) {
+      if (!cleanPhone || !password) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      const user = await db.hgetall(userKey)
-      if (!user ||!user.username) {
+      const user = await kv.hgetall(userKey)
+      if (!user || !user.username) {
         return Response.json({ success: false, message: 'User not found' })
       }
-      if (user.password!== password) {
+
+      if (user.password !== password) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
