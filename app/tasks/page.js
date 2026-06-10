@@ -27,15 +27,13 @@ export default function TasksPage() {
       setUser(data.user)
       setTasks(data.tasks)
 
-      // Build today's books from tasks object
       if (data.tasks) {
         const bookKeys = Object.keys(data.tasks).filter(k => k.startsWith('book'))
-        const books = bookKeys
-         .map((k, i) => ({
-            id: i + 1,
-            status: data.tasks[k],
-           ...booksData[i % booksData.length]
-          }))
+        const books = bookKeys.map((k, i) => ({
+          id: i + 1,
+          status: data.tasks[k],
+         ...booksData[i % booksData.length]
+        }))
         setTodayBooks(books)
       }
     }
@@ -44,11 +42,19 @@ export default function TasksPage() {
   useEffect(() => {
     if(!readingBook || timer === 0) return
     const t = setTimeout(() => setTimer(timer - 1), 1000)
-    if(timer === 1) setShowPopup(true)
+
+    if(timer === 1) {
+      // Mark book as read locally when timer finishes
+      setTodayBooks(prev => prev.map(b =>
+        b.id === readingBook.id? {...b, status: 'read'} : b
+      ))
+      setShowPopup(true)
+    }
     return () => clearTimeout(t)
   }, [timer, readingBook])
 
   const handleRead = (book) => {
+    if (book.status === 'read' || book.status === 'submitted') return
     setReadingBook(book)
     setTimer(10)
     setShowPopup(false)
@@ -62,7 +68,7 @@ export default function TasksPage() {
 
   const handleSubmit = async (bookNumber) => {
     if (!user ||!tasks) return
-    if (tasks[`book${bookNumber}`]!== 'pending') return
+    if (tasks[`book${bookNumber}`]!== 'read' && tasks[`book${bookNumber}`]!== 'pending') return
 
     setLoading(true)
     try {
@@ -79,14 +85,13 @@ export default function TasksPage() {
       const data = await res.json()
 
       if (data.success) {
-        // Update local state immediately
+        const oldBalance = user.balance
         setUser(prev => ({...prev, balance: data.balance}))
         localStorage.setItem('palamedes_user', JSON.stringify({...user, balance: data.balance}))
 
-        // Refresh tasks from server
         await fetchTasks(user.phone)
 
-        alert(`+${data.balance - user.balance}shs added!`)
+        alert(`+${data.balance - oldBalance}shs added!`)
       } else {
         alert(data.message || 'Failed to submit task')
       }
@@ -134,23 +139,25 @@ export default function TasksPage() {
     )
   }
 
-  const pendingBooks = todayBooks.filter(b => b.status === 'pending')
+  const pendingBooks = todayBooks.filter(b => b.status === 'pending' || b.status === 'read')
   const submittedBooks = todayBooks.filter(b => b.status === 'submitted')
 
   return (
     <div style={{padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000"}}>
       <h2 style={{marginBottom: 20, fontWeight: "400", color: "#000"}}>
         Today's Tasks - VIP{user.vip}
-        {user.vipLocked === true && <span style={{color: SKYBLUE, fontSize: 14}}> [Locked]</span>}
+        {user.vipLocked === 'true' && <span style={{color: SKYBLUE, fontSize: 14}}> [Locked]</span>}
       </h2>
 
       {pendingBooks.length === 0 && submittedBooks.length === 0? (
         <p style={{textAlign: "center", marginTop: 100, color: "#666"}}>
-          {user.vipLocked? "Tasks locked. Wait for next weekday." : "No tasks available"}
+          {user.vipLocked === 'true'? "Tasks locked. Wait for next weekday." : "No tasks available"}
         </p>
       ) : (
         pendingBooks.map(book => {
-          const isRead = timer === 0 && readingBook?.id === book.id
+          const isRead = book.status === 'read' || book.status === 'submitted'
+          const canSubmit = book.status === 'read'
+
           return (
             <div key={book.id} style={{
               padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
@@ -182,16 +189,16 @@ export default function TasksPage() {
                   </button>
                   <button
                     onClick={() => handleSubmit(book.id)}
-                    disabled={loading ||!isRead}
+                    disabled={loading ||!canSubmit}
                     style={{
                       padding: "8px 16px",
                       background: SKYBLUE,
                       border: "none",
                       borderRadius: 6,
                       color: "#000",
-                      cursor: loading ||!isRead? "not-allowed" : "pointer",
+                      cursor: loading ||!canSubmit? "not-allowed" : "pointer",
                       fontWeight: "400",
-                      opacity: loading ||!isRead? 0.6 : 1
+                      opacity: loading ||!canSubmit? 0.6 : 1
                     }}
                   >
                     {loading? 'Submitting...' : 'Submit'}
