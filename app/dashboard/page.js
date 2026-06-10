@@ -21,7 +21,8 @@ export default function Dashboard() {
    
    try {
      // Fetch from api/user using phone:palamedes:{phone} key
-     const res = await fetch(`/api/user?phone=${cleanPhone}`)
+     // Added ?t=timestamp to prevent browser cache after VIP purchase
+     const res = await fetch(`/api/user?phone=${cleanPhone}&t=${Date.now()}`)
      const data = await res.json()
      
      if (data.success && data.user) {
