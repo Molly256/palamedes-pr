@@ -20,6 +20,15 @@ const SHARE_CONFIG = {
   whale: { name: 'The whale', price: 50000, daily: 0.05, cycle: 180 }
 }
 
+function safeParse(val) {
+  if (!val || val === '' || val === 'null' || val === 'undefined') return null
+  try {
+    return JSON.parse(val)
+  } catch {
+    return null
+  }
+}
+
 function getKampalaTime() {
   return new Date().toLocaleString('en-GB', {
     timeZone: 'Africa/Kampala',
@@ -53,14 +62,14 @@ export async function GET(request) {
       const shares = await kv.hgetall(`share:palamedes:${phone}`)
       const parsedShares = {}
       for (const [id, data] of Object.entries(shares || {})) {
-        parsedShares[id] = JSON.parse(data)
+        parsedShares[id] = safeParse(data)
       }
       return Response.json({ success: true, shares: parsedShares })
     }
 
     if (action === 'getDashboard') {
       const txList = await kv.lrange(`transactions:${phone}`, 0, 49)
-      const transactions = txList.map(t => JSON.parse(t))
+      const transactions = txList.map(t => safeParse(t)).filter(Boolean)
 
       const vipTx = transactions.find(t => t.type === 'vip')
       const vipPurchaseDate = vipTx? vipTx.date : null
@@ -110,8 +119,8 @@ export async function GET(request) {
         vip: vipLevel,
         nickname: user.nickname || '',
         avatar: user.avatar || '',
-        bankMTN: user.bankMTN && user.bankMTN!== ''? JSON.parse(user.bankMTN) : null,
-        bankAirtel: user.bankAirtel && user.bankAirtel!== ''? JSON.parse(user.bankAirtel) : null,
+        bankMTN: safeParse(user.bankMTN),
+        bankAirtel: safeParse(user.bankAirtel),
         password: user.password || '',
         vipLocked: user.vipLocked === 'true',
         tasksCompleted: Number(user.tasksCompleted) || 0,
@@ -268,8 +277,8 @@ export async function POST(request) {
           tasksCompleted: 0,
           nickname: user.nickname || '',
           avatar: user.avatar || '',
-          bankMTN: user.bankMTN && user.bankMTN!== ''? JSON.parse(user.bankMTN) : null,
-          bankAirtel: user.bankAirtel && user.bankAirtel!== ''? JSON.parse(user.bankAirtel) : null,
+          bankMTN: safeParse(user.bankMTN),
+          bankAirtel: safeParse(user.bankAirtel),
           password: user.password || ''
         }
 
