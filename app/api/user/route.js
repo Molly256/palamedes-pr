@@ -3,9 +3,15 @@ import { kv } from '@vercel/kv'
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
- 2: { price: 200000, books: 5, perBook: 1000 },
- 3: { price: 500000, books: 6, perBook: 1500 },
- 4: { price: 1000000, books: 8, perBook: 2500 }
+ 2: { price: 250000, books: 4, perBook: 2000 },
+ 3: { price: 790000, books: 4, perBook: 6500 },
+ 4: { price: 1000000, books: 5, perBook: 7000 },
+ 5: { price: 1500000, books: 5, perBook: 10000 },
+ 6: { price: 2100000, books: 5, perBook: 14000 },
+ 7: { price: 4000000, books: 5, perBook: 28000 },
+ 8: { price: 4600000, books: 5, perBook: 32000 },
+ 9: { price: 5000000, books: 5, perBook: 40000 },
+ 10: { price: 8000000, books: 5, perBook: 60000 },
 }
 
 const SHARE_CONFIG = {
@@ -82,6 +88,8 @@ export async function GET(request) {
 
       if (!tasks) {
         const config = VIP_CONFIG[vipLevel]
+        if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
+
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) {
           taskObj[`book${i}`] = 'pending'
@@ -113,6 +121,7 @@ export async function GET(request) {
       isWeekday: isWeekdayKampala()
     })
   } catch (err) {
+    console.error('GET /api/user error:', err)
     return Response.json({ success: false, message: err.message }, { status: 500 })
   }
 }
@@ -135,9 +144,12 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'No tasks on weekends' })
       }
 
-      const tasks = await kv.hgetall(getTodayKey(cleanPhone))
       const currentVipLevel = Number(user.vip) || 0
-      const perBook = VIP_CONFIG[currentVipLevel].perBook
+      const config = VIP_CONFIG[currentVipLevel]
+      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
+
+      const tasks = await kv.hgetall(getTodayKey(cleanPhone))
+      const perBook = config.perBook
 
       if (!tasks || tasks[`book${bookNumber}`]!== 'pending') {
         return Response.json({ success: false, message: 'Task already submitted or invalid' })
@@ -158,7 +170,7 @@ export async function POST(request) {
       }))
 
       const updatedTasks = await kv.hgetall(getTodayKey(cleanPhone))
-      const totalBooks = VIP_CONFIG[currentVipLevel].books
+      const totalBooks = config.books
       const done = Object.keys(updatedTasks).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
 
       if (done === totalBooks) {
@@ -174,40 +186,36 @@ export async function POST(request) {
     if (action === 'buyvip') {
       const currentVip = Number(user.vip) || 0
       const currentPricePaid = Number(user.vipPricePaid) || 0
-      const newPrice = VIP_CONFIG[vipLevel]?.price
+      const config = VIP_CONFIG[vipLevel]
+
+      if (!config) {
+        return Response.json({ success: false, message: 'Invalid VIP level' })
+      }
+
+      const newPrice = config.price
       const balance = Number(user.balance) || 0
 
       if (!vipLevel || vipLevel <= currentVip) {
         return Response.json({ success: false, message: 'Cannot downgrade VIP' })
       }
 
-      if (!newPrice) {
-        return Response.json({ success: false, message: 'Invalid VIP level' })
-      }
-
-      // Must have full price in balance. No netting.
       if (balance < newPrice) {
         return Response.json({ success: false, message: 'Insufficient balance' })
       }
 
-      // 1. Deduct full price
       let newBalance = balance - newPrice
-
-      // 2. Refund old VIP price immediately
       if (currentPricePaid > 0) {
         newBalance += currentPricePaid
       }
 
-      // 3. Check if user finished old VIP tasks today
       const todayKey = getTodayKey(cleanPhone)
       const oldTasks = await kv.hgetall(todayKey)
       const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
       const doneToday = oldTasks
-      ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+       ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
         : 0
       const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
-      // 4. Update user in both keys
       await kv.hset(userKey,
         'balance', String(newBalance),
         'vip', String(vipLevel),
@@ -223,20 +231,16 @@ export async function POST(request) {
         'tasksCompleted', '0'
       )
 
-      // 5. Delete old tasks, create new VIP tasks if allowed
       await kv.del(todayKey)
 
       if (isWeekdayKampala() &&!alreadyFinishedToday) {
-        const config = VIP_CONFIG[vipLevel]
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
         taskObj.income = String(config.books * config.perBook)
         await kv.hset(todayKey, taskObj)
       }
 
-      // 6. Write transactions
       const timestamp = getKampalaTime()
-
       if (currentPricePaid > 0) {
         await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
           type: 'refund',
@@ -344,7 +348,7 @@ export async function POST(request) {
 
     return Response.json({ success: false, message: 'Invalid action' })
   } catch (err) {
-    console.error('User API error:', err)
+    console.error('POST /api/user error:', err)
     return Response.json({ success: false, message: err.message }, { status: 500 })
   }
 }
