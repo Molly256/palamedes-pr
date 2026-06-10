@@ -178,7 +178,6 @@ export async function POST(request) {
 
       const newBalance = Number(user.balance) + perBook
       await kv.hset(userKey, 'balance', String(newBalance))
-      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'balance', String(newBalance))
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
         type: 'task',
@@ -194,7 +193,6 @@ export async function POST(request) {
 
       if (done === totalBooks) {
         await kv.hset(userKey, 'vipLocked', 'true', 'tasksCompleted', String(done))
-        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'vipLocked', 'true', 'tasksCompleted', String(done))
       } else {
         await kv.hset(userKey, 'tasksCompleted', String(done))
       }
@@ -242,19 +240,12 @@ export async function POST(request) {
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
-         ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+        ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
+        // Update only phone:palamedes:phone key
         await kv.hset(userKey,
-          'balance', String(newBalance),
-          'vip', String(vipLevel),
-          'vipPricePaid', String(newPrice),
-          'vipLocked', 'false',
-          'tasksCompleted', '0'
-        )
-
-        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`,
           'balance', String(newBalance),
           'vip', String(vipLevel),
           'vipPricePaid', String(newPrice),
@@ -339,7 +330,6 @@ export async function POST(request) {
 
       const newBalance = balance - price
       await kv.hset(userKey, 'balance', String(newBalance))
-      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'balance', String(newBalance))
 
       await kv.hset(`share:palamedes:${cleanPhone}`, shareId, JSON.stringify({
         name: config.name,
@@ -364,25 +354,21 @@ export async function POST(request) {
       if (field === 'nickname') {
         if (value.length > 6) return Response.json({ success: false, message: 'Nickname max 6 letters' })
         await kv.hset(userKey, 'nickname', value)
-        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'nickname', value)
         return Response.json({ success: true, message: 'Nickname saved' })
       }
 
       if (field === 'bankMTN') {
         await kv.hset(userKey, 'bankMTN', value)
-        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'bankMTN', value)
         return Response.json({ success: true, message: 'MTN bank saved' })
       }
 
       if (field === 'bankAirtel') {
         await kv.hset(userKey, 'bankAirtel', value)
-        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'bankAirtel', value)
         return Response.json({ success: true, message: 'Airtel bank saved' })
       }
 
       if (field === 'avatar') {
         await kv.hset(userKey, 'avatar', value)
-        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'avatar', value)
         return Response.json({ success: true, message: 'Avatar updated' })
       }
     }
@@ -396,7 +382,6 @@ export async function POST(request) {
       }
 
       await kv.hset(userKey, 'password', newPass)
-      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'password', newPass)
       return Response.json({ success: true, message: 'Password changed' })
     }
 
