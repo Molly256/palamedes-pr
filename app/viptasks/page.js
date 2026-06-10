@@ -29,7 +29,7 @@ export default function VipTask() {
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
- if (userData.vip === undefined || userData.vip === null) userData.vip = 0
+ userData.vip = Number(userData.vip || 0) // force number
  if (!userData.tasks_read_today) userData.tasks_read_today = 0
  localStorage.setItem('palamedes_user', JSON.stringify(userData))
  setUser(userData)
@@ -37,7 +37,7 @@ export default function VipTask() {
 
  const handleBuyVip = (vip) => {
  if (!user) return
- if (vip.level <= user.vip) {
+ if (vip.level <= Number(user.vip)) {
  alert('You already have this VIP or higher')
  return
  }
@@ -46,7 +46,7 @@ export default function VipTask() {
  }
 
  const confirmBuy = async () => {
- if (!user || !selectedVip) return
+ if (!user ||!selectedVip) return
 
  const newPrice = selectedVip.price
 
@@ -81,7 +81,8 @@ export default function VipTask() {
    return
  }
 
- // Update state + localStorage instantly
+ // Force vip to number before saving
+ data.user.vip = Number(data.user.vip)
  setUser(data.user)
  localStorage.setItem('palamedes_user', JSON.stringify(data.user))
  setShowBuyPopup(false)
@@ -94,23 +95,25 @@ export default function VipTask() {
 
  if (!user) return null
 
+ const currentVipLevel = Number(user.vip || 0)
+
  return (
  <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '30px' }}>
  <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', paddingTop: '8px' }}>← Back</Link>
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
- <AvatarWithBadge 
-   username={user.username} 
-   vipLevel={Number(user.vip || 0)} 
-   size={60} 
-   key={user.vip + '-' + user.balance}
+ <AvatarWithBadge
+   username={user.username}
+   vipLevel={currentVipLevel}
+   size={60}
+   key={currentVipLevel + '-' + user.balance}
  />
  <div style={{ marginTop: '8px', textAlign: 'left' }}>
  <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>
    Balance: {user.balance?.toLocaleString() || 0} shs
  </p>
  <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
-   {vips[user.vip || 0].name}
+   {vips[currentVipLevel].name}
  </p>
  {user.vipExpiry && (
    <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#666', fontWeight: '600' }}>
@@ -125,13 +128,13 @@ export default function VipTask() {
 
  <div style={{ display: 'grid', gap: '12px', marginBottom: '40px' }}>
  {vips.map(vip => {
- const isCurrent = user.vip === vip.level
+ const isCurrent = currentVipLevel === vip.level
 
  return (
  <div key={vip.level} style={{
  background: hotColors[vip.level],
  padding: '18px 20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between',
- alignItems: 'center', minHeight: '75px', opacity: vip.level > user.vip ? 1 : 0.6
+ alignItems: 'center', minHeight: '75px', opacity: vip.level > currentVipLevel? 1 : 0.6
  }}>
  <div style={{ color: '#000' }}>
  <p style={{ margin: 0, fontWeight: '900', fontSize: '16px', color: '#000' }}>{vip.name}</p>
@@ -142,13 +145,13 @@ export default function VipTask() {
  </div>
 
  <div>
- {vip.level > user.vip && vip.level <= 3 && (
+ {vip.level > currentVipLevel && vip.level <= 3 && (
  <button onClick={() => handleBuyVip(vip)} style={{
  padding: '10px 24px', borderRadius: '50px', border: 'none',
  background: 'white', fontWeight: '900', cursor: 'pointer', color: '#000'
  }}>BUY</button>
  )}
- {vip.level > 3 && vip.level > user.vip && <div style={{ fontSize: '28px' }}>🔒</div>}
+ {vip.level > 3 && vip.level > currentVipLevel && <div style={{ fontSize: '28px' }}>🔒</div>}
  {isCurrent && <div style={{ fontSize: '24px' }}>✅</div>}
  </div>
  </div>
