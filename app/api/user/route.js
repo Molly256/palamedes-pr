@@ -184,100 +184,105 @@ export async function POST(request) {
     }
 
     if (action === 'buyvip') {
-      const currentVip = Number(user.vip) || 0
-      const currentPricePaid = Number(user.vipPricePaid) || 0
-      const config = VIP_CONFIG[vipLevel]
+      try {
+        const currentVip = Number(user.vip) || 0
+        const currentPricePaid = Number(user.vipPricePaid) || 0
+        const config = VIP_CONFIG[vipLevel]
 
-      if (!config) {
-        return Response.json({ success: false, message: 'Invalid VIP level' })
-      }
+        if (!config) {
+          return Response.json({ success: false, message: 'Invalid VIP level' })
+        }
 
-      const newPrice = config.price
-      const balance = Number(user.balance) || 0
+        const newPrice = config.price
+        const balance = Number(user.balance) || 0
 
-      if (!vipLevel || vipLevel <= currentVip) {
-        return Response.json({ success: false, message: 'Cannot downgrade VIP' })
-      }
+        if (!vipLevel || vipLevel <= currentVip) {
+          return Response.json({ success: false, message: 'Cannot downgrade VIP' })
+        }
 
-      if (balance < newPrice) {
-        return Response.json({ success: false, message: 'Insufficient balance' })
-      }
+        if (balance < newPrice) {
+          return Response.json({ success: false, message: 'Insufficient balance' })
+        }
 
-      let newBalance = balance - newPrice
-      if (currentPricePaid > 0) {
-        newBalance += currentPricePaid
-      }
+        let newBalance = balance - newPrice
+        if (currentPricePaid > 0) {
+          newBalance += currentPricePaid
+        }
 
-      const todayKey = getTodayKey(cleanPhone)
-      const oldTasks = await kv.hgetall(todayKey)
-      const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
-      const doneToday = oldTasks
-      ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
-        : 0
-      const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
+        const todayKey = getTodayKey(cleanPhone)
+        const oldTasks = await kv.hgetall(todayKey)
+        const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
+        const doneToday = oldTasks
+       ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+          : 0
+        const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
-      await kv.hset(userKey,
-        'balance', String(newBalance),
-        'vip', String(vipLevel),
-        'vipPricePaid', String(newPrice),
-        'vipLocked', 'false',
-        'tasksCompleted', '0'
-      )
-      await kv.hset(`user:palamedes:${user.username.toLowerCase()}`,
-        'balance', String(newBalance),
-        'vip', String(vipLevel),
-        'vipPricePaid', String(newPrice),
-        'vipLocked', 'false',
-        'tasksCompleted', '0'
-      )
+        await kv.hset(userKey,
+          'balance', String(newBalance),
+          'vip', String(vipLevel),
+          'vipPricePaid', String(newPrice),
+          'vipLocked', 'false',
+          'tasksCompleted', '0'
+        )
+        await kv.hset(`user:palamedes:${user.username.toLowerCase()}`,
+          'balance', String(newBalance),
+          'vip', String(vipLevel),
+          'vipPricePaid', String(newPrice),
+          'vipLocked', 'false',
+          'tasksCompleted', '0'
+        )
 
-      await kv.del(todayKey)
+        await kv.del(todayKey)
 
-      if (isWeekdayKampala() &&!alreadyFinishedToday) {
-        const taskObj = {}
-        for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
-        taskObj.income = String(config.books * config.perBook)
-        await kv.hset(todayKey, taskObj)
-      }
+        if (isWeekdayKampala() &&!alreadyFinishedToday) {
+          const taskObj = {}
+          for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
+          taskObj.income = String(config.books * config.perBook)
+          await kv.hset(todayKey, taskObj)
+        }
 
-      const timestamp = getKampalaTime()
-      if (currentPricePaid > 0) {
+        const timestamp = getKampalaTime()
+        if (currentPricePaid > 0) {
+          await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+            type: 'refund',
+            amount: currentPricePaid,
+            date: timestamp,
+            desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`
+          }))
+        }
+
         await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
-          type: 'refund',
-          amount: currentPricePaid,
+          type: 'vip',
+          amount: -newPrice,
           date: timestamp,
-          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`
+          desc: `Bought VIP${vipLevel}`
         }))
+
+        const updatedUser = {
+          username: user.username,
+          phone: user.phone,
+          balance: newBalance,
+          vip: vipLevel,
+          vipPricePaid: newPrice,
+          vipLocked: false,
+          tasksCompleted: 0,
+          nickname: user.nickname || '',
+          avatar: user.avatar || '',
+          bankMTN: user.bankMTN? JSON.parse(user.bankMTN) : null,
+          bankAirtel: user.bankAirtel? JSON.parse(user.bankAirtel) : null,
+          password: user.password || ''
+        }
+
+        return Response.json({
+          success: true,
+          user: updatedUser,
+          message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
+        })
+
+      } catch (err) {
+        console.error('buyvip error:', err)
+        return Response.json({ success: false, message: err.message }, { status: 500 })
       }
-
-      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
-        type: 'vip',
-        amount: -newPrice,
-        date: timestamp,
-        desc: `Bought VIP${vipLevel}`
-      }))
-
-      // Build updated user object manually - kv.hgetall can return null immediately after hset
-      const updatedUser = {
-        username: user.username,
-        phone: user.phone,
-        balance: newBalance,
-        vip: vipLevel,
-        vipPricePaid: newPrice,
-        vipLocked: false,
-        tasksCompleted: 0,
-        nickname: user.nickname || '',
-        avatar: user.avatar || '',
-        bankMTN: user.bankMTN? JSON.parse(user.bankMTN) : null,
-        bankAirtel: user.bankAirtel? JSON.parse(user.bankAirtel) : null,
-        password: user.password || ''
-      }
-
-      return Response.json({
-        success: true,
-        user: updatedUser,
-        message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
-      })
     }
 
     if (action === 'buyShare') {
