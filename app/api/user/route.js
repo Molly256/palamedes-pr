@@ -53,7 +53,7 @@ export async function GET(request) {
     }
 
     if (action === 'getDashboard') {
-      const txList = await kv.lrange(`tx:palamedes:${phone}`, 0, -1)
+      const txList = await kv.lrange(`transactions:${phone}`, 0, 49)
       const transactions = txList.map(t => JSON.parse(t))
 
       const vipTx = transactions.find(t => t.type === 'vip')
@@ -148,7 +148,7 @@ export async function POST(request) {
       await kv.hset(userKey, 'balance', String(newBalance))
       await kv.hset(`user:palamedes:${user.username.toLowerCase()}`, 'balance', String(newBalance))
 
-      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
         type: 'task',
         amount: perBook,
         book: bookNumber,
@@ -173,62 +173,92 @@ export async function POST(request) {
     if (action === 'buyvip') {
       const currentVip = Number(user.vip) || 0
       const currentPricePaid = Number(user.vipPricePaid) || 0
-      const newPrice = VIP_CONFIG[vipLevel].price
+      const newPrice = VIP_CONFIG[vipLevel]?.price
       const balance = Number(user.balance) || 0
 
       if (vipLevel <= currentVip) {
         return Response.json({ success: false, message: 'Cannot downgrade VIP' })
       }
 
+      if (!newPrice) {
+        return Response.json({ success: false, message: 'Invalid VIP level' })
+      }
+
+      // Must have full price in balance. No netting.
       if (balance < newPrice) {
         return Response.json({ success: false, message: 'Insufficient balance' })
       }
 
-      const refundedBalance = balance + currentPricePaid - newPrice
+      // 1. Deduct full price
+      let newBalance = balance - newPrice
 
+      // 2. Refund old VIP price immediately
+      if (currentPricePaid > 0) {
+        newBalance += currentPricePaid
+      }
+
+      // 3. Check if user finished old VIP tasks today
+      const todayKey = getTodayKey(cleanPhone)
+      const oldTasks = await kv.hgetall(todayKey)
+      const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
+      const doneToday = oldTasks
+       ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+        : 0
+      const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
+
+      // 4. Update user in both keys
       await kv.hset(userKey,
-        'balance', String(refundedBalance),
+        'balance', String(newBalance),
         'vip', String(vipLevel),
         'vipPricePaid', String(newPrice),
         'vipLocked', 'false',
         'tasksCompleted', '0'
       )
       await kv.hset(`user:palamedes:${user.username.toLowerCase()}`,
-        'balance', String(refundedBalance),
+        'balance', String(newBalance),
         'vip', String(vipLevel),
         'vipPricePaid', String(newPrice),
         'vipLocked', 'false',
         'tasksCompleted', '0'
       )
 
-      await kv.del(getTodayKey(cleanPhone))
-      if (isWeekdayKampala()) {
+      // 5. Delete old tasks, create new VIP tasks if allowed
+      await kv.del(todayKey)
+
+      if (isWeekdayKampala() &&!alreadyFinishedToday) {
         const config = VIP_CONFIG[vipLevel]
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
         taskObj.income = String(config.books * config.perBook)
-        await kv.hset(getTodayKey(cleanPhone), taskObj)
+        await kv.hset(todayKey, taskObj)
       }
 
+      // 6. Write transactions
+      const timestamp = getKampalaTime()
+
       if (currentPricePaid > 0) {
-        await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+        await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
           type: 'refund',
           amount: currentPricePaid,
-          date: getKampalaTime(),
-          desc: `VIP${currentVip} refund on upgrade`
+          date: timestamp,
+          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`
         }))
       }
-      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+
+      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
         type: 'vip',
         amount: -newPrice,
-        date: getKampalaTime(),
+        date: timestamp,
         desc: `Bought VIP${vipLevel}`
       }))
 
+      const updatedUser = await kv.hgetall(userKey)
+
       return Response.json({
         success: true,
-        balance: refundedBalance,
-        message: `VIP${vipLevel} activated! Refund: ${currentPricePaid}shs`
+        balance: Number(updatedUser.balance),
+        vip: Number(updatedUser.vip),
+        message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
       })
     }
 
@@ -261,7 +291,7 @@ export async function POST(request) {
         lastClaim: getKampalaTime()
       }))
 
-      await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
+      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
         type: 'share',
         amount: -price,
         date: getKampalaTime(),
