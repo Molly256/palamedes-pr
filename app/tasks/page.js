@@ -4,6 +4,20 @@ import booksData from "../../data/books.json"
 
 const SKYBLUE = "#00BFFF"
 
+const VIP_CONFIG = {
+ 0: { books: 4 },
+ 1: { books: 4 },
+ 2: { books: 4 },
+ 3: { books: 4 },
+ 4: { books: 5 },
+ 5: { books: 5 },
+ 6: { books: 5 },
+ 7: { books: 5 },
+ 8: { books: 5 },
+ 9: { books: 5 },
+ 10: { books: 5 },
+}
+
 export default function TasksPage() {
   const [user, setUser] = useState(null)
   const [tasks, setTasks] = useState(null)
@@ -28,17 +42,21 @@ export default function TasksPage() {
       setTasks(data.tasks)
 
       if (data.tasks) {
+        const maxBooks = VIP_CONFIG[data.user.vip]?.books || 0
         const bookKeys = Object.keys(data.tasks).filter(k => k.startsWith('book'))
 
-        // FIX: Use the actual book number from the key, not array index
-        const books = bookKeys.map(k => {
-          const bookNum = Number(k.replace('book', ''))
-          return {
-            id: bookNum,
-            status: data.tasks[k],
-           ...booksData[(bookNum - 1) % booksData.length]
-          }
-        })
+        const books = bookKeys
+         .map(k => {
+            const bookNum = Number(k.replace('book', ''))
+            if (bookNum > maxBooks) return null
+            return {
+              id: bookNum,
+              status: data.tasks[k],
+            ...booksData[(bookNum - 1) % booksData.length]
+            }
+          })
+         .filter(Boolean)
+
         setTodayBooks(books)
       } else {
         setTodayBooks([])
@@ -82,6 +100,15 @@ export default function TasksPage() {
   const handleSubmit = async (bookNumber) => {
     if (!user) return
     if (loading) return
+
+    console.log("Submitting bookNumber:", bookNumber)
+
+    const maxBooks = VIP_CONFIG[user.vip]?.books || 0
+    if (bookNumber > maxBooks) {
+      alert(`Invalid book number for VIP${user.vip}`)
+      await fetchTasks(user.phone)
+      return
+    }
 
     const fresh = await fetch(`/api/user?phone=${user.phone}`)
     const freshData = await fresh.json()
