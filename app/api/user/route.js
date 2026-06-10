@@ -211,14 +211,11 @@ export async function POST(request) {
         const newPrice = Number(config.price)
         const balance = Number(user.balance) || 0
 
-        console.log('[buyvip] phone:', cleanPhone, 'balance:', balance, 'price:', newPrice, 'currentVip:', currentVip, 'newVip:', vipLevel)
-
         if (!vipLevel || vipLevel <= currentVip) {
           return Response.json({ success: false, message: 'Cannot downgrade VIP' })
         }
 
         if (balance < newPrice) {
-          console.log('[buyvip] Insufficient balance')
           return Response.json({ success: false, message: 'Insufficient balance' })
         }
 
@@ -227,16 +224,15 @@ export async function POST(request) {
           newBalance += currentPricePaid
         }
 
-        console.log('[buyvip] newBalance:', newBalance)
-
         const todayKey = getTodayKey(cleanPhone)
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
-        ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+       ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
+        // Update user hash
         await kv.hset(userKey,
           'balance', String(newBalance),
           'vip', String(vipLevel),
@@ -244,6 +240,8 @@ export async function POST(request) {
           'vipLocked', 'false',
           'tasksCompleted', '0'
         )
+
+        // Update username hash
         await kv.hset(`user:palamedes:${user.username.toLowerCase()}`,
           'balance', String(newBalance),
           'vip', String(vipLevel),
@@ -278,8 +276,13 @@ export async function POST(request) {
           desc: `Bought VIP${vipLevel}`
         }))
 
+        // Wait for KV consistency then read back
+        await new Promise(r => setTimeout(r, 100))
         const freshUser = await kv.hgetall(userKey)
-        console.log('[buyvip] freshUser balance:', freshUser.balance)
+
+        if (!freshUser || freshUser.balance == null) {
+          return Response.json({ success: false, message: 'Failed to update user data' }, { status: 500 })
+        }
 
         return Response.json({
           success: true,
