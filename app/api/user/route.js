@@ -164,7 +164,7 @@ export async function POST(request) {
       if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
 
       const tasks = await kv.hgetall(getTodayKey(cleanPhone))
-      const perBook = config.perBook
+      const perBook = Number(config.perBook)
 
       if (!tasks || tasks[`book${bookNumber}`]!== 'pending') {
         return Response.json({ success: false, message: 'Task already submitted or invalid' })
@@ -208,14 +208,17 @@ export async function POST(request) {
           return Response.json({ success: false, message: 'Invalid VIP level' })
         }
 
-        const newPrice = config.price
+        const newPrice = Number(config.price)
         const balance = Number(user.balance) || 0
+
+        console.log('[buyvip] phone:', cleanPhone, 'balance:', balance, 'price:', newPrice, 'currentVip:', currentVip, 'newVip:', vipLevel)
 
         if (!vipLevel || vipLevel <= currentVip) {
           return Response.json({ success: false, message: 'Cannot downgrade VIP' })
         }
 
         if (balance < newPrice) {
+          console.log('[buyvip] Insufficient balance')
           return Response.json({ success: false, message: 'Insufficient balance' })
         }
 
@@ -224,15 +227,16 @@ export async function POST(request) {
           newBalance += currentPricePaid
         }
 
+        console.log('[buyvip] newBalance:', newBalance)
+
         const todayKey = getTodayKey(cleanPhone)
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
-         ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+        ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
-        // Update both keys
         await kv.hset(userKey,
           'balance', String(newBalance),
           'vip', String(vipLevel),
@@ -274,8 +278,8 @@ export async function POST(request) {
           desc: `Bought VIP${vipLevel}`
         }))
 
-        // Re-read from KV after write to get the real stored value
         const freshUser = await kv.hgetall(userKey)
+        console.log('[buyvip] freshUser balance:', freshUser.balance)
 
         return Response.json({
           success: true,
@@ -306,7 +310,7 @@ export async function POST(request) {
       const config = SHARE_CONFIG[shareId]
       if (!config) return Response.json({ success: false, message: 'Invalid share' })
 
-      const price = config.price
+      const price = Number(config.price)
       const balance = Number(user.balance) || 0
 
       if (balance < price) {
