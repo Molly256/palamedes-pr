@@ -29,7 +29,7 @@ export default function VipTask() {
 
  useEffect(() => {
  const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
- userData.vip = Number(userData.vip || 0) // force number
+ userData.vip = Number(userData.vip || 0)
  if (!userData.tasks_read_today) userData.tasks_read_today = 0
  localStorage.setItem('palamedes_user', JSON.stringify(userData))
  setUser(userData)
@@ -81,7 +81,11 @@ export default function VipTask() {
    return
  }
 
- // Force vip to number before saving
+ if (!data.user) {
+   alert('Server error: user data missing')
+   return
+ }
+
  data.user.vip = Number(data.user.vip)
  setUser(data.user)
  localStorage.setItem('palamedes_user', JSON.stringify(data.user))
@@ -113,7 +117,7 @@ export default function VipTask() {
    Balance: {user.balance?.toLocaleString() || 0} shs
  </p>
  <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
-   {vips[currentVipLevel].name}
+   {vips[currentVipLevel]?.name || 'VIP 0.Internship'}
  </p>
  {user.vipExpiry && (
    <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#666', fontWeight: '600' }}>

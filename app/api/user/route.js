@@ -212,7 +212,7 @@ export async function POST(request) {
       const oldTasks = await kv.hgetall(todayKey)
       const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
       const doneToday = oldTasks
-       ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+      ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
         : 0
       const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
@@ -257,12 +257,25 @@ export async function POST(request) {
         desc: `Bought VIP${vipLevel}`
       }))
 
-      const updatedUser = await kv.hgetall(userKey)
+      // Build updated user object manually - kv.hgetall can return null immediately after hset
+      const updatedUser = {
+        username: user.username,
+        phone: user.phone,
+        balance: newBalance,
+        vip: vipLevel,
+        vipPricePaid: newPrice,
+        vipLocked: false,
+        tasksCompleted: 0,
+        nickname: user.nickname || '',
+        avatar: user.avatar || '',
+        bankMTN: user.bankMTN? JSON.parse(user.bankMTN) : null,
+        bankAirtel: user.bankAirtel? JSON.parse(user.bankAirtel) : null,
+        password: user.password || ''
+      }
 
       return Response.json({
         success: true,
-        balance: Number(updatedUser.balance),
-        vip: Number(updatedUser.vip),
+        user: updatedUser,
         message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
       })
     }
