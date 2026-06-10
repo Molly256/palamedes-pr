@@ -24,6 +24,22 @@ function getKampalaTime() {
   })
 }
 
+function getKampalaISO() {
+  return new Date().toLocaleString('en-CA', {
+    timeZone: 'Africa/Kampala',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).replace(', ', 'T')
+}
+
+function getExpiryDate() {
+  const now = new Date()
+  const kampalaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
+  kampalaTime.setFullYear(kampalaTime.getFullYear() + 1)
+  kampalaTime.setHours(23, 59, 59, 999)
+  return kampalaTime.toISOString()
+}
+
 export async function POST(request) {
   try {
     const { phone, vipLevel } = await request.json()
@@ -47,20 +63,22 @@ export async function POST(request) {
       return Response.json({ success: false, message: 'Cannot downgrade VIP' })
     }
 
-    // REMOVED: no more "next level only" restriction
-    // Users can now jump from 0 to 3 directly
-
     if (balance < newPrice) {
       return Response.json({ success: false, message: 'Insufficient balance' })
     }
 
     const refundedBalance = balance + currentPricePaid - newPrice
+    const newExpiry = getExpiryDate()
+    const nowISO = getKampalaISO()
+    const nowTime = getKampalaTime()
 
-    // Update user
+    // Update user - this locks previous level automatically
     await kv.hset(userKey,
       'balance', String(refundedBalance),
       'vip', String(vipLevel),
       'vipPricePaid', String(newPrice),
+      'vipExpiry', newExpiry,
+      'vipPurchasedAt', nowISO,
       'vipLocked', 'false',
       'tasksCompleted', '0'
     )
@@ -70,6 +88,8 @@ export async function POST(request) {
       'balance', String(refundedBalance),
       'vip', String(vipLevel),
       'vipPricePaid', String(newPrice),
+      'vipExpiry', newExpiry,
+      'vipPurchasedAt', nowISO,
       'vipLocked', 'false',
       'tasksCompleted', '0'
     )
@@ -82,35 +102,47 @@ export async function POST(request) {
         const newInviterBalance = (Number(inviter.balance) || 0) + COMMISSION[vipLevel]
         await kv.hset(inviterKey, 'balance', String(newInviterBalance))
         await kv.hset(`user:palamedes:${inviter.username.toLowerCase()}`, 'balance', String(newInviterBalance))
+        
+        await kv.lpush(`tx:palamedes:${user.referrer_phone}`, JSON.stringify({
+          type: 'commission',
+          amount: COMMISSION[vipLevel],
+          date: nowTime,
+          desc: `Commission from ${user.username} buying VIP${vipLevel}`
+        }))
       }
     }
 
-    // Log transaction
-    if (currentPricePaid > 0) {
+    // Log refund transaction for old VIP level
+    if (currentPricePaid > 0 && currentVip > 0) {
       await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
         type: 'refund',
         amount: currentPricePaid,
-        date: getKampalaTime(),
-        desc: `VIP${currentVip} refund on upgrade`
+        date: nowTime,
+        desc: `VIP${currentVip} refund on upgrade to VIP${vipLevel}`
       }))
     }
+
+    // Log purchase transaction for new VIP level
     await kv.lpush(`tx:palamedes:${cleanPhone}`, JSON.stringify({
       type: 'vip',
       amount: -newPrice,
-      date: getKampalaTime(),
-      desc: `Bought VIP${vipLevel}`
+      date: nowTime,
+      desc: `Purchased VIP${vipLevel}`,
+      expiry: newExpiry
     }))
 
     const updatedUser = await kv.hgetall(userKey)
 
     return Response.json({
       success: true,
-      message: `VIP${vipLevel} activated! Refund: ${currentPricePaid}shs`,
+      message: `VIP${vipLevel} activated! Refund: ${currentPricePaid}shs. Expires: ${new Date(newExpiry).toLocaleDateString('en-GB')}`,
       user: {
         username: updatedUser.username,
         phone: updatedUser.phone,
         balance: Number(updatedUser.balance) || 0,
         vip: Number(updatedUser.vip) || 0,
+        vipExpiry: updatedUser.vipExpiry,
+        vipPurchasedAt: updatedUser.vipPurchasedAt,
         avatar: updatedUser.avatar || '',
         nickname: updatedUser.nickname || '',
         tasks_read_today: Number(updatedUser.tasksCompleted) || 0

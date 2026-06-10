@@ -60,7 +60,6 @@ export default function VipTask() {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({
- action: 'buyvip',
  phone: user.phone,
  vipLevel: selectedVip.level
  })
@@ -73,6 +72,7 @@ export default function VipTask() {
  return
  }
 
+ // Update state + localStorage instantly
  setUser(data.user)
  localStorage.setItem('palamedes_user', JSON.stringify(data.user))
  setShowBuyPopup(false)
@@ -90,10 +90,24 @@ export default function VipTask() {
  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '30px' }}>
  <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', paddingTop: '8px' }}>← Back</Link>
  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
- <AvatarWithBadge username={user.username} vipLevel={Number(user.vip || 0)} size={60} key={user.vip || 0} />
+ <AvatarWithBadge 
+   username={user.username} 
+   vipLevel={Number(user.vip || 0)} 
+   size={60} 
+   key={user.vip + '-' + user.balance} // Force re-render when VIP changes
+ />
  <div style={{ marginTop: '8px', textAlign: 'left' }}>
- <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>Balance: {user.balance?.toLocaleString() || 0} shs</p>
- <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>{vips[user.vip || 0].name}</p>
+ <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>
+   Balance: {user.balance?.toLocaleString() || 0} shs
+ </p>
+ <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
+   {vips[user.vip || 0].name}
+ </p>
+ {user.vipExpiry && (
+   <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#666', fontWeight: '600' }}>
+     Expires: {new Date(user.vipExpiry).toLocaleDateString('en-GB')}
+   </p>
+ )}
  </div>
  </div>
  </div>
@@ -138,7 +152,7 @@ export default function VipTask() {
  <div style={{ background: 'white', padding: '30px', borderRadius: '16px', textAlign: 'center', maxWidth: '320px' }}>
  <h3 style={{ color: '#000', fontWeight: '900' }}>Upgrade to {selectedVip?.name}?</h3>
  <p style={{ color: '#000', fontWeight: '700' }}>Pay: {selectedVip?.price.toLocaleString()} shs</p>
- <p style={{ color: '#000', fontSize: '12px' }}>Previous VIP price will be refunded after upgrade</p>
+ <p style={{ color: '#000', fontSize: '12px' }}>Valid for 1 year. Previous VIP refunded on upgrade.</p>
  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
  <button onClick={() => setShowBuyPopup(false)} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: '2px solid #ccc', background: 'white', fontWeight: '800', color: '#000' }}>No</button>
  <button onClick={confirmBuy} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: 'none', background: 'linear-gradient(135deg, #FF1493 0%, #FF00FF 100%)', color: 'white', fontWeight: '900' }}>OK</button>

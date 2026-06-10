@@ -20,18 +20,27 @@ export default function MyPage() {
     return new Date(`${y}-${m}-${d}T00:00:00+03:00`)
   }
 
+  // Parse "10/10/2026 14:30:25" to Date
+  const parseTxDate = (dateStr) => {
+    if (!dateStr) return null
+    const [datePart, timePart] = dateStr.split(' ')
+    const [day, month, year] = datePart.split('/')
+    return new Date(`${year}-${month}-${day}T${timePart}+03:00`)
+  }
+
   const formatDate = (date) => {
     return new Intl.DateTimeFormat('en-UG', {
       timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric'
     }).format(new Date(date))
   }
 
-  const getVipPeriod = (purchaseDate) => {
-    if (!purchaseDate) return null
-    const start = new Date(purchaseDate)
+  const getVipPeriod = (purchaseDateStr) => {
+    if (!purchaseDateStr) return null
+    const start = parseTxDate(purchaseDateStr)
+    if (!start) return null
     const end = new Date(start)
     end.setFullYear(end.getFullYear() + 1)
-    return `Effective date:${formatDate(start)} ~ ${formatDate(end)}`
+    return `Effective date: ${formatDate(start)} ~ ${formatDate(end)}`
   }
 
   const isWeekend = (date) => {
@@ -42,7 +51,7 @@ export default function MyPage() {
   }
 
   const calculateEarnings = () => {
-    if (!vipPurchaseDate ||!transactions.length) return {
+    if (!vipPurchaseDate || !transactions.length) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
       total: 0, invitation: 0, deposit: 0, balance: userData?.balance || 0
     }
@@ -53,16 +62,19 @@ export default function MyPage() {
 
     const weekStartUG = new Date(todayUG)
     const dayOfWeek = todayUG.getDay()
-    const daysToMonday = dayOfWeek === 0? 6 : dayOfWeek - 1
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
     weekStartUG.setDate(todayUG.getDate() - daysToMonday)
 
     const monthStartUG = new Date(todayUG.getFullYear(), todayUG.getMonth(), 1)
-    const vipStart = new Date(vipPurchaseDate)
+    const vipStart = parseTxDate(vipPurchaseDate)
 
     let yesterdayAmt = 0, todayAmt = 0, weekAmt = 0, monthAmt = 0, totalAmt = 0, inviteAmt = 0, deposit = 0
 
     transactions.forEach(tx => {
-      const txDateUG = getUGDate(new Date(tx.date))
+      const txDate = parseTxDate(tx.date)
+      if (!txDate) return
+      const txDateUG = getUGDate(txDate)
+      
       if (isWeekend(txDateUG)) return
 
       if (txDateUG >= vipStart && tx.type === 'task') {
@@ -103,7 +115,7 @@ export default function MyPage() {
       const data = await res.json()
 
       if (data.success) {
-        setUserData(data.user) // USE API USER WITH REAL BALANCE
+        setUserData(data.user)
         setTransactions(data.transactions || [])
         setVipPurchaseDate(data.vipPurchaseDate)
       }
@@ -126,7 +138,7 @@ export default function MyPage() {
   const boxAmount = { fontSize: '24px', fontWeight: 'bold', color: 'black' }
 
   const Box = ({ title, subtitle, amount, isBig = false }) => (
-    <div style={{...boxStyle, gridColumn: isBig? 'span 2' : 'span 1'}}>
+    <div style={{...boxStyle, gridColumn: isBig ? 'span 2' : 'span 1'}}>
       <p style={boxTitle}>{title}</p>
       {subtitle && <p style={boxSub}>{subtitle}</p>}
       <p style={boxAmount}>{amount.toLocaleString()}shs</p>
