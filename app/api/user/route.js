@@ -142,6 +142,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  console.log('[ENV CHECK] KV_REST_API_URL:', process.env.KV_REST_API_URL); // ADDED
   try {
     const body = await request.json()
     console.log('[POST] INCOMING BODY:', body)
@@ -240,7 +241,7 @@ export async function POST(request) {
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
-        ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+       ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
@@ -281,7 +282,7 @@ export async function POST(request) {
 
         await new Promise(r => setTimeout(r, 150))
         const freshUser = await kv.hgetall(userKey)
-        console.log('[BUYVIP] FRESH USER AFTER UPDATE:', freshUser)
+        console.log('[BUYVIP] FRESH USER AFTER UPDATE:', freshUser); // ADDED
 
         if (!freshUser || freshUser.balance == null) {
           return Response.json({ success: false, message: 'Failed to update user data' }, { status: 500 })
