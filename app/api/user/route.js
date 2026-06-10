@@ -112,7 +112,7 @@ export async function GET(request) {
         taskObj.income = String(config.books * config.perBook)
         await kv.hset(getTodayKey(phone), taskObj)
         tasks = taskObj
-        await kv.hset(`phone:palamedes:${phone}`, 'tasksCompleted', '0')
+        await kv.hset(`phone:palamedes:${phone}`, { tasksCompleted: '0' })
       }
     }
 
@@ -142,7 +142,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  console.log('[ENV CHECK] KV_REST_API_URL:', process.env.KV_REST_API_URL); // ADDED
+  console.log('[ENV CHECK] KV_REST_API_URL:', process.env.KV_REST_API_URL);
   try {
     const body = await request.json()
     console.log('[POST] INCOMING BODY:', body)
@@ -175,10 +175,10 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Task already submitted or invalid' })
       }
 
-      await kv.hset(getTodayKey(cleanPhone), `book${bookNumber}`, 'submitted')
+      await kv.hset(getTodayKey(cleanPhone), { [`book${bookNumber}`]: 'submitted' })
 
       const newBalance = Number(user.balance) + perBook
-      await kv.hset(userKey, 'balance', String(newBalance))
+      await kv.hset(userKey, { balance: String(newBalance) })
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
         type: 'task',
@@ -193,9 +193,9 @@ export async function POST(request) {
       const done = Object.keys(updatedTasks).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
 
       if (done === totalBooks) {
-        await kv.hset(userKey, 'vipLocked', 'true', 'tasksCompleted', String(done))
+        await kv.hset(userKey, { vipLocked: 'true', tasksCompleted: String(done) })
       } else {
-        await kv.hset(userKey, 'tasksCompleted', String(done))
+        await kv.hset(userKey, { tasksCompleted: String(done) })
       }
 
       return Response.json({ success: true, balance: newBalance, done, totalBooks })
@@ -241,18 +241,18 @@ export async function POST(request) {
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
-       ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+      ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
-        // Update only phone:palamedes:phone key
-        await kv.hset(userKey,
-          'balance', String(newBalance),
-          'vip', String(vipLevel),
-          'vipPricePaid', String(newPrice),
-          'vipLocked', 'false',
-          'tasksCompleted', '0'
-        )
+        // FIXED: Use object syntax
+        await kv.hset(userKey, {
+          balance: String(newBalance),
+          vip: String(vipLevel),
+          vipPricePaid: String(newPrice),
+          vipLocked: 'false',
+          tasksCompleted: '0'
+        })
 
         await kv.del(todayKey)
 
@@ -282,7 +282,7 @@ export async function POST(request) {
 
         await new Promise(r => setTimeout(r, 150))
         const freshUser = await kv.hgetall(userKey)
-        console.log('[BUYVIP] FRESH USER AFTER UPDATE:', freshUser); // ADDED
+        console.log('[BUYVIP] FRESH USER AFTER UPDATE:', freshUser);
 
         if (!freshUser || freshUser.balance == null) {
           return Response.json({ success: false, message: 'Failed to update user data' }, { status: 500 })
@@ -330,7 +330,7 @@ export async function POST(request) {
       }
 
       const newBalance = balance - price
-      await kv.hset(userKey, 'balance', String(newBalance))
+      await kv.hset(userKey, { balance: String(newBalance) })
 
       await kv.hset(`share:palamedes:${cleanPhone}`, shareId, JSON.stringify({
         name: config.name,
@@ -354,22 +354,22 @@ export async function POST(request) {
     if (action === 'updateProfile') {
       if (field === 'nickname') {
         if (value.length > 6) return Response.json({ success: false, message: 'Nickname max 6 letters' })
-        await kv.hset(userKey, 'nickname', value)
+        await kv.hset(userKey, { nickname: value })
         return Response.json({ success: true, message: 'Nickname saved' })
       }
 
       if (field === 'bankMTN') {
-        await kv.hset(userKey, 'bankMTN', value)
+        await kv.hset(userKey, { bankMTN: value })
         return Response.json({ success: true, message: 'MTN bank saved' })
       }
 
       if (field === 'bankAirtel') {
-        await kv.hset(userKey, 'bankAirtel', value)
+        await kv.hset(userKey, { bankAirtel: value })
         return Response.json({ success: true, message: 'Airtel bank saved' })
       }
 
       if (field === 'avatar') {
-        await kv.hset(userKey, 'avatar', value)
+        await kv.hset(userKey, { avatar: value })
         return Response.json({ success: true, message: 'Avatar updated' })
       }
     }
@@ -382,7 +382,7 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'New password too short' })
       }
 
-      await kv.hset(userKey, 'password', newPass)
+      await kv.hset(userKey, { password: newPass })
       return Response.json({ success: true, message: 'Password changed' })
     }
 
