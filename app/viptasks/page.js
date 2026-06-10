@@ -7,6 +7,7 @@ export default function VipTask() {
  const [user, setUser] = useState(null)
  const [showBuyPopup, setShowBuyPopup] = useState(false)
  const [selectedVip, setSelectedVip] = useState(null)
+ const [loading, setLoading] = useState(false)
 
  const vips = [
  { level: 0, name: 'VIP 0.Internship', price: 0, books: 4, perBook: 625 },
@@ -55,6 +56,7 @@ export default function VipTask() {
  return
  }
 
+ setLoading(true)
  try {
  const res = await fetch('/api/user', {
    method: 'POST',
@@ -73,20 +75,17 @@ export default function VipTask() {
  } catch (e) {
    console.error('API returned non-JSON:', text)
    alert('Server error. Check console for details.')
+   setLoading(false)
    return
  }
 
  if (!data.success) {
    alert(data.message)
+   setLoading(false)
    return
  }
 
- if (!data.user) {
-   alert('Server error: user data missing')
-   return
- }
-
- data.user.vip = Number(data.user.vip)
+ // Update UI immediately so balance deducts and button changes
  setUser(data.user)
  localStorage.setItem('palamedes_user', JSON.stringify(data.user))
  setShowBuyPopup(false)
@@ -94,6 +93,8 @@ export default function VipTask() {
 
  } catch (err) {
  alert('Error: ' + err.message)
+ } finally {
+ setLoading(false)
  }
  }
 
@@ -133,12 +134,15 @@ export default function VipTask() {
  <div style={{ display: 'grid', gap: '12px', marginBottom: '40px' }}>
  {vips.map(vip => {
  const isCurrent = currentVipLevel === vip.level
+ const isOwned = currentVipLevel >= vip.level
+ const showBuyButton = vip.level >= 1 && vip.level <= 3 && vip.level > currentVipLevel
+ const showLock = vip.level >= 4 && vip.level > currentVipLevel
 
  return (
  <div key={vip.level} style={{
  background: hotColors[vip.level],
  padding: '18px 20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between',
- alignItems: 'center', minHeight: '75px', opacity: vip.level > currentVipLevel? 1 : 0.6
+ alignItems: 'center', minHeight: '75px', opacity: isOwned? 0.6 : 1
  }}>
  <div style={{ color: '#000' }}>
  <p style={{ margin: 0, fontWeight: '900', fontSize: '16px', color: '#000' }}>{vip.name}</p>
@@ -149,14 +153,22 @@ export default function VipTask() {
  </div>
 
  <div>
- {vip.level > currentVipLevel && vip.level <= 3 && (
- <button onClick={() => handleBuyVip(vip)} style={{
- padding: '10px 24px', borderRadius: '50px', border: 'none',
- background: 'white', fontWeight: '900', cursor: 'pointer', color: '#000'
- }}>BUY</button>
+ {showBuyButton && (
+ <button
+   onClick={() => handleBuyVip(vip)}
+   disabled={loading}
+   style={{
+     padding: '10px 24px', borderRadius: '50px', border: 'none',
+     background: 'white', fontWeight: '900', cursor: loading? 'not-allowed' : 'pointer',
+     color: '#000', opacity: loading? 0.6 : 1
+   }}
+ >
+   BUY
+ </button>
  )}
- {vip.level > 3 && vip.level > currentVipLevel && <div style={{ fontSize: '28px' }}>🔒</div>}
+ {showLock && <div style={{ fontSize: '28px' }}>🔒</div>}
  {isCurrent && <div style={{ fontSize: '24px' }}>✅</div>}
+ {isOwned &&!isCurrent && <div style={{ fontSize: '18px', fontWeight: '900', color: '#000' }}>Owned</div>}
  </div>
  </div>
  )
@@ -170,8 +182,10 @@ export default function VipTask() {
  <p style={{ color: '#000', fontWeight: '700' }}>Pay: {selectedVip?.price.toLocaleString()} shs</p>
  <p style={{ color: '#000', fontSize: '12px' }}>Valid for 1 year. Previous VIP refunded on upgrade.</p>
  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
- <button onClick={() => setShowBuyPopup(false)} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: '2px solid #ccc', background: 'white', fontWeight: '800', color: '#000' }}>No</button>
- <button onClick={confirmBuy} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: 'none', background: 'linear-gradient(135deg, #FF1493 0%, #FF00FF 100%)', color: 'white', fontWeight: '900' }}>OK</button>
+ <button onClick={() => setShowBuyPopup(false)} disabled={loading} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: '2px solid #ccc', background: 'white', fontWeight: '800', color: '#000' }}>No</button>
+ <button onClick={confirmBuy} disabled={loading} style={{ flex: 1, padding: '12px', borderRadius: '50px', border: 'none', background: 'linear-gradient(135deg, #FF1493 0%, #FF00FF 100%)', color: 'white', fontWeight: '900', opacity: loading? 0.6 : 1 }}>
+   {loading? 'Processing...' : 'OK'}
+ </button>
  </div>
  </div>
  </div>
