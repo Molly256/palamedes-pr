@@ -82,7 +82,13 @@ export async function GET(request) {
           balance: Number(user.balance) || 0,
           vip: Number(user.vip) || 0,
           avatar: user.avatar || '',
-          nickname: user.nickname || ''
+          nickname: user.nickname || '',
+          vipLocked: user.vipLocked === 'true',
+          tasksCompleted: Number(user.tasksCompleted) || 0,
+          vipPricePaid: Number(user.vipPricePaid) || 0,
+          bankMTN: safeParse(user.bankMTN),
+          bankAirtel: safeParse(user.bankAirtel),
+          password: user.password || ''
         },
         transactions,
         vipPurchaseDate
@@ -222,10 +228,11 @@ export async function POST(request) {
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
-      ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+         ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
+        // Update both keys
         await kv.hset(userKey,
           'balance', String(newBalance),
           'vip', String(vipLevel),
@@ -267,24 +274,25 @@ export async function POST(request) {
           desc: `Bought VIP${vipLevel}`
         }))
 
-        const updatedUser = {
-          username: user.username,
-          phone: user.phone,
-          balance: newBalance,
-          vip: vipLevel,
-          vipPricePaid: newPrice,
-          vipLocked: false,
-          tasksCompleted: 0,
-          nickname: user.nickname || '',
-          avatar: user.avatar || '',
-          bankMTN: safeParse(user.bankMTN),
-          bankAirtel: safeParse(user.bankAirtel),
-          password: user.password || ''
-        }
+        // Re-read from KV after write to get the real stored value
+        const freshUser = await kv.hgetall(userKey)
 
         return Response.json({
           success: true,
-          user: updatedUser,
+          user: {
+            username: freshUser.username,
+            phone: freshUser.phone,
+            balance: Number(freshUser.balance) || 0,
+            vip: Number(freshUser.vip) || 0,
+            vipPricePaid: Number(freshUser.vipPricePaid) || 0,
+            vipLocked: freshUser.vipLocked === 'true',
+            tasksCompleted: Number(freshUser.tasksCompleted) || 0,
+            nickname: freshUser.nickname || '',
+            avatar: freshUser.avatar || '',
+            bankMTN: safeParse(freshUser.bankMTN),
+            bankAirtel: safeParse(freshUser.bankAirtel),
+            password: freshUser.password || ''
+          },
           message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
         })
 

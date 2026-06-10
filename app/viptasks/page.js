@@ -85,11 +85,21 @@ export default function VipTask() {
    return
  }
 
- // Update UI immediately so balance deducts and button changes
+ // Set user from API response
  setUser(data.user)
  localStorage.setItem('palamedes_user', JSON.stringify(data.user))
  setShowBuyPopup(false)
  alert(data.message)
+
+ // Force re-fetch from server to confirm KV wrote correctly
+ setTimeout(async () => {
+   const refreshRes = await fetch(`/api/user?phone=${user.phone}`)
+   const refreshData = await refreshRes.json()
+   if (refreshData.success) {
+     setUser(refreshData.user)
+     localStorage.setItem('palamedes_user', JSON.stringify(refreshData.user))
+   }
+ }, 500)
 
  } catch (err) {
  alert('Error: ' + err.message)
