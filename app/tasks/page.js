@@ -43,19 +43,19 @@ export default function TasksPage() {
 
       if (data.tasks) {
         const maxBooks = VIP_CONFIG[data.user.vip]?.books || 0
-        const bookKeys = Object.keys(data.tasks).filter(k => k.startsWith('book'))
+        const bookKeys = Object.keys(data.tasks)
+         .filter(k => k.startsWith('book'))
+         .slice(0, maxBooks) // only take allowed amount
 
-        const books = bookKeys
-         .map(k => {
-            const bookNum = Number(k.replace('book', ''))
-            if (bookNum > maxBooks) return null
-            return {
-              id: bookNum,
-              status: data.tasks[k],
-            ...booksData[(bookNum - 1) % booksData.length]
-            }
-          })
-         .filter(Boolean)
+        const books = bookKeys.map((key, idx) => {
+          const bookNum = idx + 1 // 1-based for API
+          return {
+          ...booksData[idx % booksData.length], // distribute freely from booksData
+            bookNum, // internal only, not used in UI
+            status: data.tasks[key],
+            taskKey: key // "book1", "book2", etc
+          }
+        })
 
         setTodayBooks(books)
       } else {
@@ -69,15 +69,13 @@ export default function TasksPage() {
     const t = setTimeout(() => setTimer(timer - 1), 1000)
 
     if (timer === 1) {
-      const bookKey = `book${readingBook.id}`
-
       setTasks(prev => {
-        if (!prev ||!(bookKey in prev)) return prev
-        return {...prev, [bookKey]: 'read' }
+        if (!prev ||!(readingBook.taskKey in prev)) return prev
+        return {...prev, [readingBook.taskKey]: 'read' }
       })
 
       setTodayBooks(prev => prev.map(b =>
-        b.id === readingBook.id? {...b, status: 'read' } : b
+        b.taskKey === readingBook.taskKey? {...b, status: 'read' } : b
       ))
       setShowPopup(true)
     }
@@ -97,15 +95,14 @@ export default function TasksPage() {
     setTimer(10)
   }
 
-  const handleSubmit = async (bookNumber) => {
-    if (!user) return
-    if (loading) return
+  const handleSubmit = async (bookNum) => {
+    if (!user || loading) return
 
-    console.log("Submitting bookNumber:", bookNumber)
+    console.log("Submitting bookNumber:", bookNum)
 
     const maxBooks = VIP_CONFIG[user.vip]?.books || 0
-    if (bookNumber > maxBooks) {
-      alert(`Invalid book number for VIP${user.vip}`)
+    if (bookNum > maxBooks) {
+      alert(`Invalid book for VIP${user.vip}`)
       await fetchTasks(user.phone)
       return
     }
@@ -117,9 +114,9 @@ export default function TasksPage() {
       return
     }
 
-    const bookKey = `book${bookNumber}`
+    const bookKey = `book${bookNum}`
     if (!freshData.tasks[bookKey]) {
-      alert('Invalid book number for your VIP level')
+      alert('Invalid book for your VIP level')
       await fetchTasks(user.phone)
       return
     }
@@ -138,17 +135,15 @@ export default function TasksPage() {
         body: JSON.stringify({
           action: 'submitTask',
           phone: user.phone,
-          bookNumber: bookNumber
+          bookNumber: bookNum
         })
       })
 
       const data = await res.json()
-      console.log("API response:", data)
-
       if (data.success) {
         const oldBalance = user.balance
         setUser(prev => ({...prev, balance: data.balance }))
-        localStorage.setItem('palamedes_user', JSON.stringify({...user, balance: data.balance }))
+        localStorage.setItem('palamedes_user', JSON.stringify({...prev, balance: data.balance }))
 
         await fetchTasks(user.phone)
         alert(`+${data.balance - oldBalance}shs added!`)
@@ -214,12 +209,12 @@ export default function TasksPage() {
           {user.vipLocked === 'true'? "Tasks locked. Wait for next weekday." : "No tasks available"}
         </p>
       ) : (
-        pendingBooks.map(book => {
+        pendingBooks.map((book, idx) => {
           const isRead = book.status === 'read' || book.status === 'submitted'
           const canSubmit = book.status === 'read'
 
           return (
-            <div key={book.id} style={{
+            <div key={book.taskKey} style={{
               padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
               borderBottom: "1px solid #E0E0E0"
             }}>
@@ -248,7 +243,7 @@ export default function TasksPage() {
                     {isRead? "Read ✓" : "Read"}
                   </button>
                   <button
-                    onClick={() => handleSubmit(book.id)}
+                    onClick={() => handleSubmit(book.bookNum)}
                     disabled={loading ||!canSubmit}
                     style={{
                       padding: "8px 16px",
@@ -277,7 +272,7 @@ export default function TasksPage() {
         <p style={{ color: "#666" }}>No completed tasks yet</p>
       ) : (
         submittedBooks.map(book => (
-          <div key={book.id} style={{
+          <div key={book.taskKey} style={{
             padding: 12, marginBottom: 10, display: "flex", gap: 12, alignItems: "center",
             borderBottom: "1px solid #E0E0E0"
           }}>

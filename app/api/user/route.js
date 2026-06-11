@@ -107,7 +107,7 @@ export async function GET(request) {
 
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) {
-          taskObj[`book${i}`] = 'pending'
+          taskObj[`book${i}`] = 'pending' // book1, book2, book3, book4...
         }
         taskObj.income = String(config.books * config.perBook)
         await kv.hset(getTodayKey(phone), taskObj)
@@ -145,7 +145,6 @@ export async function POST(request) {
   console.log('[ENV CHECK] KV_REST_API_URL:', process.env.KV_REST_API_URL);
   try {
     const body = await request.json()
-    console.log('[POST] INCOMING BODY:', body)
 
     const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, field, value, oldPass, newPass } = body
     const cleanPhone = phone?.replace(/\s+/g, '')
@@ -155,8 +154,6 @@ export async function POST(request) {
     if (!cleanPhone) return Response.json({ success: false, message: 'Phone required' })
 
     const user = await kv.hgetall(userKey)
-    console.log('[POST] USER FROM KV:', user)
-
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
     if (action === 'submitTask') {
@@ -169,18 +166,19 @@ export async function POST(request) {
       if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
 
       const bookNum = Number(bookNumber)
+      // Only validate: 1 <= bookNum <= allowed books for this VIP
       if (!bookNum || bookNum < 1 || bookNum > config.books) {
-        return Response.json({ success: false, message: 'Invalid book number' })
+        return Response.json({ success: false, message: 'Invalid book number for your VIP level' })
       }
 
+      const bookKey = `book${bookNum}` // book1, book2, book3, book4
       const tasks = await kv.hgetall(getTodayKey(cleanPhone))
-      const perBook = Number(config.perBook)
-      const bookKey = `book${bookNum}`
 
       if (!tasks || (tasks[bookKey]!== 'pending' && tasks[bookKey]!== 'read')) {
         return Response.json({ success: false, message: 'Task already submitted or invalid' })
       }
 
+      const perBook = Number(config.perBook)
       await kv.hset(getTodayKey(cleanPhone), { [bookKey]: 'submitted' })
 
       const newBalance = Number(user.balance) + perBook
@@ -209,14 +207,6 @@ export async function POST(request) {
 
     if (action === 'buyvip') {
       try {
-        console.log('[BUYVIP] START', {
-          phone: cleanPhone,
-          vipLevel,
-          currentVip: user.vip,
-          balance: user.balance,
-          vipPricePaid: user.vipPricePaid
-        })
-
         const currentVip = Number(user.vip) || 0
         const currentPricePaid = Number(user.vipPricePaid) || 0
         const config = VIP_CONFIG[vipLevel]
@@ -241,13 +231,11 @@ export async function POST(request) {
           newBalance += currentPricePaid
         }
 
-        console.log('[BUYVIP] CALC', { newBalance, newPrice, currentPricePaid })
-
         const todayKey = getTodayKey(cleanPhone)
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
-    ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+   ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
@@ -287,7 +275,6 @@ export async function POST(request) {
 
         await new Promise(r => setTimeout(r, 150))
         const freshUser = await kv.hgetall(userKey)
-        console.log('[BUYVIP] FRESH USER AFTER UPDATE:', freshUser);
 
         if (!freshUser || freshUser.balance == null) {
           return Response.json({ success: false, message: 'Failed to update user data' }, { status: 500 })
