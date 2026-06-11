@@ -44,16 +44,16 @@ export default function TasksPage() {
       if (data.tasks) {
         const maxBooks = VIP_CONFIG[data.user.vip]?.books || 0
         const bookKeys = Object.keys(data.tasks)
-         .filter(k => k.startsWith('book'))
-         .slice(0, maxBooks) // only take allowed amount
+        .filter(k => k.startsWith('book'))
+        .slice(0, maxBooks)
 
         const books = bookKeys.map((key, idx) => {
-          const bookNum = idx + 1 // 1-based for API
+          const bookNum = idx + 1
           return {
-          ...booksData[idx % booksData.length], // distribute freely from booksData
-            bookNum, // internal only, not used in UI
+           ...booksData[idx % booksData.length],
+            bookNum,
             status: data.tasks[key],
-            taskKey: key // "book1", "book2", etc
+            taskKey: key
           }
         })
 
@@ -97,6 +97,10 @@ export default function TasksPage() {
 
   const handleSubmit = async (bookNum) => {
     if (!user || loading) return
+    if (user.vipLocked === 'true') {
+      alert('Daily tasks completed. Wait for next weekday.')
+      return
+    }
 
     console.log("Submitting bookNumber:", bookNum)
 
@@ -139,11 +143,25 @@ export default function TasksPage() {
         })
       })
 
-      const data = await res.json()
+      // Read text first so we can debug if it fails
+      const text = await res.text()
+      console.log('API response:', text)
+
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch (e) {
+        alert('Server error: ' + text.slice(0, 150))
+        return
+      }
+
       if (data.success) {
         const oldBalance = user.balance
-        setUser(prev => ({...prev, balance: data.balance }))
-        localStorage.setItem('palamedes_user', JSON.stringify({...prev, balance: data.balance }))
+        setUser(prev => {
+          const updated = {...prev, balance: data.balance }
+          localStorage.setItem('palamedes_user', JSON.stringify(updated))
+          return updated
+        })
 
         await fetchTasks(user.phone)
         alert(`+${data.balance - oldBalance}shs added!`)
@@ -151,9 +169,11 @@ export default function TasksPage() {
         alert(data.message || 'Failed to submit task')
       }
     } catch (err) {
+      console.error(err)
       alert('Network error')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   if (!user) return <div style={{ padding: 20 }}>Loading...</div>
@@ -244,16 +264,16 @@ export default function TasksPage() {
                   </button>
                   <button
                     onClick={() => handleSubmit(book.bookNum)}
-                    disabled={loading ||!canSubmit}
+                    disabled={loading ||!canSubmit || user.vipLocked === 'true'}
                     style={{
                       padding: "8px 16px",
                       background: SKYBLUE,
                       border: "none",
                       borderRadius: 6,
                       color: "#000",
-                      cursor: loading ||!canSubmit? "not-allowed" : "pointer",
+                      cursor: loading ||!canSubmit || user.vipLocked === 'true'? "not-allowed" : "pointer",
                       fontWeight: "400",
-                      opacity: loading ||!canSubmit? 0.6 : 1
+                      opacity: loading ||!canSubmit || user.vipLocked === 'true'? 0.6 : 1
                     }}
                   >
                     {loading? 'Submitting...' : 'Submit'}
