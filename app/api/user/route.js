@@ -42,23 +42,17 @@ function getISOTimestamp() {
 }
 
 function isWeekdayKampala() {
-  const weekday = new Date().toLocaleDateString('en-US', {timeZone: 'Africa/Kampala', weekday: 'short'})
-  return!['Sat','Sun'].includes(weekday)
+  const weekday = new Date().toLocaleDateString('en-US', { timeZone: 'Africa/Kampala', weekday: 'short' })
+  return!['Sat', 'Sun'].includes(weekday)
 }
 
 function getTodayKey(phone) {
-  const today = new Date().toLocaleDateString('en-CA', {timeZone: 'Africa/Kampala'})
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
   return `task:palamedes:${phone}:${today}`
 }
 
 function getUGDateObj() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
-}
-
-function getUserInviteCode(phone) {
-  const clean = phone.replace(/\D/g, '')
-  const last6 = clean.slice(-6)
-  return `PM${last6}`
 }
 
 async function getUserData(phone) {
@@ -83,10 +77,10 @@ export async function GET(request) {
     const phone = searchParams.get('phone')
     const action = searchParams.get('action')
 
-    if (!phone) return Response.json({ success: false, message: 'Phone required' })
+    if (!phone) return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
 
     const { user, userKey, cleanPhone } = await getUserData(phone)
-    if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
+    if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getShares') {
       const sharesHash = await kv.hgetall(`share:palamedes:${cleanPhone}`)
@@ -140,7 +134,7 @@ export async function GET(request) {
 
       if (!tasks) {
         const config = VIP_CONFIG[vipLevel]
-        if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
+        if (!config) return Response.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) {
@@ -187,10 +181,10 @@ export async function POST(request) {
     const body = await request.json()
     const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names } = body
 
-    if (!phone) return Response.json({ success: false, message: 'Phone required' })
+    if (!phone) return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
 
     const { user, userKey, cleanPhone } = await getUserData(phone)
-    if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
+    if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' }, { status: 404 })
 
     const sharesKey = `share:palamedes:${cleanPhone}`
     const vipLevel = Number(rawVipLevel)
@@ -198,7 +192,7 @@ export async function POST(request) {
     if (action === 'deposit') {
       const amount = Number(value)
       if (!amount || amount <= 0) {
-        return Response.json({ success: false, message: 'Invalid deposit amount' })
+        return Response.json({ success: false, message: 'Invalid deposit amount' }, { status: 400 })
       }
 
       const tx = {
@@ -225,10 +219,10 @@ export async function POST(request) {
       const balance = Number(user.balance) || 0
 
       if (!amount || amount <= 0) {
-        return Response.json({ success: false, message: 'Invalid withdraw amount' })
+        return Response.json({ success: false, message: 'Invalid withdraw amount' }, { status: 400 })
       }
       if (amount > balance) {
-        return Response.json({ success: false, message: 'Insufficient balance' })
+        return Response.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
 
       let savedBank = null
@@ -242,7 +236,7 @@ export async function POST(request) {
         return Response.json({
           success: false,
           message: 'Bank details mismatch. Please update in settings first.'
-        })
+        }, { status: 400 })
       }
 
       const fee = Math.floor(amount * 0.1)
@@ -273,16 +267,16 @@ export async function POST(request) {
 
     if (action === 'submitTask') {
       if (!isWeekdayKampala()) {
-        return Response.json({ success: false, message: 'No tasks on weekends' })
+        return Response.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
       }
 
       const currentVipLevel = Number(user.vip) || 0
       const config = VIP_CONFIG[currentVipLevel]
-      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
+      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
       const bookNum = Number(bookNumber)
       if (!bookNum || bookNum < 1 || bookNum > config.books) {
-        return Response.json({ success: false, message: 'Invalid book number for your VIP level' })
+        return Response.json({ success: false, message: 'Invalid book number for your VIP level' }, { status: 400 })
       }
 
       const bookKey = `book${bookNum}`
@@ -290,7 +284,7 @@ export async function POST(request) {
       const tasks = await kv.hgetall(todayKey)
 
       if (!tasks || (tasks[bookKey]!== 'pending' && tasks[bookKey]!== 'read')) {
-        return Response.json({ success: false, message: 'Task already submitted or invalid' })
+        return Response.json({ success: false, message: 'Task already submitted or invalid' }, { status: 400 })
       }
 
       const perBook = Number(config.perBook)
@@ -332,17 +326,17 @@ export async function POST(request) {
       const currentPricePaid = Number(user.vipPricePaid) || 0
       const config = VIP_CONFIG[vipLevel]
 
-      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
+      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
       const newPrice = Number(config.price)
       const balance = Number(user.balance) || 0
 
       if (!vipLevel || vipLevel <= currentVip) {
-        return Response.json({ success: false, message: 'Cannot downgrade VIP' })
+        return Response.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
       }
 
       if (balance < newPrice) {
-        return Response.json({ success: false, message: 'Insufficient balance' })
+        return Response.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
 
       let newBalance = balance - newPrice
@@ -481,14 +475,14 @@ export async function POST(request) {
 
     if (action === 'buyShare') {
       const config = SHARE_CONFIG[shareId]
-      if (!config) return Response.json({ success: false, message: 'Invalid share' })
+      if (!config) return Response.json({ success: false, message: 'Invalid share' }, { status: 400 })
 
       const qty = Number(quantity) || 1
       const cost = Number(totalCost) || config.price * qty
       const balance = Number(user.balance) || 0
 
       if (balance < cost) {
-        return Response.json({ success: false, message: 'Insufficient balance' })
+        return Response.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
 
       const newBalance = balance - cost
@@ -536,22 +530,22 @@ export async function POST(request) {
 
     if (action === 'collectShare') {
       const shareIdUnique = body.shareId
-      if (!shareIdUnique) return Response.json({ success: false, message: 'Share ID required' })
+      if (!shareIdUnique) return Response.json({ success: false, message: 'Share ID required' }, { status: 400 })
 
       const shareStr = await kv.hget(sharesKey, shareIdUnique)
-      if (!shareStr) return Response.json({ success: false, message: 'Share not found' })
+      if (!shareStr) return Response.json({ success: false, message: 'Share not found' }, { status: 404 })
 
       const share = safeParse(shareStr)
-      if (!share) return Response.json({ success: false, message: 'Invalid share data' })
+      if (!share) return Response.json({ success: false, message: 'Invalid share data' }, { status: 400 })
 
       if (share.status!== 'ongoing') {
-        return Response.json({ success: false, message: 'Share already collected' })
+        return Response.json({ success: false, message: 'Share already collected' }, { status: 400 })
       }
 
       const now = getUGDateObj()
       const endDate = new Date(share.endDate)
       if (now < endDate) {
-        return Response.json({ success: false, message: 'Share not matured yet' })
+        return Response.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
       }
 
       const profit = Math.round(share.pricePerShare * share.quantity * (share.dailyProfit / 100) * share.cycleDays)
@@ -585,7 +579,7 @@ export async function POST(request) {
 
     if (action === 'updateProfile') {
       if (field === 'nickname') {
-        if (value.length > 6) return Response.json({ success: false, message: 'Nickname max 6 letters' })
+        if (value.length > 6) return Response.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
         await kv.hset(userKey, { nickname: value })
         return Response.json({ success: true, message: 'Nickname saved' })
       }
@@ -608,17 +602,17 @@ export async function POST(request) {
 
     if (action === 'changePassword') {
       if (String(user.password)!== String(oldPass)) {
-        return Response.json({ success: false, message: 'Old password incorrect' })
+        return Response.json({ success: false, message: 'Old password incorrect' }, { status: 400 })
       }
       if (newPass.length < 6) {
-        return Response.json({ success: false, message: 'New password must be at least 6 characters' })
+        return Response.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
       }
 
       await kv.hset(userKey, { password: newPass })
       return Response.json({ success: true, message: 'Password changed' })
     }
 
-    return Response.json({ success: false, message: 'Invalid action' })
+    return Response.json({ success: false, message: 'Invalid action' }, { status: 400 })
   } catch (err) {
     console.error('POST /api/user error:', err)
     return Response.json({ success: false, message: err.message }, { status: 500 })

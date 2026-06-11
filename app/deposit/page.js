@@ -51,7 +51,7 @@ export default function Deposit() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: cleanPhone,
-          amount: depositAmount,
+          value: depositAmount, // fixed: backend expects 'value'
           method: selectedMethod
         })
       })
