@@ -61,31 +61,47 @@ function getUserInviteCode(phone) {
   return `PM${last6}`
 }
 
+async function getUserData(phone) {
+  const cleanPhone = phone.replace(/\D/g, '')
+  const newKey = `user:0753520252:${cleanPhone}`
+  const oldKey = `phone:palamedes:${cleanPhone}`
+
+  let user = await kv.hgetall(newKey)
+  let userKey = newKey
+
+  if (!user ||!user.username) {
+    user = await kv.hgetall(oldKey)
+    userKey = oldKey
+  }
+
+  return { user, userKey, cleanPhone }
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
-    const phone = searchParams.get('phone')?.replace(/\s+/g, '')
+    const phone = searchParams.get('phone')
     const action = searchParams.get('action')
 
     if (!phone) return Response.json({ success: false, message: 'Phone required' })
 
-    const user = await kv.hgetall(`phone:palamedes:${phone}`)
+    const { user, userKey, cleanPhone } = await getUserData(phone)
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
     if (action === 'getShares') {
-      const sharesHash = await kv.hgetall(`share:palamedes:${phone}`)
+      const sharesHash = await kv.hgetall(`share:palamedes:${cleanPhone}`)
       const shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
       return Response.json({ success: true, shares })
     }
 
     if (action === 'getTransactions') {
-      const txList = await kv.lrange(`transactions:${phone}`, 0, 99)
+      const txList = await kv.lrange(`transactions:${cleanPhone}`, 0, 99)
       const transactions = txList.map(t => safeParse(t)).filter(Boolean)
       return Response.json({ success: true, transactions })
     }
 
     if (action === 'getDashboard') {
-      const txList = await kv.lrange(`transactions:${phone}`, 0, 49)
+      const txList = await kv.lrange(`transactions:${cleanPhone}`, 0, 49)
       const transactions = txList.map(t => safeParse(t)).filter(Boolean)
 
       const vipTx = transactions.find(t => t.type === 'viptask_purchase')
@@ -120,7 +136,7 @@ export async function GET(request) {
     const vipLevel = Number(user.vip) || 0
 
     if (isWeekdayKampala() && user.vipLocked!== 'true') {
-      tasks = await kv.hgetall(getTodayKey(phone))
+      tasks = await kv.hgetall(getTodayKey(cleanPhone))
 
       if (!tasks) {
         const config = VIP_CONFIG[vipLevel]
@@ -131,9 +147,9 @@ export async function GET(request) {
           taskObj[`book${i}`] = 'pending'
         }
         taskObj.income = String(config.books * config.perBook)
-        await kv.hset(getTodayKey(phone), taskObj)
+        await kv.hset(getTodayKey(cleanPhone), taskObj)
         tasks = taskObj
-        await kv.hset(`phone:palamedes:${phone}`, { tasksCompleted: '0' })
+        await kv.hset(userKey, { tasksCompleted: '0' })
       }
     }
 
@@ -170,15 +186,14 @@ export async function POST(request) {
   try {
     const body = await request.json()
     const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names } = body
-    const cleanPhone = phone?.replace(/\s+/g, '')
-    const userKey = `phone:palamedes:${cleanPhone}`
+
+    if (!phone) return Response.json({ success: false, message: 'Phone required' })
+
+    const { user, userKey, cleanPhone } = await getUserData(phone)
+    if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
+
     const sharesKey = `share:palamedes:${cleanPhone}`
     const vipLevel = Number(rawVipLevel)
-
-    if (!cleanPhone) return Response.json({ success: false, message: 'Phone required' })
-
-    const user = await kv.hgetall(userKey)
-    if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
     if (action === 'deposit') {
       const amount = Number(value)
@@ -216,7 +231,6 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Insufficient balance' })
       }
 
-      // VERIFY BANK DETAILS AGAINST SAVED DATA
       let savedBank = null
       if (method === 'MTN Mobile money') {
         savedBank = safeParse(user.bankMTN)
@@ -380,19 +394,16 @@ export async function POST(request) {
         desc: `Bought VIP${vipLevel}`
       }))
 
-      // ABC REFERRAL REWARD LOGIC - Pay on first VIP purchase of any level
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
 
-        // Team A - 5%
         if (user.upline1) {
-          const upline1Key = `phone:palamedes:${user.upline1}`
-          const upline1 = await kv.hgetall(upline1Key)
+          const { user: upline1, userKey: upline1Key } = await getUserData(user.upline1)
           if (upline1 && upline1.username) {
             const rewardA = Math.floor(paidPrice * 0.05)
             if (rewardA > 0) {
               await kv.hset(upline1Key, { balance: String(Number(upline1.balance) + rewardA) })
-              await kv.lpush(`transactions:${user.upline1}`, JSON.stringify({
+              await kv.lpush(`transactions:${upline1.phone}`, JSON.stringify({
                 id: Date.now(),
                 type: 'referral_reward',
                 amount: rewardA,
@@ -404,15 +415,13 @@ export async function POST(request) {
           }
         }
 
-        // Team B - 2%
         if (user.upline2) {
-          const upline2Key = `phone:palamedes:${user.upline2}`
-          const upline2 = await kv.hgetall(upline2Key)
+          const { user: upline2, userKey: upline2Key } = await getUserData(user.upline2)
           if (upline2 && upline2.username) {
             const rewardB = Math.floor(paidPrice * 0.02)
             if (rewardB > 0) {
               await kv.hset(upline2Key, { balance: String(Number(upline2.balance) + rewardB) })
-              await kv.lpush(`transactions:${user.upline2}`, JSON.stringify({
+              await kv.lpush(`transactions:${upline2.phone}`, JSON.stringify({
                 id: Date.now(),
                 type: 'referral_reward',
                 amount: rewardB,
@@ -424,15 +433,13 @@ export async function POST(request) {
           }
         }
 
-        // Team C - 1%
         if (user.upline3) {
-          const upline3Key = `phone:palamedes:${user.upline3}`
-          const upline3 = await kv.hgetall(upline3Key)
+          const { user: upline3, userKey: upline3Key } = await getUserData(user.upline3)
           if (upline3 && upline3.username) {
             const rewardC = Math.floor(paidPrice * 0.01)
             if (rewardC > 0) {
               await kv.hset(upline3Key, { balance: String(Number(upline3.balance) + rewardC) })
-              await kv.lpush(`transactions:${user.upline3}`, JSON.stringify({
+              await kv.lpush(`transactions:${upline3.phone}`, JSON.stringify({
                 id: Date.now(),
                 type: 'referral_reward',
                 amount: rewardC,

@@ -43,13 +43,15 @@ export default function Deposit() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/user', {
+      // Clean phone to digits only before sending
+      const cleanPhone = user.phone.replace(/\D/g, '')
+
+      const res = await fetch('/api/deposit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'deposit',
-          phone: user.phone,
-          value: depositAmount,
+          phone: cleanPhone,
+          amount: depositAmount,
           method: selectedMethod
         })
       })
