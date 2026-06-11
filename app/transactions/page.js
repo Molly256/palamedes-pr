@@ -6,36 +6,48 @@ export default function Transactions() {
   const [tx, setTx] = useState([])
   const [user, setUser] = useState(null)
   const [filter, setFilter] = useState('all')
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
     if (!u) return router.push('/login')
     setUser(u)
-    const all = JSON.parse(localStorage.getItem('palamedes_transactions') || '[]')
-    setTx(all.filter(t => t.number === u.number).sort((a,b) => new Date(b.date) - new Date(a.date)))
+    fetchTransactions(u.phone)
   }, [router])
+
+  const fetchTransactions = async (phone) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/user?action=getTransactions&phone=${phone}`)
+      const data = await res.json()
+      if (data.success) {
+        setTx(data.transactions || [])
+      } else {
+        setTx([])
+      }
+    } catch (err) {
+      console.error('Failed to fetch transactions:', err)
+      setTx([])
+    }
+    setLoading(false)
+  }
 
   if (!user) return null
 
   const formatDate = (iso) => {
     if (!iso) return 'invalid date'
-
     const d = new Date(iso)
-
-    // Force Africa/Kampala timezone - no more split('-') so no undefined
     const day = d.toLocaleDateString('en-GB', { timeZone: 'Africa/Kampala', day: '2-digit' })
     const month = d.toLocaleDateString('en-GB', { timeZone: 'Africa/Kampala', month: '2-digit' })
     const year = d.toLocaleDateString('en-GB', { timeZone: 'Africa/Kampala', year: 'numeric' })
-
     const time = d.toLocaleTimeString('en-US', {
       timeZone: 'Africa/Kampala',
       hour: '2-digit',
       minute: '2-digit',
       hour12: true
     }).toLowerCase()
-
-    return `${day}/${month}/${year}/${time}`
+    return `${day}/${month}/${year} ${time}`
   }
 
   const filteredTx = filter === 'all'? tx : tx.filter(t => t.type === filter)
@@ -44,7 +56,7 @@ export default function Transactions() {
     { key: 'all', label: 'All' },
     { key: 'deposit', label: 'Deposit' },
     { key: 'withdraw', label: 'Withdraw' },
-    { key: 'daily_income', label: 'Daily income' },
+    { key: 'task_reward', label: 'Daily income' },
     { key: 'viptask_purchase', label: 'Viptask purchase' },
     { key: 'invitation_reward', label: 'Invitation reward' }
   ]
@@ -53,7 +65,7 @@ export default function Transactions() {
     const names = {
       deposit: 'Deposit',
       withdraw: 'Withdraw',
-      daily_income: 'Daily income',
+      task_reward: 'Daily income',
       viptask_purchase: 'Viptask purchase',
       invitation_reward: 'Invitation reward'
     }
@@ -63,13 +75,11 @@ export default function Transactions() {
   return (
     <main style={{ minHeight: '100vh', background: '#f5f5f5', padding: '20px' }}>
       <div style={{ maxWidth: '650px', margin: '0 auto' }}>
-
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px' }}>
           <button onClick={() => router.back()} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', marginRight: '15px' }}>←</button>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#000' }}>Transactions</h1>
         </div>
 
-        {/* Headers Tabs */}
         <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '8px' }}>
           {tabs.map(tab => (
             <button
@@ -93,12 +103,15 @@ export default function Transactions() {
         </div>
 
         <div style={{ background: '#fff', borderRadius: '12px', padding: '15px' }}>
-          {filteredTx.length === 0? (
+          {loading? (
+            <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>Loading...</p>
+          ) : filteredTx.length === 0? (
             <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>No transactions yet</p>
           ) : (
             filteredTx.map((t) => {
               const isWithdraw = t.type === 'withdraw'
-              const statusText = t.status === 'pending'? 'Pending' : isWithdraw? 'Success' : 'Approved'
+              const isCredit = t.amount > 0
+              const statusText = t.status === 'pending'? 'Pending' : 'Success'
               const statusColor = t.status === 'pending'? '#d32f2f' : '#2e7d32'
               const displayAmount = Math.abs(t.amount).toLocaleString()
 
@@ -118,8 +131,8 @@ export default function Transactions() {
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '16px', fontWeight: '300', color: '#000', marginBottom: '4px' }}>
-                      shs {displayAmount}
+                    <p style={{ fontSize: '16px', fontWeight: '300', color: isCredit? '#2e7d32' : '#000', marginBottom: '4px' }}>
+                      {isCredit? '+' : '-'}{displayAmount}shs
                     </p>
                     <p style={{ fontSize: '13px', fontWeight: '500', color: statusColor }}>
                       {statusText}
@@ -130,7 +143,6 @@ export default function Transactions() {
             })
           )}
         </div>
-
       </div>
     </main>
   )

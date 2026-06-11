@@ -67,6 +67,12 @@ export async function GET(request) {
       return Response.json({ success: true, shares: parsedShares })
     }
 
+    if (action === 'getTransactions') {
+      const txList = await kv.lrange(`transactions:${phone}`, 0, 99)
+      const transactions = txList.map(t => safeParse(t)).filter(Boolean)
+      return Response.json({ success: true, transactions })
+    }
+
     if (action === 'getDashboard') {
       const txList = await kv.lrange(`transactions:${phone}`, 0, 49)
       const transactions = txList.map(t => safeParse(t)).filter(Boolean)
@@ -203,10 +209,12 @@ export async function POST(request) {
       console.log('[SUBMIT] New balance:', newBalance)
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
-        type: 'task',
+        id: Date.now(),
+        type: 'task_reward',
         amount: perBook,
         book: bookNum,
-        date: getKampalaTime(),
+        date: new Date().toISOString(),
+        status: 'success',
         desc: `VIP${currentVipLevel} Book ${bookNum}`
       }))
 
@@ -286,17 +294,21 @@ export async function POST(request) {
         const timestamp = getKampalaTime()
         if (currentPricePaid > 0) {
           await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+            id: Date.now(),
             type: 'refund',
             amount: currentPricePaid,
-            date: timestamp,
+            date: new Date().toISOString(),
+            status: 'success',
             desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`
           }))
         }
 
         await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
-          type: 'vip',
+          id: Date.now(),
+          type: 'viptask_purchase',
           amount: -newPrice,
-          date: timestamp,
+          date: new Date().toISOString(),
+          status: 'success',
           desc: `Bought VIP${vipLevel}`
         }))
 
@@ -361,9 +373,11 @@ export async function POST(request) {
       }))
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
-        type: 'share',
+        id: Date.now(),
+        type: 'share_purchase',
         amount: -price,
-        date: getKampalaTime(),
+        date: new Date().toISOString(),
+        status: 'success',
         desc: `Bought ${config.name}`
       }))
 

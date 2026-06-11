@@ -44,13 +44,13 @@ export default function TasksPage() {
       if (data.tasks) {
         const maxBooks = VIP_CONFIG[data.user.vip]?.books || 0
         const bookKeys = Object.keys(data.tasks)
-        .filter(k => k.startsWith('book'))
-        .slice(0, maxBooks)
+       .filter(k => k.startsWith('book'))
+       .slice(0, maxBooks)
 
         const books = bookKeys.map((key, idx) => {
           const bookNum = idx + 1
           return {
-           ...booksData[idx % booksData.length],
+          ...booksData[idx % booksData.length],
             bookNum,
             status: data.tasks[key],
             taskKey: key
@@ -78,20 +78,25 @@ export default function TasksPage() {
         b.taskKey === readingBook.taskKey? {...b, status: 'read' } : b
       ))
       setShowPopup(true)
+      setReadingBook(null) // stop re-triggering
     }
     return () => clearTimeout(t)
   }, [timer, readingBook])
 
   const handleRead = (book) => {
-    if (book.status === 'read' || book.status === 'submitted') return
+    if (book.status!== 'pending' || readingBook) return
     setReadingBook(book)
     setTimer(10)
     setShowPopup(false)
+
+    // Optimistically lock the button instantly
+    setTodayBooks(prev => prev.map(b =>
+      b.taskKey === book.taskKey? {...b, status: 'reading' } : b
+    ))
   }
 
   const handlePopupOk = () => {
     setShowPopup(false)
-    setReadingBook(null)
     setTimer(10)
   }
 
@@ -101,8 +106,6 @@ export default function TasksPage() {
       alert('Daily tasks completed. Wait for next weekday.')
       return
     }
-
-    console.log("Submitting bookNumber:", bookNum)
 
     const maxBooks = VIP_CONFIG[user.vip]?.books || 0
     if (bookNum > maxBooks) {
@@ -143,10 +146,7 @@ export default function TasksPage() {
         })
       })
 
-      // Read text first so we can debug if it fails
       const text = await res.text()
-      console.log('API response:', text)
-
       let data
       try {
         data = JSON.parse(text)
@@ -214,7 +214,7 @@ export default function TasksPage() {
     )
   }
 
-  const pendingBooks = todayBooks.filter(b => b.status === 'pending' || b.status === 'read')
+  const pendingBooks = todayBooks.filter(b => b.status === 'pending' || b.status === 'read' || b.status === 'reading')
   const submittedBooks = todayBooks.filter(b => b.status === 'submitted')
 
   return (
@@ -231,6 +231,7 @@ export default function TasksPage() {
       ) : (
         pendingBooks.map((book, idx) => {
           const isRead = book.status === 'read' || book.status === 'submitted'
+          const isReading = book.status === 'reading'
           const canSubmit = book.status === 'read'
 
           return (
@@ -248,19 +249,19 @@ export default function TasksPage() {
                 <div style={{ display: "flex", gap: 10 }}>
                   <button
                     onClick={() => handleRead(book)}
-                    disabled={isRead}
+                    disabled={isRead || isReading}
                     style={{
                       padding: "8px 16px",
-                      background: isRead? "#E0E0E0" : SKYBLUE,
+                      background: isRead? "#E0E0E0" : isReading? "#B0B0B0" : SKYBLUE,
                       border: "none",
                       borderRadius: 6,
                       fontWeight: "400",
-                      cursor: isRead? "not-allowed" : "pointer",
+                      cursor: (isRead || isReading)? "not-allowed" : "pointer",
                       color: "#000",
-                      opacity: isRead? 0.6 : 1
+                      opacity: (isRead || isReading)? 0.6 : 1
                     }}
                   >
-                    {isRead? "Read ✓" : "Read"}
+                    {isRead? "Read ✓" : isReading? "Reading..." : "Read"}
                   </button>
                   <button
                     onClick={() => handleSubmit(book.bookNum)}
