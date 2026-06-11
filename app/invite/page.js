@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 export default function InvitePage() {
   const [inviteCode, setInviteCode] = useState('')
   const [copied, setCopied] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const getUserInviteCode = (phone) => {
     const clean = phone.replace(/\D/g, '')
@@ -17,17 +18,50 @@ export default function InvitePage() {
       const code = getUserInviteCode(userData.phone)
       setInviteCode(code)
     }
+    setLoading(false)
   }, [])
 
-  const referralLink = `https://www.palamedes-pr.co.uk/r/${inviteCode}`
+  const referralLink = inviteCode ? `https://www.palamedes-pr.co.uk/r/${inviteCode}` : ''
 
-  const copyCode = () => {
-    navigator.clipboard.writeText(inviteCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const copyCode = async () => {
+    if (!inviteCode) return
+    try {
+      await navigator.clipboard.writeText(inviteCode)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      // Fallback for iOS
+      const textArea = document.createElement('textarea')
+      textArea.value = inviteCode
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const copyLink = async () => {
+    if (!referralLink) return
+    try {
+      await navigator.clipboard.writeText(referralLink)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      const textArea = document.createElement('textarea')
+      textArea.value = referralLink
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   const shareWhatsApp = () => {
+    if (!referralLink) return
     const msg = `Join Palamedes and earn money! Use my invite code: ${inviteCode}\n${referralLink}`
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
@@ -83,6 +117,21 @@ export default function InvitePage() {
     },
   ]
 
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>
+  }
+
+  if (!inviteCode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center">
+          <p className="text-lg font-semibold mb-2">No account found</p>
+          <p className="text-gray-600">Please login first to get your invite link</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-4xl mx-auto">
@@ -94,19 +143,30 @@ export default function InvitePage() {
             <input
               value={inviteCode}
               readOnly
-              className="flex-1 p-3 border rounded-lg font-mono text-lg text-center"
+              className="flex-1 p-3 border rounded-lg font-mono text-lg text-center bg-gray-100"
             />
-            <button onClick={copyCode} className="px-4 bg-blue-600 text-white rounded-lg">
-              {copied? 'Copied!' : 'Copy'}
+            <button 
+              onClick={copyCode} 
+              className="px-4 bg-blue-600 text-white rounded-lg font-semibold"
+            >
+              {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
 
           <p className="text-sm text-gray-600 mb-2">Your Link:</p>
-          <input
-            value={referralLink}
-            readOnly
-            className="w-full p-3 border rounded-lg text-xs mb-6"
-          />
+          <div className="flex gap-2 mb-6">
+            <input
+              value={referralLink}
+              readOnly
+              className="flex-1 p-3 border rounded-lg text-xs bg-gray-100"
+            />
+            <button 
+              onClick={copyLink} 
+              className="px-4 bg-[#00BFFF] text-black rounded-lg font-semibold"
+            >
+              Copy Link
+            </button>
+          </div>
 
           {/* Step 1 */}
           <div className="flex gap-3 mb-6">
@@ -126,7 +186,7 @@ export default function InvitePage() {
             </div>
           </div>
 
-          {/* Step 3 + WhatsApp button under Team C */}
+          {/* Step 3 + WhatsApp button */}
           <div className="flex gap-3 mb-8">
             <span style={numberStyle}>3</span>
             <div className="flex-1">
@@ -186,7 +246,7 @@ export default function InvitePage() {
             <p className="text-xs text-gray-600 mt-2">* VIP 0 is free. Tap to activate and get 4 books immediately.</p>
           </div>
 
-          {/* SALARY TABLE - FIXED */}
+          {/* SALARY TABLE */}
           <div className="mt-12">
             <h2 className="text-xl font-bold text-[#00BFFF] mb-4">SALARY TABLE</h2>
             <div className="overflow-x-auto">

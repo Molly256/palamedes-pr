@@ -14,16 +14,19 @@ export default function Register() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [referralLocked, setReferralLocked] = useState(false)
 
-  // NEW: Auto-fill referral from link
+  // Auto-fill referral from link
   useEffect(() => {
-    const savedReferrer = localStorage.getItem('referrer_code')
+    const savedReferrer = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
     if (savedReferrer) {
       setForm(prev => ({...prev, referral: savedReferrer}))
+      setReferralLocked(true) // lock it so user can't change
     }
   }, [])
 
   const handleChange = (e) => {
+    if (e.target.name === 'referral' && referralLocked) return // prevent editing if locked
     setForm({...form, [e.target.name]: e.target.value})
   }
 
@@ -50,7 +53,7 @@ export default function Register() {
           username: form.username,
           phone: form.phone,
           password: form.password,
-          referral: form.referral // This now saves Team A/B/C link
+          referral: form.referral
         })
       })
       const data = await res.json()
@@ -63,7 +66,8 @@ export default function Register() {
           balance: 0,
           vip: 0
         }))
-        localStorage.removeItem('referrer_code') // NEW: Clear after signup
+        localStorage.removeItem('referrer_code')
+        sessionStorage.removeItem('referrer_code')
         window.location.href = '/login'
       } else {
         setError(data.message || 'Registration failed')
@@ -150,17 +154,38 @@ export default function Register() {
         </div>
 
         <div style={{marginBottom: '20px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Referral Code (Optional)</label>
+          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>
+            Referral Code {referralLocked && <span style={{color: '#00BFFF', fontSize: '12px'}}>(Auto-filled)</span>}
+          </label>
           <input
             type="text"
             name="referral"
             value={form.referral}
             onChange={handleChange}
-            style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
+            readOnly={referralLocked}
+            style={{
+              width: '100%', 
+              padding: '12px', 
+              border: '1px solid #ccc', 
+              background: referralLocked ? '#f3f4f6' : '#fff', 
+              color: '#000',
+              cursor: referralLocked ? 'not-allowed' : 'text'
+            }}
           />
         </div>
 
-        <button type="submit" disabled={loading} style={{width: '100%', padding: '14px', background: '#000', color: '#fff', border: 'none', cursor: 'pointer'}}>
+        <button 
+          type="submit" 
+          disabled={loading} 
+          style={{
+            width: '100%', 
+            padding: '14px', 
+            background: loading ? '#666' : '#000', 
+            color: '#fff', 
+            border: 'none', 
+            cursor: loading ? 'not-allowed' : 'pointer'
+          }}
+        >
           {loading ? 'Creating...' : 'Register'}
         </button>
       </form>
