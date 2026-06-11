@@ -37,6 +37,10 @@ function getKampalaTime() {
   })
 }
 
+function getISOTimestamp() {
+  return new Date().toISOString()
+}
+
 function isWeekdayKampala() {
   const weekday = new Date().toLocaleDateString('en-US', {timeZone: 'Africa/Kampala', weekday: 'short'})
   return!['Sat','Sun'].includes(weekday)
@@ -45,6 +49,10 @@ function isWeekdayKampala() {
 function getTodayKey(phone) {
   const today = new Date().toLocaleDateString('en-CA', {timeZone: 'Africa/Kampala'})
   return `task:palamedes:${phone}:${today}`
+}
+
+function getUGDateObj() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
 }
 
 export async function GET(request) {
@@ -59,12 +67,9 @@ export async function GET(request) {
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
     if (action === 'getShares') {
-      const shares = await kv.hgetall(`share:palamedes:${phone}`)
-      const parsedShares = {}
-      for (const [id, data] of Object.entries(shares || {})) {
-        parsedShares[id] = safeParse(data)
-      }
-      return Response.json({ success: true, shares: parsedShares })
+      const sharesHash = await kv.hgetall(`share:palamedes:${phone}`)
+      const shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
+      return Response.json({ success: true, shares })
     }
 
     if (action === 'getTransactions') {
@@ -77,7 +82,7 @@ export async function GET(request) {
       const txList = await kv.lrange(`transactions:${phone}`, 0, 49)
       const transactions = txList.map(t => safeParse(t)).filter(Boolean)
 
-      const vipTx = transactions.find(t => t.type === 'vip')
+      const vipTx = transactions.find(t => t.type === 'viptask_purchase')
       const vipPurchaseDate = vipTx? vipTx.date : null
 
       return Response.json({
@@ -148,72 +153,115 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  console.log('[ENV CHECK] KV_REST_API_URL:', process.env.KV_REST_API_URL);
   try {
     const body = await request.json()
-    console.log('[POST] INCOMING BODY:', body)
-
-    const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, field, value, oldPass, newPass } = body
+    const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names } = body
     const cleanPhone = phone?.replace(/\s+/g, '')
     const userKey = `phone:palamedes:${cleanPhone}`
+    const sharesKey = `share:palamedes:${cleanPhone}`
     const vipLevel = Number(rawVipLevel)
 
     if (!cleanPhone) return Response.json({ success: false, message: 'Phone required' })
 
     const user = await kv.hgetall(userKey)
-    console.log('[POST] USER FROM KV:', user)
-
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' })
 
-    if (action === 'submitTask') {
-      console.log('[SUBMIT] Starting submitTask')
-      console.log('[SUBMIT] bookNumber:', bookNumber, 'type:', typeof bookNumber)
+    if (action === 'deposit') {
+      const amount = Number(value)
+      if (!amount || amount <= 0) {
+        return Response.json({ success: false, message: 'Invalid deposit amount' })
+      }
 
+      const tx = {
+        id: Date.now(),
+        type: 'deposit',
+        amount: amount,
+        method: method || '',
+        date: getISOTimestamp(),
+        status: 'pending',
+        desc: `Deposit via ${method || 'Mobile Money'}`
+      }
+
+      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
+
+      return Response.json({
+        success: true,
+        tx: tx,
+        message: 'Deposit request submitted. Pending approval.'
+      })
+    }
+
+    if (action === 'withdraw') {
+      const amount = Number(value)
+      const balance = Number(user.balance) || 0
+
+      if (!amount || amount <= 0) {
+        return Response.json({ success: false, message: 'Invalid withdraw amount' })
+      }
+      if (amount > balance) {
+        return Response.json({ success: false, message: 'Insufficient balance' })
+      }
+
+      const fee = Math.floor(amount * 0.1)
+      const netAmount = amount - fee
+
+      const tx = {
+        id: Date.now(),
+        type: 'withdraw',
+        amount: -amount,
+        netAmount: netAmount,
+        fee: fee,
+        method: method || '',
+        number: number || '',
+        names: names || '',
+        date: getISOTimestamp(),
+        status: 'pending',
+        desc: `Withdraw to ${method} - ${number} - ${names}`
+      }
+
+      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
+
+      return Response.json({
+        success: true,
+        tx: tx,
+        message: 'Withdraw request submitted. Pending approval.'
+      })
+    }
+
+    if (action === 'submitTask') {
       if (!isWeekdayKampala()) {
-        console.log('[SUBMIT] Blocked: weekend')
         return Response.json({ success: false, message: 'No tasks on weekends' })
       }
 
       const currentVipLevel = Number(user.vip) || 0
       const config = VIP_CONFIG[currentVipLevel]
-      console.log('[SUBMIT] VIP level:', currentVipLevel, 'config:', config)
-
       if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
 
       const bookNum = Number(bookNumber)
-      console.log('[SUBMIT] Parsed bookNum:', bookNum)
-
       if (!bookNum || bookNum < 1 || bookNum > config.books) {
-        console.log('[SUBMIT] Invalid bookNum:', bookNum, 'max:', config.books)
         return Response.json({ success: false, message: 'Invalid book number for your VIP level' })
       }
 
       const bookKey = `book${bookNum}`
       const todayKey = getTodayKey(cleanPhone)
       const tasks = await kv.hgetall(todayKey)
-      console.log('[SUBMIT] todayKey:', todayKey)
-      console.log('[SUBMIT] tasks from KV:', tasks)
-      console.log('[SUBMIT] checking bookKey:', bookKey, 'status:', tasks?.[bookKey])
 
       if (!tasks || (tasks[bookKey]!== 'pending' && tasks[bookKey]!== 'read')) {
-        console.log('[SUBMIT] Task invalid or already submitted')
         return Response.json({ success: false, message: 'Task already submitted or invalid' })
       }
 
       const perBook = Number(config.perBook)
       await kv.hset(todayKey, { [bookKey]: 'submitted' })
-      console.log('[SUBMIT] Marked', bookKey, 'as submitted')
 
       const newBalance = Number(user.balance) + perBook
       await kv.hset(userKey, { balance: String(newBalance) })
-      console.log('[SUBMIT] New balance:', newBalance)
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
         id: Date.now(),
         type: 'task_reward',
         amount: perBook,
         book: bookNum,
-        date: new Date().toISOString(),
+        date: getISOTimestamp(),
         status: 'success',
         desc: `VIP${currentVipLevel} Book ${bookNum}`
       }))
@@ -221,167 +269,211 @@ export async function POST(request) {
       const updatedTasks = await kv.hgetall(todayKey)
       const totalBooks = config.books
       const done = Object.keys(updatedTasks || {}).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
-      console.log('[SUBMIT] Done:', done, '/', totalBooks)
 
       if (done === totalBooks) {
         await kv.hset(userKey, { vipLocked: 'true', tasksCompleted: String(done) })
-        console.log('[SUBMIT] All tasks done, locked VIP')
       } else {
         await kv.hset(userKey, { tasksCompleted: String(done) })
       }
 
-      const responseData = {
+      return Response.json({
         success: true,
-        balance: Number(newBalance) || 0,
-        done: Number(done) || 0,
-        totalBooks: Number(totalBooks) || 0
-      }
-      console.log('[SUBMIT] Returning:', responseData)
-      return Response.json(responseData)
+        balance: Number(newBalance),
+        done: Number(done),
+        totalBooks: Number(totalBooks)
+      })
     }
 
     if (action === 'buyvip') {
-      try {
-        const currentVip = Number(user.vip) || 0
-        const currentPricePaid = Number(user.vipPricePaid) || 0
-        const config = VIP_CONFIG[vipLevel]
+      const currentVip = Number(user.vip) || 0
+      const currentPricePaid = Number(user.vipPricePaid) || 0
+      const config = VIP_CONFIG[vipLevel]
 
-        if (!config) {
-          return Response.json({ success: false, message: 'Invalid VIP level' })
-        }
+      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' })
 
-        const newPrice = Number(config.price)
-        const balance = Number(user.balance) || 0
+      const newPrice = Number(config.price)
+      const balance = Number(user.balance) || 0
 
-        if (!vipLevel || vipLevel <= currentVip) {
-          return Response.json({ success: false, message: 'Cannot downgrade VIP' })
-        }
+      if (!vipLevel || vipLevel <= currentVip) {
+        return Response.json({ success: false, message: 'Cannot downgrade VIP' })
+      }
 
-        if (balance < newPrice) {
-          return Response.json({ success: false, message: 'Insufficient balance' })
-        }
+      if (balance < newPrice) {
+        return Response.json({ success: false, message: 'Insufficient balance' })
+      }
 
-        let newBalance = balance - newPrice
-        if (currentPricePaid > 0) {
-          newBalance += currentPricePaid
-        }
+      let newBalance = balance - newPrice
+      if (currentPricePaid > 0) {
+        newBalance += currentPricePaid
+      }
 
-        const todayKey = getTodayKey(cleanPhone)
-        const oldTasks = await kv.hgetall(todayKey)
-        const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
-        const doneToday = oldTasks
-? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
-          : 0
-        const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
+      const todayKey = getTodayKey(cleanPhone)
+      const oldTasks = await kv.hgetall(todayKey)
+      const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
+      const doneToday = oldTasks? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length : 0
+      const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
-        await kv.hset(userKey, {
-          balance: String(newBalance),
-          vip: String(vipLevel),
-          vipPricePaid: String(newPrice),
-          vipLocked: 'false',
-          tasksCompleted: '0'
-        })
+      await kv.hset(userKey, {
+        balance: String(newBalance),
+        vip: String(vipLevel),
+        vipPricePaid: String(newPrice),
+        vipLocked: 'false',
+        tasksCompleted: '0'
+      })
 
-        await kv.del(todayKey)
+      await kv.del(todayKey)
 
-        if (isWeekdayKampala() &&!alreadyFinishedToday) {
-          const taskObj = {}
-          for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
-          taskObj.income = String(config.books * config.perBook)
-          await kv.hset(todayKey, taskObj)
-        }
+      if (isWeekdayKampala() &&!alreadyFinishedToday) {
+        const taskObj = {}
+        for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
+        taskObj.income = String(config.books * config.perBook)
+        await kv.hset(todayKey, taskObj)
+      }
 
-        const timestamp = getKampalaTime()
-        if (currentPricePaid > 0) {
-          await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
-            id: Date.now(),
-            type: 'refund',
-            amount: currentPricePaid,
-            date: new Date().toISOString(),
-            status: 'success',
-            desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`
-          }))
-        }
-
+      const timestamp = getISOTimestamp()
+      if (currentPricePaid > 0) {
         await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
           id: Date.now(),
-          type: 'viptask_purchase',
-          amount: -newPrice,
-          date: new Date().toISOString(),
+          type: 'refund',
+          amount: currentPricePaid,
+          date: timestamp,
           status: 'success',
-          desc: `Bought VIP${vipLevel}`
+          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`
         }))
-
-        await new Promise(r => setTimeout(r, 150))
-        const freshUser = await kv.hgetall(userKey)
-
-        if (!freshUser || freshUser.balance == null) {
-          return Response.json({ success: false, message: 'Failed to update user data' }, { status: 500 })
-        }
-
-        return Response.json({
-          success: true,
-          user: {
-            username: freshUser.username,
-            phone: freshUser.phone,
-            balance: Number(freshUser.balance) || 0,
-            vip: Number(freshUser.vip) || 0,
-            vipPricePaid: Number(freshUser.vipPricePaid) || 0,
-            vipLocked: freshUser.vipLocked === 'true',
-            tasksCompleted: Number(freshUser.tasksCompleted) || 0,
-            nickname: freshUser.nickname || '',
-            avatar: freshUser.avatar || '',
-            bankMTN: safeParse(freshUser.bankMTN),
-            bankAirtel: safeParse(freshUser.bankAirtel),
-            password: freshUser.password || ''
-          },
-          message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
-        })
-
-      } catch (err) {
-        console.error('buyvip error:', err)
-        return Response.json({ success: false, message: err.message }, { status: 500 })
       }
+
+      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+        id: Date.now(),
+        type: 'viptask_purchase',
+        amount: -newPrice,
+        date: timestamp,
+        status: 'success',
+        desc: `Bought VIP${vipLevel}`
+      }))
+
+      const freshUser = await kv.hgetall(userKey)
+      return Response.json({
+        success: true,
+        user: {
+          username: freshUser.username,
+          phone: freshUser.phone,
+          balance: Number(freshUser.balance) || 0,
+          vip: Number(freshUser.vip) || 0,
+          vipPricePaid: Number(freshUser.vipPricePaid) || 0,
+          vipLocked: freshUser.vipLocked === 'true',
+          tasksCompleted: Number(freshUser.tasksCompleted) || 0,
+          nickname: freshUser.nickname || '',
+          avatar: freshUser.avatar || '',
+          bankMTN: safeParse(freshUser.bankMTN),
+          bankAirtel: safeParse(freshUser.bankAirtel),
+          password: freshUser.password || ''
+        },
+        message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
+      })
     }
 
     if (action === 'buyShare') {
       const config = SHARE_CONFIG[shareId]
       if (!config) return Response.json({ success: false, message: 'Invalid share' })
 
-      const price = Number(config.price)
+      const qty = Number(quantity) || 1
+      const cost = Number(totalCost) || config.price * qty
       const balance = Number(user.balance) || 0
 
-      if (balance < price) {
-        return Response.json({ success: false, message: 'Insufficient balance. Need 50,000shs' })
+      if (balance < cost) {
+        return Response.json({ success: false, message: 'Insufficient balance' })
       }
 
-      const existingShare = await kv.hget(`share:palamedes:${cleanPhone}`, shareId)
-      if (existingShare) {
-        return Response.json({ success: false, message: 'You already own this share' })
-      }
-
-      const newBalance = balance - price
+      const newBalance = balance - cost
       await kv.hset(userKey, { balance: String(newBalance) })
 
-      await kv.hset(`share:palamedes:${cleanPhone}`, shareId, JSON.stringify({
-        name: config.name,
-        price: price,
-        daily: config.daily,
-        cycle: config.cycle,
+      const buyDate = getUGDateObj()
+      const endDate = new Date(buyDate)
+      endDate.setDate(endDate.getDate() + Number(cycleDays || config.cycle))
+
+      const shareIdUnique = `${shareId}_${Date.now()}`
+      const shareData = {
+        id: shareIdUnique,
+        shareId: shareId,
+        shareName: shareName || config.name,
+        quantity: qty,
+        pricePerShare: config.price,
+        dailyProfit: Number(dailyProfit || config.daily * 100),
+        cycleDays: Number(cycleDays || config.cycle),
         buyDate: getKampalaTime(),
-        lastClaim: getKampalaTime()
-      }))
+        endDate: getKampalaTime.call(null, endDate),
+        status: 'ongoing',
+        collectedAt: null,
+        profitReceived: 0
+      }
+
+      await kv.hset(sharesKey, shareIdUnique, JSON.stringify(shareData))
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
         id: Date.now(),
         type: 'share_purchase',
-        amount: -price,
-        date: new Date().toISOString(),
+        amount: -cost,
+        shareName: shareData.shareName,
+        quantity: qty,
+        date: getISOTimestamp(),
         status: 'success',
-        desc: `Bought ${config.name}`
+        desc: `Bought ${qty} x ${shareData.shareName}`
       }))
 
-      return Response.json({ success: true, balance: newBalance, message: `${config.name} purchased!` })
+      return Response.json({
+        success: true,
+        balance: newBalance,
+        message: `Bought ${qty} share(s) of ${shareData.shareName}!`
+      })
+    }
+
+    if (action === 'collectShare') {
+      const shareIdUnique = body.shareId
+      if (!shareIdUnique) return Response.json({ success: false, message: 'Share ID required' })
+
+      const shareStr = await kv.hget(sharesKey, shareIdUnique)
+      if (!shareStr) return Response.json({ success: false, message: 'Share not found' })
+
+      const share = safeParse(shareStr)
+      if (!share) return Response.json({ success: false, message: 'Invalid share data' })
+
+      if (share.status!== 'ongoing') {
+        return Response.json({ success: false, message: 'Share already collected' })
+      }
+
+      const now = getUGDateObj()
+      const endDate = new Date(share.endDate)
+      if (now < endDate) {
+        return Response.json({ success: false, message: 'Share not matured yet' })
+      }
+
+      const profit = Math.round(share.pricePerShare * share.quantity * (share.dailyProfit / 100) * share.cycleDays)
+      const newBalance = Number(user.balance) + profit
+
+      share.status = 'expired'
+      share.collectedAt = getKampalaTime()
+      share.profitReceived = profit
+
+      await kv.hset(sharesKey, shareIdUnique, JSON.stringify(share))
+      await kv.hset(userKey, { balance: String(newBalance) })
+
+      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+        id: Date.now(),
+        type: 'share_profit',
+        amount: profit,
+        shareName: share.shareName,
+        quantity: share.quantity,
+        date: getISOTimestamp(),
+        status: 'success',
+        desc: `Profit from ${share.shareName} x${share.quantity}`
+      }))
+
+      return Response.json({
+        success: true,
+        balance: newBalance,
+        profit: profit,
+        message: 'Profits collected successfully'
+      })
     }
 
     if (action === 'updateProfile') {

@@ -3,11 +3,15 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 import Card from '../../components/Card'
+import { useRouter } from 'next/navigation'
 
 export default function Dashboard() {
+ const router = useRouter()
  const [user, setUser] = useState(null)
  const [loading, setLoading] = useState(true)
  const [deferredPrompt, setDeferredPrompt] = useState(null)
+
+ const ADMIN_PHONE = '0753520252'
 
  const loadUser = async () => {
    const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
@@ -20,13 +24,10 @@ export default function Dashboard() {
    }
    
    try {
-     // Fetch from api/user using phone:palamedes:{phone} key
-     // Added ?t=timestamp to prevent browser cache after VIP purchase
      const res = await fetch(`/api/user?phone=${cleanPhone}&t=${Date.now()}`)
      const data = await res.json()
      
      if (data.success && data.user) {
-       // KV stores balance/vip as strings, convert to number
        const userData = {
          ...data.user,
          balance: Number(data.user.balance) || 0,
@@ -46,7 +47,7 @@ export default function Dashboard() {
 
  useEffect(() => {
    loadUser()
-   window.addEventListener('focus', loadUser) // refresh on tab focus
+   window.addEventListener('focus', loadUser)
    return () => window.removeEventListener('focus', loadUser)
  }, [])
 
@@ -100,6 +101,31 @@ export default function Dashboard() {
  position: 'relative',
  minHeight: '140px'
  }}>
+ 
+ {/* Admin Panel Button - only for admin */}
+ {user?.phone === ADMIN_PHONE && (
+   <button
+     onClick={() => router.push('/admin')}
+     style={{
+       position: 'absolute',
+       top: '16px',
+       right: '16px',
+       backgroundColor: '#FF69B4',
+       color: '#000',
+       fontWeight: '300',
+       padding: '6px 14px',
+       borderRadius: '16px',
+       border: 'none',
+       cursor: 'pointer',
+       fontSize: '13px',
+       zIndex: 10,
+       boxShadow: '0 2px 6px rgba(255,105,180,0.3)'
+     }}
+   >
+     Admin Panel
+   </button>
+ )}
+
  <div style={{ paddingRight: '90px' }}>
  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
  Welcome to PALAMEDES PR
@@ -153,7 +179,6 @@ export default function Dashboard() {
  </Link>
  ))}
 
- {/* 3 EMPTY BOXES - KEEP THEM FOR BOTTOMNAV SPACING */}
  {[...Array(3)].map((_, i) => (
  <div key={`empty-${i}`} style={{ height: '95px' }}></div>
  ))}

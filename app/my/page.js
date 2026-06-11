@@ -77,7 +77,8 @@ export default function MyPage() {
       
       if (isWeekend(txDateUG)) return
 
-      if (txDateUG >= vipStart && tx.type === 'task') {
+      // FIXED: changed 'task' to 'task_reward'
+      if (txDateUG >= vipStart && tx.type === 'task_reward') {
         totalAmt += tx.amount
         if (txDateUG.getTime() === todayUG.getTime()) todayAmt += tx.amount
         if (txDateUG.getTime() === yesterdayUG.getTime()) yesterdayAmt += tx.amount
@@ -94,7 +95,16 @@ export default function MyPage() {
 
     const balance = userData?.balance || 0
 
-    return { yesterday: yesterdayAmt, today: todayAmt, thisWeek: weekAmt, thisMonth: monthAmt, total: totalAmt, invitation: inviteAmt, deposit, balance }
+    return { 
+      yesterday: yesterdayAmt, 
+      today: todayAmt, 
+      thisWeek: weekAmt, 
+      thisMonth: monthAmt, 
+      total: totalAmt, 
+      invitation: inviteAmt, 
+      deposit, 
+      balance 
+    }
   }
 
   const earnings = calculateEarnings()

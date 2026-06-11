@@ -9,6 +9,7 @@ export default function Withdraw() {
   const [withdrawNumber, setWithdrawNumber] = useState('')
   const [names, setNames] = useState('')
   const [bankInfoSaved, setBankInfoSaved] = useState(false)
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
 
   const presetAmounts = [10000, 50000, 250000, 500000, 1000000, 2000000, 5000000, 10000000]
@@ -71,43 +72,37 @@ export default function Withdraw() {
       return
     }
 
+    setLoading(true)
+
     try {
-      const res = await fetch('/api/wallet', {
+      const res = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'withdraw',
-          number: withdrawNumber,
-          amount: withdrawAmount,
+          phone: user.phone,
+          value: withdrawAmount,
           method: selectedMethod,
+          number: withdrawNumber,
           names: names
         })
       })
 
       const data = await res.json()
-      if (!res.ok) {
-        alert(data.error)
+      if (!data.success) {
+        alert(data.message || 'Withdraw failed')
+        setLoading(false)
         return
       }
 
-      // NO instant deduction - admin approves first
-      const newTx = {
-     ...data.tx,
-        method: selectedMethod,
-        names: names,
-        number: withdrawNumber,
-        type: 'withdraw',
-        status: 'pending'
-      }
-      const transactions = JSON.parse(localStorage.getItem('palamedes_transactions') || '[]')
-      transactions.unshift(newTx)
-      localStorage.setItem('palamedes_transactions', JSON.stringify(transactions))
-
-      alert(`Withdraw request sent. You receive: ${netAmount.toLocaleString()}shs after 10% fee. Money arrives 30mins-24hrs.`)
+      alert(`Withdraw request sent. You receive: ${netAmount.toLocaleString()}shs after 10% fee. Pending approval.`)
       router.push('/transactions')
 
     } catch (err) {
+      console.error(err)
       alert('Something went wrong')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -196,7 +191,6 @@ export default function Withdraw() {
               Input one of the amount below depending on your account balance.
             </p>
 
-            {/* DISPLAY ONLY AMOUNT BOXES - bold light blue + black lightweight text */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '15px' }}>
               {presetAmounts.map((amt) => (
                 <div
@@ -209,8 +203,10 @@ export default function Withdraw() {
                     fontSize: '15px',
                     fontWeight: '300',
                     color: '#000',
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    cursor: 'pointer'
                   }}
+                  onClick={() => setAmount(String(amt))}
                 >
                   {amt.toLocaleString()}shs
                 </div>
@@ -234,22 +230,21 @@ export default function Withdraw() {
 
             <button
               onClick={handleWithdraw}
+              disabled={loading}
               style={{
                 width: '100%',
                 padding: '18px',
-                background: '#87CEEB',
+                background: loading? '#666' : '#87CEEB',
                 border: 'none',
                 borderRadius: '12px',
                 fontSize: '17px',
                 fontWeight: '300',
                 color: '#000',
-                cursor: 'pointer',
+                cursor: loading? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s'
               }}
-              onMouseOver={(e) => e.currentTarget.style.background = '#7bb8d4'}
-              onMouseOut={(e) => e.currentTarget.style.background = '#87CEEB'}
             >
-              Withdraw
+              {loading? 'Processing...' : 'Withdraw'}
             </button>
           </>
         )}

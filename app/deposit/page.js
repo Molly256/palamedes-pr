@@ -43,44 +43,33 @@ export default function Deposit() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/wallet', {
+      const res = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'deposit',
-          phone: user.phone, // FIXED: was user.number
-          amount: depositAmount
+          phone: user.phone,
+          value: depositAmount,
+          method: selectedMethod
         })
       })
 
       const data = await res.json()
-      if (!res.ok) {
-        alert(data.error || 'Deposit failed')
+      if (!data.success) {
+        alert(data.message || 'Deposit failed')
         setLoading(false)
         return
       }
 
-      // Save transaction to localStorage
-      const newTx = {...data.tx, method: selectedMethod }
-      const transactions = JSON.parse(localStorage.getItem('palamedes_transactions') || '[]')
-      transactions.unshift(newTx)
-      localStorage.setItem('palamedes_transactions', JSON.stringify(transactions))
-
-      // Update user balance in localStorage
-      const newBalance = data.newBalance || user.balance + depositAmount
-      const newUser = {...user, balance: newBalance }
-      localStorage.setItem('palamedes_user', JSON.stringify(newUser))
-      setUser(newUser)
-
-      alert(`Deposit successful! ${depositAmount.toLocaleString()}shs added. New balance: shs ${newBalance.toLocaleString()}`)
+      alert(`Deposit request submitted! ${depositAmount.toLocaleString()}shs pending approval.`)
       router.push('/transactions')
 
     } catch (err) {
       console.error(err)
       alert('Something went wrong. Try again')
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   if (!user) return <div style={{ textAlign: 'center', padding: '100px' }}>Loading...</div>
