@@ -12,8 +12,12 @@ export default function Transactions() {
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
     if (!u) return router.push('/login')
-    setUser(u)
-    fetchTransactions(u.phone)
+
+    // Clean phone to match backend key format
+    const cleanPhone = u.phone.replace(/\D/g, '')
+    const cleanedUser = {...u, phone: cleanPhone }
+    setUser(cleanedUser)
+    fetchTransactions(cleanPhone)
   }, [router])
 
   const fetchTransactions = async (phone) => {
@@ -21,9 +25,11 @@ export default function Transactions() {
     try {
       const res = await fetch(`/api/user?action=getTransactions&phone=${phone}`)
       const data = await res.json()
+
       if (data.success) {
         setTx(data.transactions || [])
       } else {
+        console.error('Failed to fetch transactions:', data.message)
         setTx([])
       }
     } catch (err) {
@@ -109,7 +115,6 @@ export default function Transactions() {
             <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>No transactions yet</p>
           ) : (
             filteredTx.map((t) => {
-              const isWithdraw = t.type === 'withdraw'
               const isCredit = t.amount > 0
               const statusText = t.status === 'pending'? 'Pending' : 'Success'
               const statusColor = t.status === 'pending'? '#d32f2f' : '#2e7d32'
