@@ -20,13 +20,13 @@ export default function Register() {
   useEffect(() => {
     const savedReferrer = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
     if (savedReferrer) {
-      setForm(prev => ({...prev, referral: savedReferrer}))
-      setReferralLocked(true) // lock it so user can't change
+      setForm(prev => ({...prev, referral: savedReferrer.trim().toUpperCase()}))
+      setReferralLocked(true)
     }
   }, [])
 
   const handleChange = (e) => {
-    if (e.target.name === 'referral' && referralLocked) return // prevent editing if locked
+    if (e.target.name === 'referral' && referralLocked) return
     setForm({...form, [e.target.name]: e.target.value})
   }
 
@@ -50,10 +50,10 @@ export default function Register() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           action: 'register',
-          username: form.username,
-          phone: form.phone,
+          username: form.username.trim(),
+          phone: form.phone.trim(),
           password: form.password,
-          referral: form.referral
+          referral: form.referral.trim().toUpperCase()
         })
       })
       const data = await res.json()

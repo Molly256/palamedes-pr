@@ -13,10 +13,11 @@ function isValidInviteCode(code) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, username, password, phone, referral } = body
+    let { action, username, password, phone, referral } = body
+    
     const cleanPhone = phone?.replace(/\s+/g, '')
-    const userKey = `phone:palamedes:${cleanPhone}`
-    const usernameKey = `user:palamedes:${username?.toLowerCase()}`
+    const userKey = `user:0753520252:${cleanPhone}` // using your existing key format
+    const usernameKey = `username:${username?.toLowerCase()}`
 
     // REGISTER
     if (action === 'register') {
@@ -28,8 +29,11 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Password must be at least 6 characters' })
       }
 
+      // Normalize referral
+      referral = referral ? referral.trim().toUpperCase() : ''
+
       if (referral && !isValidInviteCode(referral)) {
-        return Response.json({ success: false, message: 'Invalid referral code' })
+        return Response.json({ success: false, message: 'Invalid referral code format' })
       }
 
       // Block self-referral
@@ -42,24 +46,24 @@ export async function POST(request) {
       let upline1 = '', upline2 = '', upline3 = ''
       
       if (referral) {
-        const upline1Phone = await kv.get(`invite:${referral}`)
+        const upline1Phone = await kv.get(`referral:${referral}`)
         if (!upline1Phone) {
           return Response.json({ success: false, message: 'Referral code not found' })
         }
         upline1 = upline1Phone
 
         // Get upline2
-        const upline1Data = await kv.hgetall(`phone:palamedes:${upline1Phone}`)
-        if (upline1Data?.referral) {
-          const upline2Phone = await kv.get(`invite:${upline1Data.referral}`)
+        const upline1Data = await kv.hgetall(`user:0753520252:${upline1Phone}`)
+        if (upline1Data?.referralCode) {
+          const upline2Phone = await kv.get(`referral:${upline1Data.referralCode}`)
           if (upline2Phone) upline2 = upline2Phone
         }
 
         // Get upline3
         if (upline2) {
-          const upline2Data = await kv.hgetall(`phone:palamedes:${upline2}`)
-          if (upline2Data?.referral) {
-            const upline3Phone = await kv.get(`invite:${upline2Data.referral}`)
+          const upline2Data = await kv.hgetall(`user:0753520252:${upline2}`)
+          if (upline2Data?.referralCode) {
+            const upline3Phone = await kv.get(`referral:${upline2Data.referralCode}`)
             if (upline3Phone) upline3 = upline3Phone
           }
         }
@@ -84,7 +88,7 @@ export async function POST(request) {
         vipPricePaid: '0',
         vipLocked: 'false',
         tasksCompleted: '0',
-        referral: referral || '',
+        referralCode: referral,
         upline1,
         upline2,
         upline3,
@@ -95,7 +99,8 @@ export async function POST(request) {
 
       // Create invite code mapping for this user
       const inviteCode = getUserInviteCode(cleanPhone)
-      await kv.set(`invite:${inviteCode}`, cleanPhone)
+      await kv.set(`referral:${inviteCode}`, cleanPhone)
+      await kv.hset(userKey, { referralCode: inviteCode })
 
       return Response.json({ 
         success: true, 
@@ -128,7 +133,7 @@ export async function POST(request) {
           vip: Number(user.vip) || 0,
           vipLocked: user.vipLocked === 'true',
           tasksCompleted: Number(user.tasksCompleted) || 0,
-          referral: user.referral || '',
+          referralCode: user.referralCode || '',
           upline1: user.upline1 || '',
           upline2: user.upline2 || '',
           upline3: user.upline3 || '',
