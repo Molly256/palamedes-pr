@@ -212,7 +212,7 @@ export async function POST(request) {
 
       const updatedTasks = await kv.hgetall(todayKey)
       const totalBooks = config.books
-      const done = Object.keys(updatedTasks).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
+      const done = Object.keys(updatedTasks || {}).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
       console.log('[SUBMIT] Done:', done, '/', totalBooks)
 
       if (done === totalBooks) {
@@ -222,7 +222,14 @@ export async function POST(request) {
         await kv.hset(userKey, { tasksCompleted: String(done) })
       }
 
-      return Response.json({ success: true, balance: newBalance, done, totalBooks })
+      const responseData = {
+        success: true,
+        balance: Number(newBalance) || 0,
+        done: Number(done) || 0,
+        totalBooks: Number(totalBooks) || 0
+      }
+      console.log('[SUBMIT] Returning:', responseData)
+      return Response.json(responseData)
     }
 
     if (action === 'buyvip') {
@@ -255,7 +262,7 @@ export async function POST(request) {
         const oldTasks = await kv.hgetall(todayKey)
         const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
         const doneToday = oldTasks
- ? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
+? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length
           : 0
         const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
 
