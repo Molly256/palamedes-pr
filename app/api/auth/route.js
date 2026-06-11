@@ -16,7 +16,8 @@ export async function POST(request) {
     let { action, username, password, phone, referral } = body
     
     const cleanPhone = phone?.replace(/\s+/g, '')
-    const userKey = `user:0753520252:${cleanPhone}` // using your existing key format
+    const newKey = `user:0753520252:${cleanPhone}`
+    const oldKey = `phone:palamedes:${cleanPhone}`
     const usernameKey = `username:${username?.toLowerCase()}`
 
     // REGISTER
@@ -29,20 +30,17 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Password must be at least 6 characters' })
       }
 
-      // Normalize referral
       referral = referral ? referral.trim().toUpperCase() : ''
 
       if (referral && !isValidInviteCode(referral)) {
         return Response.json({ success: false, message: 'Invalid referral code format' })
       }
 
-      // Block self-referral
       const myInviteCode = getUserInviteCode(cleanPhone)
       if (referral === myInviteCode) {
         return Response.json({ success: false, message: 'Cannot use your own referral code' })
       }
 
-      // Build upline chain A, B, C
       let upline1 = '', upline2 = '', upline3 = ''
       
       if (referral) {
@@ -52,14 +50,12 @@ export async function POST(request) {
         }
         upline1 = upline1Phone
 
-        // Get upline2
         const upline1Data = await kv.hgetall(`user:0753520252:${upline1Phone}`)
         if (upline1Data?.referralCode) {
           const upline2Phone = await kv.get(`referral:${upline1Data.referralCode}`)
           if (upline2Phone) upline2 = upline2Phone
         }
 
-        // Get upline3
         if (upline2) {
           const upline2Data = await kv.hgetall(`user:0753520252:${upline2}`)
           if (upline2Data?.referralCode) {
@@ -69,7 +65,7 @@ export async function POST(request) {
         }
       }
 
-      const exists = await kv.exists(userKey)
+      const exists = await kv.exists(newKey) || await kv.exists(oldKey)
       if (exists) {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
@@ -79,7 +75,7 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username taken' })
       }
 
-      await kv.hset(userKey, {
+      await kv.hset(newKey, {
         username,
         phone: cleanPhone,
         password,
@@ -97,10 +93,9 @@ export async function POST(request) {
       
       await kv.hset(usernameKey, { phone: cleanPhone })
 
-      // Create invite code mapping for this user
       const inviteCode = getUserInviteCode(cleanPhone)
       await kv.set(`referral:${inviteCode}`, cleanPhone)
-      await kv.hset(userKey, { referralCode: inviteCode })
+      await kv.hset(newKey, { referralCode: inviteCode })
 
       return Response.json({ 
         success: true, 
@@ -115,7 +110,12 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      const user = await kv.hgetall(userKey)
+      // Check new key first, fallback to old key
+      let user = await kv.hgetall(newKey)
+      if (!user || !user.username) {
+        user = await kv.hgetall(oldKey)
+      }
+      
       if (!user || !user.username) {
         return Response.json({ success: false, message: 'User not found' })
       }
