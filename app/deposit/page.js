@@ -43,21 +43,22 @@ export default function Deposit() {
     setLoading(true)
 
     try {
-      // Clean phone to digits only before sending
       const cleanPhone = user.phone.replace(/\D/g, '')
 
-      const res = await fetch('/api/deposit', {
+      const res = await fetch('/api/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'deposit', // <- this triggers the deposit block in /api/user
           phone: cleanPhone,
-          value: depositAmount, // fixed: backend expects 'value'
+          value: depositAmount,
           method: selectedMethod
         })
       })
 
       const data = await res.json()
-      if (!data.success) {
+
+      if (!res.ok ||!data.success) {
         alert(data.message || 'Deposit failed')
         setLoading(false)
         return
@@ -67,7 +68,7 @@ export default function Deposit() {
       router.push('/transactions')
 
     } catch (err) {
-      console.error(err)
+      console.error('Deposit error:', err)
       alert('Something went wrong. Try again')
     } finally {
       setLoading(false)
