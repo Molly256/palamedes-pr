@@ -9,7 +9,6 @@ export default function Dashboard() {
  const router = useRouter()
  const [user, setUser] = useState(null)
  const [loading, setLoading] = useState(true)
- const [deferredPrompt, setDeferredPrompt] = useState(null)
 
  const ADMIN_PHONE = '0753520252'
 
@@ -51,25 +50,6 @@ export default function Dashboard() {
    return () => window.removeEventListener('focus', loadUser)
  }, [])
 
- useEffect(() => {
-   const handler = (e) => {
-     e.preventDefault()
-     setDeferredPrompt(e)
-   }
-   window.addEventListener('beforeinstallprompt', handler)
-   return () => window.removeEventListener('beforeinstallprompt', handler)
- }, [])
-
- const handleInstall = async () => {
-   if (!deferredPrompt) {
-     alert('Install not available.\niPhone: Share > Add to Home Screen\nAndroid: Menu > Install app')
-     return
-   }
-   deferredPrompt.prompt()
-   const { outcome } = await deferredPrompt.userChoice
-   if (outcome === 'accepted') setDeferredPrompt(null)
- }
-
  const menuItems = [
  { icon: '💳', label: 'Deposit', href: '/deposit' },
  { icon: '🏧', label: 'Withdraw', href: '/withdraw' },
@@ -78,7 +58,7 @@ export default function Dashboard() {
  { icon: '👥', label: 'Invite', href: '/invite' },
  { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
  { icon: '📖', label: 'About', href: '/about' },
- { icon: '📱', label: 'Download App', onClick: handleInstall, href: '#' },
+ { icon: '📱', label: 'Download App', href: '/downloadapp' }, // changed
  { icon: '🎧', label: 'Manager', href: '/manager' }
  ]
 
@@ -156,7 +136,7 @@ export default function Dashboard() {
  marginBottom: '60px'
  }}>
  {menuItems.map(item => (
- <Link key={item.label} href={item.href} onClick={item.onClick} style={{ textDecoration: 'none' }}>
+ <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
  <div style={{ textAlign: 'center' }}>
  <div style={{ 
  width: '100%',

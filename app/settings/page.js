@@ -56,7 +56,7 @@ export default function SettingsPage() {
     vip: 0,
     bankMTN: null,
     bankAirtel: null,
-    password: '123456'
+    password: ''
   })
 
   const [nickname, setNickname] = useState('')
@@ -160,8 +160,10 @@ export default function SettingsPage() {
   }
 
   const saveBank = async (method) => {
-    if (method === 'mtn' &&!user.bankMTN) {
+    if (method === 'mtn') {
+      if (user.bankMTN) return alert('MTN bank details already saved')
       if (!mtnNumber ||!mtnNames) return alert('Fill all MTN fields')
+
       const bankData = {number: mtnNumber, names: mtnNames}
 
       const res = await fetch('/api/user', {
@@ -171,7 +173,7 @@ export default function SettingsPage() {
           action: 'updateProfile',
           phone: user.phone,
           field: 'bankMTN',
-          value: JSON.stringify(bankData)
+          value: bankData // send object, not string
         })
       })
       const data = await res.json()
@@ -182,8 +184,10 @@ export default function SettingsPage() {
       }
     }
 
-    if (method === 'airtel' &&!user.bankAirtel) {
+    if (method === 'airtel') {
+      if (user.bankAirtel) return alert('Airtel bank details already saved')
       if (!airtelNumber ||!airtelNames) return alert('Fill all Airtel fields')
+
       const bankData = {number: airtelNumber, names: airtelNames}
 
       const res = await fetch('/api/user', {
@@ -193,7 +197,7 @@ export default function SettingsPage() {
           action: 'updateProfile',
           phone: user.phone,
           field: 'bankAirtel',
-          value: JSON.stringify(bankData)
+          value: bankData // send object, not string
         })
       })
       const data = await res.json()
@@ -207,7 +211,7 @@ export default function SettingsPage() {
 
   const changePassword = async () => {
     if (oldPass!== user.password) return alert('Old password incorrect')
-    if (newPass.length < 4) return alert('New password too short')
+    if (newPass.length < 6) return alert('New password must be at least 6 characters')
     if (newPass!== repeatPass) return alert('New passwords do not match')
 
     const res = await fetch('/api/user', {

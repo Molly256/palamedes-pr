@@ -55,6 +55,12 @@ function getUGDateObj() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
 }
 
+function getUserInviteCode(phone) {
+  const clean = phone.replace(/\D/g, '')
+  const last6 = clean.slice(-6)
+  return `PM${last6}`
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -99,7 +105,11 @@ export async function GET(request) {
           vipPricePaid: Number(user.vipPricePaid) || 0,
           bankMTN: safeParse(user.bankMTN),
           bankAirtel: safeParse(user.bankAirtel),
-          password: user.password || ''
+          password: user.password || '',
+          referralPaid: user.referralPaid || 'false',
+          upline1: user.upline1 || '',
+          upline2: user.upline2 || '',
+          upline3: user.upline3 || ''
         },
         transactions,
         vipPurchaseDate
@@ -141,7 +151,11 @@ export async function GET(request) {
         password: user.password || '',
         vipLocked: user.vipLocked === 'true',
         tasksCompleted: Number(user.tasksCompleted) || 0,
-        vipPricePaid: Number(user.vipPricePaid) || 0
+        vipPricePaid: Number(user.vipPricePaid) || 0,
+        referralPaid: user.referralPaid || 'false',
+        upline1: user.upline1 || '',
+        upline2: user.upline2 || '',
+        upline3: user.upline3 || ''
       },
       tasks,
       isWeekday: isWeekdayKampala()
@@ -200,6 +214,21 @@ export async function POST(request) {
       }
       if (amount > balance) {
         return Response.json({ success: false, message: 'Insufficient balance' })
+      }
+
+      // VERIFY BANK DETAILS AGAINST SAVED DATA
+      let savedBank = null
+      if (method === 'MTN Mobile money') {
+        savedBank = safeParse(user.bankMTN)
+      } else if (method === 'Airtel mobile money') {
+        savedBank = safeParse(user.bankAirtel)
+      }
+
+      if (!savedBank || savedBank.number!== number || savedBank.names!== names) {
+        return Response.json({
+          success: false,
+          message: 'Bank details mismatch. Please update in settings first.'
+        })
       }
 
       const fee = Math.floor(amount * 0.1)
@@ -351,6 +380,73 @@ export async function POST(request) {
         desc: `Bought VIP${vipLevel}`
       }))
 
+      // ABC REFERRAL REWARD LOGIC - Pay on first VIP purchase of any level
+      if (currentVip === 0 && user.referralPaid!== 'true') {
+        const paidPrice = Number(config.price)
+
+        // Team A - 5%
+        if (user.upline1) {
+          const upline1Key = `phone:palamedes:${user.upline1}`
+          const upline1 = await kv.hgetall(upline1Key)
+          if (upline1 && upline1.username) {
+            const rewardA = Math.floor(paidPrice * 0.05)
+            if (rewardA > 0) {
+              await kv.hset(upline1Key, { balance: String(Number(upline1.balance) + rewardA) })
+              await kv.lpush(`transactions:${user.upline1}`, JSON.stringify({
+                id: Date.now(),
+                type: 'referral_reward',
+                amount: rewardA,
+                date: timestamp,
+                status: 'success',
+                desc: `Team A reward from ${user.username} buying VIP${vipLevel}`
+              }))
+            }
+          }
+        }
+
+        // Team B - 2%
+        if (user.upline2) {
+          const upline2Key = `phone:palamedes:${user.upline2}`
+          const upline2 = await kv.hgetall(upline2Key)
+          if (upline2 && upline2.username) {
+            const rewardB = Math.floor(paidPrice * 0.02)
+            if (rewardB > 0) {
+              await kv.hset(upline2Key, { balance: String(Number(upline2.balance) + rewardB) })
+              await kv.lpush(`transactions:${user.upline2}`, JSON.stringify({
+                id: Date.now(),
+                type: 'referral_reward',
+                amount: rewardB,
+                date: timestamp,
+                status: 'success',
+                desc: `Team B reward from ${user.username} buying VIP${vipLevel}`
+              }))
+            }
+          }
+        }
+
+        // Team C - 1%
+        if (user.upline3) {
+          const upline3Key = `phone:palamedes:${user.upline3}`
+          const upline3 = await kv.hgetall(upline3Key)
+          if (upline3 && upline3.username) {
+            const rewardC = Math.floor(paidPrice * 0.01)
+            if (rewardC > 0) {
+              await kv.hset(upline3Key, { balance: String(Number(upline3.balance) + rewardC) })
+              await kv.lpush(`transactions:${user.upline3}`, JSON.stringify({
+                id: Date.now(),
+                type: 'referral_reward',
+                amount: rewardC,
+                date: timestamp,
+                status: 'success',
+                desc: `Team C reward from ${user.username} buying VIP${vipLevel}`
+              }))
+            }
+          }
+        }
+
+        await kv.hset(userKey, { referralPaid: 'true' })
+      }
+
       const freshUser = await kv.hgetall(userKey)
       return Response.json({
         success: true,
@@ -366,7 +462,11 @@ export async function POST(request) {
           avatar: freshUser.avatar || '',
           bankMTN: safeParse(freshUser.bankMTN),
           bankAirtel: safeParse(freshUser.bankAirtel),
-          password: freshUser.password || ''
+          password: freshUser.password || '',
+          referralPaid: freshUser.referralPaid || 'false',
+          upline1: freshUser.upline1 || '',
+          upline2: freshUser.upline2 || '',
+          upline3: freshUser.upline3 || ''
         },
         message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
       })
@@ -484,12 +584,12 @@ export async function POST(request) {
       }
 
       if (field === 'bankMTN') {
-        await kv.hset(userKey, { bankMTN: value })
+        await kv.hset(userKey, { bankMTN: JSON.stringify(value) })
         return Response.json({ success: true, message: 'MTN bank saved' })
       }
 
       if (field === 'bankAirtel') {
-        await kv.hset(userKey, { bankAirtel: value })
+        await kv.hset(userKey, { bankAirtel: JSON.stringify(value) })
         return Response.json({ success: true, message: 'Airtel bank saved' })
       }
 
@@ -503,8 +603,8 @@ export async function POST(request) {
       if (String(user.password)!== String(oldPass)) {
         return Response.json({ success: false, message: 'Old password incorrect' })
       }
-      if (newPass.length < 4) {
-        return Response.json({ success: false, message: 'New password too short' })
+      if (newPass.length < 6) {
+        return Response.json({ success: false, message: 'New password must be at least 6 characters' })
       }
 
       await kv.hset(userKey, { password: newPass })

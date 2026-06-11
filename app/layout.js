@@ -1,4 +1,5 @@
 import BottomNav from '../components/BottomNav'
+import SWRegister from '../components/SWRegister'
 
 export const metadata = {
   title: 'Palamedes PR',
@@ -6,11 +7,21 @@ export const metadata = {
   icons: {
     icon: '/favicon.ico',
   },
+  manifest: '/manifest.json',
+  themeColor: '#00BFFF',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Palamedes'
+  }
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="apple-touch-icon" href="/palamedes-icon-192.png" />
+      </head>
       <body style={{ 
         margin: 0, 
         padding: 0, 
@@ -18,11 +29,13 @@ export default function RootLayout({ children }) {
         background: '#FFFFFF',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}>
+        <SWRegister />
+        
         <div style={{ 
-          paddingBottom: '85px', // space for BottomNav only
-          minHeight: 'auto', // NO 100vh - tight to content
+          paddingBottom: '85px',
+          minHeight: 'auto',
           background: '#FFFFFF',
-          padding: '0 20px 85px', // 0 top, 20px sides, 85px bottom
+          padding: '0 20px 85px',
           boxSizing: 'border-box',
           width: '100%'
         }}>
