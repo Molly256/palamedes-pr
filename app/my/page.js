@@ -20,7 +20,6 @@ export default function MyPage() {
     return new Date(`${y}-${m}-${d}T00:00:00+03:00`)
   }
 
-  // Parse "10/10/2026 14:30:25" to Date
   const parseTxDate = (dateStr) => {
     if (!dateStr) return null
     const [datePart, timePart] = dateStr.split(' ')
@@ -51,9 +50,10 @@ export default function MyPage() {
   }
 
   const calculateEarnings = () => {
-    if (!vipPurchaseDate || !transactions.length) return {
+    // FIX 2: Return 0s if userData not loaded yet
+    if (!userData || !vipPurchaseDate || !transactions.length) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
-      total: 0, invitation: 0, deposit: 0, balance: userData?.balance || 0
+      total: 0, invitation: 0, deposit: 0, balance: 0
     }
 
     const todayUG = getUGDate()
@@ -77,7 +77,6 @@ export default function MyPage() {
       
       if (isWeekend(txDateUG)) return
 
-      // FIXED: changed 'task' to 'task_reward'
       if (txDateUG >= vipStart && tx.type === 'task_reward') {
         totalAmt += tx.amount
         if (txDateUG.getTime() === todayUG.getTime()) todayAmt += tx.amount
@@ -93,7 +92,7 @@ export default function MyPage() {
     if (isWeekend(yesterdayUG)) yesterdayAmt = 0
     if (isWeekend(todayUG)) todayAmt = 0
 
-    const balance = userData?.balance || 0
+    const balance = userData.balance || 0
 
     return { 
       yesterday: yesterdayAmt, 
@@ -114,7 +113,22 @@ export default function MyPage() {
   }, [])
 
   const loadDashboard = async () => {
-    const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    // FIX 1: Safe parse
+    const stored = localStorage.getItem('palamedes_user')
+    if (!stored || stored === 'undefined' || stored === 'null') {
+      setLoading(false)
+      return
+    }
+
+    let user
+    try {
+      user = JSON.parse(stored)
+    } catch {
+      localStorage.removeItem('palamedes_user')
+      setLoading(false)
+      return
+    }
+
     if (!user.phone) {
       setLoading(false)
       return
