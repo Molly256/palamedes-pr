@@ -50,18 +50,20 @@ export default function AdminPage() {
     if (cleanPhone!== cleanAdmin) return router.push('/dashboard')
 
     setUser({...saved, phone: cleanPhone })
-    loadPendingTransactions(cleanPhone)
+    loadPendingTransactions() // no param needed now
   }, [router])
 
-  const loadPendingTransactions = async (adminPhone) => {
+  const loadPendingTransactions = async () => {
     try {
-      const res = await fetch(`/api/user?action=pending&phone=${adminPhone}`)
+      // Always use ADMIN_PHONE for the pending call
+      const res = await fetch(`/api/user?action=pending&phone=${ADMIN_PHONE}`)
       const data = await res.json()
       if (data.success) {
         setPendingDeposits(data.deposits || [])
         setPendingWithdraws(data.withdraws || [])
       } else {
         console.error('Failed to load pending:', data.message)
+        alert('Failed to load pending: ' + data.message)
       }
     } catch (err) {
       console.error('Error loading pending:', err)
@@ -73,7 +75,7 @@ export default function AdminPage() {
     if (!user) return alert('Not logged in')
 
     const cleanPhone = searchPhone.replace(/\D/g, '')
-    const res = await fetch(`/api/user?action=getUser&phone=${user.phone}&targetPhone=${cleanPhone}`)
+    const res = await fetch(`/api/user?action=getUser&phone=${ADMIN_PHONE}&targetPhone=${cleanPhone}`)
     const data = await res.json()
 
     if (data.success) {
@@ -93,7 +95,7 @@ export default function AdminPage() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         action: 'resetPassword',
-        phone: user.phone,
+        phone: ADMIN_PHONE,
         targetPhone: searchedUser.phone,
         newPassword: newPass
       })
@@ -111,13 +113,13 @@ export default function AdminPage() {
         action,
         txId,
         type,
-        phone: user.phone,
+        phone: ADMIN_PHONE,
         targetPhone: targetPhone
       })
     })
     const data = await res.json()
     alert(data.message)
-    if (data.success) loadPendingTransactions(user.phone)
+    if (data.success) loadPendingTransactions()
   }
 
   if (!user) return <div style={{padding: '20px'}}>Loading...</div>

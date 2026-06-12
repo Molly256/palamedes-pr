@@ -1,7 +1,7 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
 
-const ADMIN_PHONE = '0753520252'
+const ADMIN_PHONES = ['0753520252', '753520252'] // accepts both formats
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
@@ -92,7 +92,7 @@ async function setTransactions(phone, transactions) {
 
 async function verifyAdmin(phone) {
   const cleanPhone = phone.replace(/\D/g, '')
-  return cleanPhone === ADMIN_PHONE
+  return ADMIN_PHONES.includes(cleanPhone)
 }
 
 export async function GET(request) {
