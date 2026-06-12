@@ -1,6 +1,6 @@
 import { kv } from '@vercel/kv'
 
-const ADMIN_PHONE = '2567xxxxxxxx' // must match dashboard
+const ADMIN_PHONE = '0753520252' // REPLACE with your admin number in 07 format
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
@@ -102,12 +102,21 @@ export async function GET(request) {
 
     // Admin: get pending deposits and withdraws
     if (action === 'pending') {
-      const allPhones = await kv.keys('phone:palamedes:*')
+      const oldKeys = await kv.keys('phone:palamedes:*')
+      const newKeys = await kv.keys('user:*')
+
+      const allKeys = [...oldKeys,...newKeys]
+      const seenPhones = new Set()
       let deposits = []
       let withdraws = []
 
-      for (let key of allPhones) {
-        const userPhone = key.split(':')[2]
+      for (let key of allKeys) {
+        const parts = key.split(':')
+        const userPhone = parts[parts.length - 1]
+
+        if (seenPhones.has(userPhone)) continue
+        seenPhones.add(userPhone)
+
         const txList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
         txList.forEach(txStr => {
           const tx = safeParse(txStr)
