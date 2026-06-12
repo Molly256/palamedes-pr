@@ -13,7 +13,6 @@ export default function Transactions() {
     const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
     if (!u) return router.push('/login')
 
-    // Clean phone to match backend key format
     const cleanPhone = u.phone.replace(/\D/g, '')
     const cleanedUser = {...u, phone: cleanPhone }
     setUser(cleanedUser)
@@ -63,19 +62,31 @@ export default function Transactions() {
     { key: 'deposit', label: 'Deposit' },
     { key: 'withdraw', label: 'Withdraw' },
     { key: 'task_reward', label: 'Daily income' },
-    { key: 'viptask_purchase', label: 'Viptask purchase' },
-    { key: 'invitation_reward', label: 'Invitation reward' }
+    { key: 'viptask_purchase', label: 'VIP Purchase' },
+    { key: 'referral_reward', label: 'Referral Reward' },
+    { key: 'share_purchase', label: 'Share Purchase' },
+    { key: 'share_profit', label: 'Share Profit' },
+    { key: 'refund', label: 'Refund' }
   ]
 
   const txName = (type) => {
     const names = {
       deposit: 'Deposit',
       withdraw: 'Withdraw',
-      task_reward: 'Daily income',
-      viptask_purchase: 'Viptask purchase',
-      invitation_reward: 'Invitation reward'
+      task_reward: 'Daily Income',
+      viptask_purchase: 'VIP Purchase',
+      referral_reward: 'Referral Reward',
+      share_purchase: 'Share Purchase',
+      share_profit: 'Share Profit',
+      refund: 'Refund'
     }
-    return names[type] || type
+    return names[type] || type.replace(/_/g, ' ')
+  }
+
+  const getStatus = (status) => {
+    if (status === 'pending') return { text: 'Pending', color: '#f59e0b' }
+    if (status === 'rejected') return { text: 'Rejected', color: '#ef4444' }
+    return { text: 'Success', color: '#22c55e' }
   }
 
   return (
@@ -116,8 +127,7 @@ export default function Transactions() {
           ) : (
             filteredTx.map((t) => {
               const isCredit = t.amount > 0
-              const statusText = t.status === 'pending'? 'Pending' : 'Success'
-              const statusColor = t.status === 'pending'? '#d32f2f' : '#2e7d32'
+              const { text: statusText, color: statusColor } = getStatus(t.status)
               const displayAmount = Math.abs(t.amount).toLocaleString()
 
               return (
@@ -136,7 +146,7 @@ export default function Transactions() {
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '16px', fontWeight: '300', color: isCredit? '#2e7d32' : '#000', marginBottom: '4px' }}>
+                    <p style={{ fontSize: '16px', fontWeight: '300', color: isCredit? '#22c55e' : '#000', marginBottom: '4px' }}>
                       {isCredit? '+' : '-'}{displayAmount}shs
                     </p>
                     <p style={{ fontSize: '13px', fontWeight: '500', color: statusColor }}>
