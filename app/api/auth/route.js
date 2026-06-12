@@ -16,9 +16,16 @@ export async function POST(request) {
     let { action, username, password, phone, referral } = body
     
     const cleanPhone = phone?.replace(/\s+/g, '')
+
+    // Normalize username to lowercase for keys and uniqueness
+    username = username?.trim().toLowerCase()
+    if (username && !/^[a-z0-9_]{3,20}$/.test(username)) {
+      return Response.json({ success: false, message: 'Username must be 3-20 lowercase letters, numbers, or _' })
+    }
+
     const newKey = `user:0753520252:${cleanPhone}`
     const oldKey = `phone:palamedes:${cleanPhone}`
-    const usernameKey = `username:${username?.toLowerCase()}`
+    const usernameKey = `username:${username}`
 
     // REGISTER
     if (action === 'register') {
@@ -80,19 +87,28 @@ export async function POST(request) {
       if (newKeyType === 'string') await kv.del(newKey)
       if (oldKeyType === 'string') await kv.del(oldKey)
 
-      // Check username and clean bad string keys
-      const usernameType = await kv.type(usernameKey)
-      if (usernameType === 'string') {
-        await kv.del(usernameKey)
-      }
-      if (usernameType === 'hash') {
-        return Response.json({ success: false, message: 'Username taken' })
+      // Clean ALL case variants of username key to prevent WRONGTYPE
+      const variants = [
+        `username:${username}`,
+        `username:${username.toLowerCase()}`,
+        `username:${username.toUpperCase()}`,
+        `username:${username.charAt(0).toUpperCase() + username.slice(1)}`
+      ]
+      const uniqueVariants = [...new Set(variants)]
+      
+      for (const key of uniqueVariants) {
+        const t = await kv.type(key)
+        if (t === 'string') await kv.del(key)
+        if (t === 'hash') {
+          return Response.json({ success: false, message: 'Username taken' })
+        }
       }
 
       const inviteCode = getUserInviteCode(cleanPhone)
       
       await kv.hset(newKey, {
         username,
+        displayName: body.username?.trim(),
         phone: cleanPhone,
         password,
         balance: '0',
@@ -153,6 +169,7 @@ export async function POST(request) {
         success: true,
         user: {
           username: user.username,
+          displayName: user.displayName || user.username,
           phone: user.phone,
           balance: Number(user.balance) || 0,
           vip: Number(user.vip) || 0,
