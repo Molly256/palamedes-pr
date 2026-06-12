@@ -1,7 +1,7 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
 
-const ADMIN_PHONES = ['0753520252', '753520252'] // accepts both formats
+const ADMIN_PHONES = ['0753520252', '753520252']
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
@@ -58,19 +58,25 @@ async function getUserData(phone) {
   const newKey = `user:${cleanPhone}`
   const oldKey = `phone:palamedes:${cleanPhone}`
 
-  let user = await kv.hgetall(newKey)
-  let userKey = newKey
+  let user = null
+  let userKey = null
 
-  if (!user || Object.keys(user).length === 0) {
+  if ((await kv.type(newKey)) === 'hash') {
+    user = await kv.hgetall(newKey)
+    userKey = newKey
+  } else if ((await kv.type(oldKey)) === 'hash') {
     user = await kv.hgetall(oldKey)
     userKey = oldKey
   }
 
-  if (!user || Object.keys(user).length === 0) {
+  if ((!user || Object.keys(user).length === 0) &&!userKey) {
     const keys = await kv.keys(`user:*:${cleanPhone}`)
-    if (keys.length > 0) {
-      userKey = keys[0]
-      user = await kv.hgetall(userKey)
+    for (const k of keys) {
+      if ((await kv.type(k)) === 'hash') {
+        userKey = k
+        user = await kv.hgetall(k)
+        break
+      }
     }
   }
 
@@ -105,7 +111,6 @@ export async function GET(request) {
       return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
     }
 
-    // Admin: get pending deposits and withdraws
     if (action === 'pending') {
       if (!await verifyAdmin(phone)) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
@@ -119,7 +124,6 @@ export async function GET(request) {
       let withdraws = []
 
       for (let key of allKeys) {
-        // Skip keys that aren't hashes to avoid WRONGTYPE error
         const type = await kv.type(key)
         if (type!== 'hash') continue
 
@@ -144,7 +148,6 @@ export async function GET(request) {
       return NextResponse.json({ success: true, deposits, withdraws })
     }
 
-    // Admin: get single user
     if (action === 'getUser') {
       if (!await verifyAdmin(phone)) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
@@ -158,9 +161,13 @@ export async function GET(request) {
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getShares') {
-      const sharesHash = await kv.hgetall(`share:palamedes:${cleanPhone}`)
-      const shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
-      return NextResponse.json({ success: true, shares })
+      const sharesKey = `share:palamedes:${cleanPhone}`
+      if ((await kv.type(sharesKey)) === 'hash') {
+        const sharesHash = await kv.hgetall(sharesKey)
+        const shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
+        return NextResponse.json({ success: true, shares })
+      }
+      return NextResponse.json({ success: true, shares: [] })
     }
 
     if (action === 'getTransactions') {
@@ -201,9 +208,12 @@ export async function GET(request) {
 
     let tasks = null
     const vipLevel = Number(user.vip) || 0
+    const todayKey = getTodayKey(cleanPhone)
 
     if (isWeekdayKampala() && user.vipLocked!== 'true') {
-      tasks = await kv.hgetall(getTodayKey(cleanPhone))
+      if ((await kv.type(todayKey)) === 'hash') {
+        tasks = await kv.hgetall(todayKey)
+      }
 
       if (!tasks) {
         const config = VIP_CONFIG[vipLevel]
@@ -214,7 +224,7 @@ export async function GET(request) {
           taskObj[`book${i}`] = 'pending'
         }
         taskObj.income = String(config.books * config.perBook)
-        await kv.hset(getTodayKey(cleanPhone), taskObj)
+        await kv.hset(todayKey, taskObj)
         tasks = taskObj
         await kv.hset(userKey, { tasksCompleted: '0' })
       }
@@ -349,7 +359,11 @@ export async function POST(request) {
 
       const bookKey = `book${bookNum}`
       const todayKey = getTodayKey(cleanPhone)
-      const tasks = await kv.hgetall(todayKey)
+
+      let tasks = null
+      if ((await kv.type(todayKey)) === 'hash') {
+        tasks = await kv.hgetall(todayKey)
+      }
 
       if (!tasks || (tasks[bookKey]!== 'pending' && tasks[bookKey]!== 'read')) {
         return NextResponse.json({ success: false, message: 'Task already submitted or invalid' }, { status: 400 })
@@ -408,7 +422,11 @@ export async function POST(request) {
       if (currentPricePaid > 0) newBalance += currentPricePaid
 
       const todayKey = getTodayKey(cleanPhone)
-      const oldTasks = await kv.hgetall(todayKey)
+      let oldTasks = null
+      if ((await kv.type(todayKey)) === 'hash') {
+        oldTasks = await kv.hgetall(todayKey)
+      }
+
       const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
       const doneToday = oldTasks? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length : 0
       const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
@@ -610,6 +628,10 @@ export async function POST(request) {
       const shareIdUnique = body.shareId
       if (!shareIdUnique) return NextResponse.json({ success: false, message: 'Share ID required' }, { status: 400 })
 
+      if ((await kv.type(sharesKey))!== 'hash') {
+        return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
+      }
+
       const shareStr = await kv.hget(sharesKey, shareIdUnique)
       if (!shareStr) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
 
@@ -683,7 +705,6 @@ export async function POST(request) {
       return NextResponse.json({ success: true, message: 'Password changed' })
     }
 
-    // Admin actions
     if (action === 'resetPassword') {
       if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
       if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
