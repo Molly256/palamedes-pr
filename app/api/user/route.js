@@ -81,6 +81,15 @@ async function getUserData(phone) {
   return { user, userKey, cleanPhone }
 }
 
+async function getTransactions(phone) {
+  const tx = await kv.get(`transactions:${phone}`)
+  return Array.isArray(tx)? tx : []
+}
+
+async function setTransactions(phone, transactions) {
+  await kv.set(`transactions:${phone}`, transactions)
+}
+
 async function verifyAdmin(phone) {
   const cleanPhone = phone.replace(/\D/g, '')
   return cleanPhone === ADMIN_PHONE
@@ -115,9 +124,8 @@ export async function GET(request) {
         if (seenPhones.has(userPhone)) continue
         seenPhones.add(userPhone)
 
-        const txList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
-        txList.forEach(txStr => {
-          const tx = safeParse(txStr)
+        const txList = await getTransactions(userPhone)
+        txList.forEach(tx => {
           if (tx && tx.status === 'pending') {
             tx.phone = userPhone
             if (tx.type === 'deposit') deposits.push(tx)
@@ -152,14 +160,13 @@ export async function GET(request) {
     }
 
     if (action === 'getTransactions') {
-      const txList = await kv.lrange(`transactions:${cleanPhone}`, 0, 99)
-      const transactions = txList.map(t => safeParse(t)).filter(Boolean)
-      return NextResponse.json({ success: true, transactions })
+      const transactions = await getTransactions(cleanPhone)
+      return NextResponse.json({ success: true, transactions: transactions.slice(0, 99) })
     }
 
     if (action === 'getDashboard') {
-      const txList = await kv.lrange(`transactions:${cleanPhone}`, 0, 49)
-      const transactions = txList.map(t => safeParse(t)).filter(Boolean)
+      const transactions = await getTransactions(cleanPhone)
+      const recentTx = transactions.slice(0, 49)
       const vipTx = transactions.find(t => t.type === 'viptask_purchase')
       const vipPurchaseDate = vipTx? vipTx.date : null
 
@@ -183,7 +190,7 @@ export async function GET(request) {
           upline2: user.upline2 || '',
           upline3: user.upline3 || ''
         },
-        transactions,
+        transactions: recentTx,
         vipPurchaseDate
       })
     }
@@ -268,7 +275,10 @@ export async function POST(request) {
         phone: cleanPhone
       }
 
-      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
+      const txList = await getTransactions(cleanPhone)
+      txList.unshift(tx)
+      await setTransactions(cleanPhone, txList)
+
       return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending approval.' })
     }
 
@@ -312,7 +322,10 @@ export async function POST(request) {
         phone: cleanPhone
       }
 
-      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
+      const txList = await getTransactions(cleanPhone)
+      txList.unshift(tx)
+      await setTransactions(cleanPhone, txList)
+
       return NextResponse.json({ success: true, tx, message: 'Withdraw request submitted. Pending approval.' })
     }
 
@@ -344,7 +357,8 @@ export async function POST(request) {
       const newBalance = Number(user.balance) + perBook
       await kv.hset(userKey, { balance: String(newBalance) })
 
-      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+      const txList = await getTransactions(cleanPhone)
+      txList.unshift({
         id: Date.now(),
         type: 'task_reward',
         amount: perBook,
@@ -353,7 +367,8 @@ export async function POST(request) {
         status: 'success',
         desc: `VIP${currentVipLevel} Book ${bookNum}`,
         phone: cleanPhone
-      }))
+      })
+      await setTransactions(cleanPhone, txList)
 
       const updatedTasks = await kv.hgetall(todayKey)
       const totalBooks = config.books
@@ -412,8 +427,10 @@ export async function POST(request) {
       }
 
       const timestamp = getISOTimestamp()
+      const txList = await getTransactions(cleanPhone)
+
       if (currentPricePaid > 0) {
-        await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+        txList.unshift({
           id: Date.now(),
           type: 'refund',
           amount: currentPricePaid,
@@ -421,18 +438,18 @@ export async function POST(request) {
           status: 'success',
           desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`,
           phone: cleanPhone
-        }))
+        })
       }
 
-      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
-        id: Date.now(),
+      txList.unshift({
+        id: Date.now() + 1,
         type: 'viptask_purchase',
         amount: -newPrice,
         date: timestamp,
         status: 'success',
         desc: `Bought VIP${vipLevel}`,
         phone: cleanPhone
-      }))
+      })
 
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
@@ -444,15 +461,17 @@ export async function POST(request) {
             const rewardA = Math.floor(paidPrice * 0.05)
             if (rewardA > 0) {
               await kv.hset(upline1Key, { balance: String(Number(upline1.balance) + rewardA) })
-              await kv.lpush(`transactions:${upline1.phone || user.upline1}`, JSON.stringify({
-                id: Date.now(),
+              const uplineTxList = await getTransactions(upline1.phone || user.upline1)
+              uplineTxList.unshift({
+                id: Date.now() + 2,
                 type: 'referral_reward',
                 amount: rewardA,
                 date: timestamp,
                 status: 'success',
                 desc: `Team A reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
                 phone: upline1.phone || user.upline1
-              }))
+              })
+              await setTransactions(upline1.phone || user.upline1, uplineTxList)
             }
           }
         }
@@ -463,15 +482,17 @@ export async function POST(request) {
             const rewardB = Math.floor(paidPrice * 0.02)
             if (rewardB > 0) {
               await kv.hset(upline2Key, { balance: String(Number(upline2.balance) + rewardB) })
-              await kv.lpush(`transactions:${upline2.phone || user.upline2}`, JSON.stringify({
-                id: Date.now(),
+              const uplineTxList = await getTransactions(upline2.phone || user.upline2)
+              uplineTxList.unshift({
+                id: Date.now() + 3,
                 type: 'referral_reward',
                 amount: rewardB,
                 date: timestamp,
                 status: 'success',
                 desc: `Team B reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
                 phone: upline2.phone || user.upline2
-              }))
+              })
+              await setTransactions(upline2.phone || user.upline2, uplineTxList)
             }
           }
         }
@@ -482,21 +503,25 @@ export async function POST(request) {
             const rewardC = Math.floor(paidPrice * 0.01)
             if (rewardC > 0) {
               await kv.hset(upline3Key, { balance: String(Number(upline3.balance) + rewardC) })
-              await kv.lpush(`transactions:${upline3.phone || user.upline3}`, JSON.stringify({
-                id: Date.now(),
+              const uplineTxList = await getTransactions(upline3.phone || user.upline3)
+              uplineTxList.unshift({
+                id: Date.now() + 4,
                 type: 'referral_reward',
                 amount: rewardC,
                 date: timestamp,
                 status: 'success',
                 desc: `Team C reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
                 phone: upline3.phone || user.upline3
-              }))
+              })
+              await setTransactions(upline3.phone || user.upline3, uplineTxList)
             }
           }
         }
 
         await kv.hset(userKey, { referralPaid: 'true' })
       }
+
+      await setTransactions(cleanPhone, txList)
 
       const freshUser = await kv.hgetall(userKey)
       return NextResponse.json({
@@ -560,7 +585,8 @@ export async function POST(request) {
 
       await kv.hset(sharesKey, shareIdUnique, JSON.stringify(shareData))
 
-      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+      const txList = await getTransactions(cleanPhone)
+      txList.unshift({
         id: Date.now(),
         type: 'share_purchase',
         amount: -cost,
@@ -570,7 +596,8 @@ export async function POST(request) {
         status: 'success',
         desc: `Bought ${qty} x ${shareData.shareName}`,
         phone: cleanPhone
-      }))
+      })
+      await setTransactions(cleanPhone, txList)
 
       return NextResponse.json({ success: true, balance: newBalance, message: `Bought ${qty} share(s) of ${shareData.shareName}!` })
     }
@@ -604,7 +631,8 @@ export async function POST(request) {
       await kv.hset(sharesKey, shareIdUnique, JSON.stringify(share))
       await kv.hset(userKey, { balance: String(newBalance) })
 
-      await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify({
+      const txList = await getTransactions(cleanPhone)
+      txList.unshift({
         id: Date.now(),
         type: 'share_profit',
         amount: profit,
@@ -614,7 +642,8 @@ export async function POST(request) {
         status: 'success',
         desc: `Profit from ${share.shareName} x${share.quantity}`,
         phone: cleanPhone
-      }))
+      })
+      await setTransactions(cleanPhone, txList)
 
       return NextResponse.json({ success: true, balance: newBalance, profit, message: 'Profits collected successfully' })
     }
@@ -668,13 +697,12 @@ export async function POST(request) {
       if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
 
       const userPhone = targetPhone.replace(/\D/g, '')
-      const txList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
-      const txIndex = txList.findIndex(t => safeParse(t)?.id == txId)
+      const txList = await getTransactions(userPhone)
+      const txIndex = txList.findIndex(t => t.id == txId)
 
       if (txIndex === -1) return NextResponse.json({ success: false, message: 'Transaction not found' })
 
-      const tx = safeParse(txList[txIndex])
-      if (!tx) return NextResponse.json({ success: false, message: 'Invalid transaction data' })
+      const tx = txList[txIndex]
 
       if (action === 'approve') {
         tx.status = 'success'
@@ -690,7 +718,6 @@ export async function POST(request) {
         if (type === 'withdraw') {
           const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
           if (targetKey) {
-            // tx.amount is negative for withdraws, so adding it reduces balance
             const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
             await kv.hset(targetKey, { balance: String(newBalance) })
           }
@@ -699,7 +726,9 @@ export async function POST(request) {
         tx.status = 'rejected'
       }
 
-      await kv.lset(`transactions:${userPhone}`, txIndex, JSON.stringify(tx))
+      txList[txIndex] = tx
+      await setTransactions(userPhone, txList)
+
       return NextResponse.json({ success: true, message: `Transaction ${action}d` })
     }
 
