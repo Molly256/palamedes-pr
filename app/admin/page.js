@@ -54,19 +54,28 @@ export default function AdminPage() {
   }, [router])
 
   const loadPendingTransactions = async (adminPhone) => {
-    const res = await fetch(`/api/user?action=pending&phone=${adminPhone}`)
-    const data = await res.json()
-    if (data.success) {
-      setPendingDeposits(data.deposits)
-      setPendingWithdraws(data.withdraws)
+    try {
+      const res = await fetch(`/api/user?action=pending&phone=${adminPhone}`)
+      const data = await res.json()
+      if (data.success) {
+        setPendingDeposits(data.deposits || [])
+        setPendingWithdraws(data.withdraws || [])
+      } else {
+        console.error('Failed to load pending:', data.message)
+      }
+    } catch (err) {
+      console.error('Error loading pending:', err)
     }
   }
 
   const searchUser = async () => {
     if (!searchPhone) return alert('Enter phone number')
+    if (!user) return alert('Not logged in')
+
     const cleanPhone = searchPhone.replace(/\D/g, '')
-    const res = await fetch(`/api/user?action=getUser&phone=${cleanPhone}`)
+    const res = await fetch(`/api/user?action=getUser&phone=${user.phone}&targetPhone=${cleanPhone}`)
     const data = await res.json()
+
     if (data.success) {
       setSearchedUser(data.user)
     } else {
@@ -84,8 +93,8 @@ export default function AdminPage() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         action: 'resetPassword',
-        phone: user.phone, // admin phone for auth
-        targetPhone: searchedUser.phone, // user to reset
+        phone: user.phone,
+        targetPhone: searchedUser.phone,
         newPassword: newPass
       })
     })
@@ -102,8 +111,8 @@ export default function AdminPage() {
         action,
         txId,
         type,
-        phone: user.phone, // admin phone for auth check
-        targetPhone: targetPhone // user whose transaction this is
+        phone: user.phone,
+        targetPhone: targetPhone
       })
     })
     const data = await res.json()
@@ -158,7 +167,7 @@ export default function AdminPage() {
               <p><strong>Phone:</strong> {tx.phone}</p>
               <p><strong>Amount:</strong> {tx.amount}shs</p>
               <p><strong>Method:</strong> {tx.method}</p>
-              <p><strong>Date:</strong> {tx.date}</p>
+              <p><strong>Date:</strong> {new Date(tx.date).toLocaleString()}</p>
               <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
                 <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve', 'deposit', tx.phone)}>Confirm</button>
                 <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject', 'deposit', tx.phone)}>Reject</button>
@@ -177,11 +186,11 @@ export default function AdminPage() {
           pendingWithdraws.map(tx => (
             <div key={tx.id} style={{borderBottom: '1px solid #e5e7eb', padding: '10px 0'}}>
               <p><strong>Phone:</strong> {tx.phone}</p>
-              <p><strong>Amount:</strong> {tx.amount}shs</p>
+              <p><strong>Amount:</strong> {Math.abs(tx.amount)}shs</p>
               <p><strong>Net:</strong> {tx.netAmount}shs</p>
               <p><strong>Method:</strong> {tx.method} - {tx.number}</p>
               <p><strong>Names:</strong> {tx.names}</p>
-              <p><strong>Date:</strong> {tx.date}</p>
+              <p><strong>Date:</strong> {new Date(tx.date).toLocaleString()}</p>
               <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
                 <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve', 'withdraw', tx.phone)}>Confirm</button>
                 <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject', 'withdraw', tx.phone)}>Reject</button>

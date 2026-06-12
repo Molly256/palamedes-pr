@@ -1,6 +1,7 @@
 import { kv } from '@vercel/kv'
+import { NextResponse } from 'next/server'
 
-const ADMIN_PHONE = '0753520252' // REPLACE with your admin number in 07 format
+const ADMIN_PHONE = '0753520252'
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
@@ -23,11 +24,7 @@ const SHARE_CONFIG = {
 
 function safeParse(val) {
   if (!val || val === '' || val === 'null' || val === 'undefined') return null
-  try {
-    return JSON.parse(val)
-  } catch {
-    return null
-  }
+  try { return JSON.parse(val) } catch { return null }
 }
 
 function getKampalaTime() {
@@ -70,7 +67,6 @@ async function getUserData(phone) {
   }
 
   if (!user || Object.keys(user).length === 0) {
-    // Check for broken key format: user:{upline}:{phone}
     const keys = await kv.keys(`user:*:${cleanPhone}`)
     if (keys.length > 0) {
       userKey = keys[0]
@@ -97,14 +93,17 @@ export async function GET(request) {
     const action = searchParams.get('action')
 
     if (!phone && action!== 'pending') {
-      return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
+      return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
     }
 
     // Admin: get pending deposits and withdraws
     if (action === 'pending') {
+      if (!await verifyAdmin(phone)) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
+      }
+
       const oldKeys = await kv.keys('phone:palamedes:*')
       const newKeys = await kv.keys('user:*')
-
       const allKeys = [...oldKeys,...newKeys]
       const seenPhones = new Set()
       let deposits = []
@@ -113,7 +112,6 @@ export async function GET(request) {
       for (let key of allKeys) {
         const parts = key.split(':')
         const userPhone = parts[parts.length - 1]
-
         if (seenPhones.has(userPhone)) continue
         seenPhones.add(userPhone)
 
@@ -131,41 +129,41 @@ export async function GET(request) {
       deposits.sort((a, b) => new Date(b.date) - new Date(a.date))
       withdraws.sort((a, b) => new Date(b.date) - new Date(a.date))
 
-      return Response.json({ success: true, deposits, withdraws })
+      return NextResponse.json({ success: true, deposits, withdraws })
     }
 
     // Admin: get single user
     if (action === 'getUser') {
-      const { user } = await getUserData(phone)
-      if (!user) {
-        return Response.json({ success: false, message: 'User not found' }, { status: 404 })
+      if (!await verifyAdmin(phone)) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
       }
-      return Response.json({ success: true, user })
+      const { user } = await getUserData(phone)
+      if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+      return NextResponse.json({ success: true, user })
     }
 
     const { user, userKey, cleanPhone } = await getUserData(phone)
-    if (!user) return Response.json({ success: false, message: 'User not found' }, { status: 404 })
+    if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getShares') {
       const sharesHash = await kv.hgetall(`share:palamedes:${cleanPhone}`)
       const shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
-      return Response.json({ success: true, shares })
+      return NextResponse.json({ success: true, shares })
     }
 
     if (action === 'getTransactions') {
       const txList = await kv.lrange(`transactions:${cleanPhone}`, 0, 99)
       const transactions = txList.map(t => safeParse(t)).filter(Boolean)
-      return Response.json({ success: true, transactions })
+      return NextResponse.json({ success: true, transactions })
     }
 
     if (action === 'getDashboard') {
       const txList = await kv.lrange(`transactions:${cleanPhone}`, 0, 49)
       const transactions = txList.map(t => safeParse(t)).filter(Boolean)
-
       const vipTx = transactions.find(t => t.type === 'viptask_purchase')
       const vipPurchaseDate = vipTx? vipTx.date : null
 
-      return Response.json({
+      return NextResponse.json({
         success: true,
         user: {
           username: user.username || '',
@@ -198,7 +196,7 @@ export async function GET(request) {
 
       if (!tasks) {
         const config = VIP_CONFIG[vipLevel]
-        if (!config) return Response.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
+        if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) {
@@ -211,7 +209,7 @@ export async function GET(request) {
       }
     }
 
-    return Response.json({
+    return NextResponse.json({
       success: true,
       user: {
         username: user.username || '',
@@ -236,7 +234,7 @@ export async function GET(request) {
     })
   } catch (err) {
     console.error('GET /api/user error:', err)
-    return Response.json({ success: false, message: err.message }, { status: 500 })
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
 }
 
@@ -245,10 +243,10 @@ export async function POST(request) {
     const body = await request.json()
     const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names, txId, type, amount, newPassword, targetPhone } = body
 
-    if (!phone) return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
+    if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
 
     const { user, userKey, cleanPhone } = await getUserData(phone)
-    if (!user) return Response.json({ success: false, message: 'User not found' }, { status: 404 })
+    if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     const sharesKey = `share:palamedes:${cleanPhone}`
     const vipLevel = Number(rawVipLevel)
@@ -256,7 +254,7 @@ export async function POST(request) {
     if (action === 'deposit') {
       const amount = Number(value)
       if (!amount || amount <= 0) {
-        return Response.json({ success: false, message: 'Invalid deposit amount' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Invalid deposit amount' }, { status: 400 })
       }
 
       const tx = {
@@ -271,12 +269,7 @@ export async function POST(request) {
       }
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
-
-      return Response.json({
-        success: true,
-        tx: tx,
-        message: 'Deposit request submitted. Pending approval.'
-      })
+      return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending approval.' })
     }
 
     if (action === 'withdraw') {
@@ -284,10 +277,10 @@ export async function POST(request) {
       const balance = Number(user.balance) || 0
 
       if (!amount || amount <= 0) {
-        return Response.json({ success: false, message: 'Invalid withdraw amount' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Invalid withdraw amount' }, { status: 400 })
       }
       if (amount > balance) {
-        return Response.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
 
       let savedBank = null
@@ -298,10 +291,7 @@ export async function POST(request) {
       }
 
       if (!savedBank || savedBank.number!== number || savedBank.names!== names) {
-        return Response.json({
-          success: false,
-          message: 'Bank details mismatch. Please update in settings first.'
-        }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Bank details mismatch. Please update in settings first.' }, { status: 400 })
       }
 
       const fee = Math.floor(amount * 0.1)
@@ -323,26 +313,21 @@ export async function POST(request) {
       }
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
-
-      return Response.json({
-        success: true,
-        tx: tx,
-        message: 'Withdraw request submitted. Pending approval.'
-      })
+      return NextResponse.json({ success: true, tx, message: 'Withdraw request submitted. Pending approval.' })
     }
 
     if (action === 'submitTask') {
       if (!isWeekdayKampala()) {
-        return Response.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
       }
 
       const currentVipLevel = Number(user.vip) || 0
       const config = VIP_CONFIG[currentVipLevel]
-      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
+      if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
       const bookNum = Number(bookNumber)
       if (!bookNum || bookNum < 1 || bookNum > config.books) {
-        return Response.json({ success: false, message: 'Invalid book number for your VIP level' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Invalid book number for your VIP level' }, { status: 400 })
       }
 
       const bookKey = `book${bookNum}`
@@ -350,7 +335,7 @@ export async function POST(request) {
       const tasks = await kv.hgetall(todayKey)
 
       if (!tasks || (tasks[bookKey]!== 'pending' && tasks[bookKey]!== 'read')) {
-        return Response.json({ success: false, message: 'Task already submitted or invalid' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Task already submitted or invalid' }, { status: 400 })
       }
 
       const perBook = Number(config.perBook)
@@ -380,12 +365,7 @@ export async function POST(request) {
         await kv.hset(userKey, { tasksCompleted: String(done) })
       }
 
-      return Response.json({
-        success: true,
-        balance: Number(newBalance),
-        done: Number(done),
-        totalBooks: Number(totalBooks)
-      })
+      return NextResponse.json({ success: true, balance: Number(newBalance), done: Number(done), totalBooks: Number(totalBooks) })
     }
 
     if (action === 'buyvip') {
@@ -393,23 +373,20 @@ export async function POST(request) {
       const currentPricePaid = Number(user.vipPricePaid) || 0
       const config = VIP_CONFIG[vipLevel]
 
-      if (!config) return Response.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
+      if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
       const newPrice = Number(config.price)
       const balance = Number(user.balance) || 0
 
       if (!vipLevel || vipLevel <= currentVip) {
-        return Response.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
       }
-
       if (balance < newPrice) {
-        return Response.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
 
       let newBalance = balance - newPrice
-      if (currentPricePaid > 0) {
-        newBalance += currentPricePaid
-      }
+      if (currentPricePaid > 0) newBalance += currentPricePaid
 
       const todayKey = getTodayKey(cleanPhone)
       const oldTasks = await kv.hgetall(todayKey)
@@ -459,6 +436,7 @@ export async function POST(request) {
 
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
+        const timestamp = getISOTimestamp()
 
         if (user.upline1) {
           const { user: upline1, userKey: upline1Key } = await getUserData(user.upline1)
@@ -521,7 +499,7 @@ export async function POST(request) {
       }
 
       const freshUser = await kv.hgetall(userKey)
-      return Response.json({
+      return NextResponse.json({
         success: true,
         user: {
           username: freshUser.username || '',
@@ -547,14 +525,14 @@ export async function POST(request) {
 
     if (action === 'buyShare') {
       const config = SHARE_CONFIG[shareId]
-      if (!config) return Response.json({ success: false, message: 'Invalid share' }, { status: 400 })
+      if (!config) return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
 
       const qty = Number(quantity) || 1
       const cost = Number(totalCost) || config.price * qty
       const balance = Number(user.balance) || 0
 
       if (balance < cost) {
-        return Response.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
 
       const newBalance = balance - cost
@@ -594,31 +572,26 @@ export async function POST(request) {
         phone: cleanPhone
       }))
 
-      return Response.json({
-        success: true,
-        balance: newBalance,
-        message: `Bought ${qty} share(s) of ${shareData.shareName}!`
-      })
+      return NextResponse.json({ success: true, balance: newBalance, message: `Bought ${qty} share(s) of ${shareData.shareName}!` })
     }
 
     if (action === 'collectShare') {
       const shareIdUnique = body.shareId
-      if (!shareIdUnique) return Response.json({ success: false, message: 'Share ID required' }, { status: 400 })
+      if (!shareIdUnique) return NextResponse.json({ success: false, message: 'Share ID required' }, { status: 400 })
 
       const shareStr = await kv.hget(sharesKey, shareIdUnique)
-      if (!shareStr) return Response.json({ success: false, message: 'Share not found' }, { status: 404 })
+      if (!shareStr) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
 
       const share = safeParse(shareStr)
-      if (!share) return Response.json({ success: false, message: 'Invalid share data' }, { status: 400 })
-
+      if (!share) return NextResponse.json({ success: false, message: 'Invalid share data' }, { status: 400 })
       if (share.status!== 'ongoing') {
-        return Response.json({ success: false, message: 'Share already collected' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Share already collected' }, { status: 400 })
       }
 
       const now = getUGDateObj()
       const endDate = new Date(share.endDate)
       if (now < endDate) {
-        return Response.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
       }
 
       const profit = Math.round(share.pricePerShare * share.quantity * (share.dailyProfit / 100) * share.cycleDays)
@@ -643,78 +616,65 @@ export async function POST(request) {
         phone: cleanPhone
       }))
 
-      return Response.json({
-        success: true,
-        balance: newBalance,
-        profit: profit,
-        message: 'Profits collected successfully'
-      })
+      return NextResponse.json({ success: true, balance: newBalance, profit, message: 'Profits collected successfully' })
     }
 
     if (action === 'updateProfile') {
       if (field === 'nickname') {
-        if (value.length > 6) return Response.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
+        if (value.length > 6) return NextResponse.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
         await kv.hset(userKey, { nickname: value })
-        return Response.json({ success: true, message: 'Nickname saved' })
+        return NextResponse.json({ success: true, message: 'Nickname saved' })
       }
-
       if (field === 'bankMTN') {
         await kv.hset(userKey, { bankMTN: JSON.stringify(value) })
-        return Response.json({ success: true, message: 'MTN bank saved' })
+        return NextResponse.json({ success: true, message: 'MTN bank saved' })
       }
-
       if (field === 'bankAirtel') {
         await kv.hset(userKey, { bankAirtel: JSON.stringify(value) })
-        return Response.json({ success: true, message: 'Airtel bank saved' })
+        return NextResponse.json({ success: true, message: 'Airtel bank saved' })
       }
-
       if (field === 'avatar') {
         await kv.hset(userKey, { avatar: value })
-        return Response.json({ success: true, message: 'Avatar updated' })
+        return NextResponse.json({ success: true, message: 'Avatar updated' })
       }
     }
 
     if (action === 'changePassword') {
       if (String(user.password)!== String(oldPass)) {
-        return Response.json({ success: false, message: 'Old password incorrect' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Old password incorrect' }, { status: 400 })
       }
       if (newPass.length < 6) {
-        return Response.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
       }
-
       await kv.hset(userKey, { password: newPass })
-      return Response.json({ success: true, message: 'Password changed' })
+      return NextResponse.json({ success: true, message: 'Password changed' })
     }
 
     // Admin actions
     if (action === 'resetPassword') {
-      const isAdmin = await verifyAdmin(phone)
-      if (!isAdmin) return Response.json({ success: false, message: 'Unauthorized' }, { status: 403 })
-
-      if (!targetPhone) return Response.json({ success: false, message: 'Target phone required' }, { status: 400 })
+      if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
 
       const cleanTarget = targetPhone.replace(/\D/g, '')
       const { userKey: targetKey } = await getUserData(cleanTarget)
-      if (!targetKey) return Response.json({ success: false, message: 'Target user not found' }, { status: 404 })
+      if (!targetKey) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
 
       await kv.hset(targetKey, { password: newPassword })
-      return Response.json({ success: true, message: 'Password reset successfully' })
+      return NextResponse.json({ success: true, message: 'Password reset successfully' })
     }
 
     if (action === 'approve' || action === 'reject') {
-      const isAdmin = await verifyAdmin(phone)
-      if (!isAdmin) return Response.json({ success: false, message: 'Unauthorized' }, { status: 403 })
-
-      if (!targetPhone) return Response.json({ success: false, message: 'Target phone required' }, { status: 400 })
+      if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
 
       const userPhone = targetPhone.replace(/\D/g, '')
       const txList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
       const txIndex = txList.findIndex(t => safeParse(t)?.id == txId)
 
-      if (txIndex === -1) return Response.json({ success: false, message: 'Transaction not found' })
+      if (txIndex === -1) return NextResponse.json({ success: false, message: 'Transaction not found' })
 
       const tx = safeParse(txList[txIndex])
-      if (!tx) return Response.json({ success: false, message: 'Invalid transaction data' })
+      if (!tx) return NextResponse.json({ success: false, message: 'Invalid transaction data' })
 
       if (action === 'approve') {
         tx.status = 'success'
@@ -730,7 +690,8 @@ export async function POST(request) {
         if (type === 'withdraw') {
           const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
           if (targetKey) {
-            const newBalance = Number(targetUser.balance || 0) - Number(tx.amount)
+            // tx.amount is negative for withdraws, so adding it reduces balance
+            const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
             await kv.hset(targetKey, { balance: String(newBalance) })
           }
         }
@@ -738,15 +699,13 @@ export async function POST(request) {
         tx.status = 'rejected'
       }
 
-      txList[txIndex] = JSON.stringify(tx)
       await kv.lset(`transactions:${userPhone}`, txIndex, JSON.stringify(tx))
-
-      return Response.json({ success: true, message: `Transaction ${action}d` })
+      return NextResponse.json({ success: true, message: `Transaction ${action}d` })
     }
 
-    return Response.json({ success: false, message: 'Invalid action' }, { status: 400 })
+    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
   } catch (err) {
     console.error('POST /api/user error:', err)
-    return Response.json({ success: false, message: err.message }, { status: 500 })
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
 }

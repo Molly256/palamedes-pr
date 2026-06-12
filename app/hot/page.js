@@ -63,7 +63,7 @@ export default function HotPage() {
   ]
 
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('user') || '{}')
+    const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     setPhone(userData.phone || '')
     loadData(userData.phone)
     
@@ -118,9 +118,9 @@ export default function HotPage() {
         setQtySelector(null)
         loadData(phone)
         
-        const user = JSON.parse(localStorage.getItem('user') || '{}')
+        const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
         user.balance = data.balance
-        localStorage.setItem('user', JSON.stringify(user))
+        localStorage.setItem('palamedes_user', JSON.stringify(user))
       } else {
         alert(data.message)
       }
@@ -143,9 +143,9 @@ export default function HotPage() {
       const data = await res.json()
       if (data.success) {
         alert(`Collected ${data.profit.toLocaleString()}shs! New balance: ${data.balance.toLocaleString()}shs`)
-        const user = JSON.parse(localStorage.getItem('user') || '{}')
+        const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
         user.balance = data.balance
-        localStorage.setItem('user', JSON.stringify(user))
+        localStorage.setItem('palamedes_user', JSON.stringify(user))
         loadData(phone)
       } else {
         alert(data.message)

@@ -1,7 +1,9 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function InvitePage() {
+  const router = useRouter()
   const [inviteCode, setInviteCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -14,12 +16,16 @@ export default function InvitePage() {
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    if (userData.phone) {
-      const code = getUserInviteCode(userData.phone)
-      setInviteCode(code)
+    
+    if (!userData.phone) {
+      router.push('/register')
+      return
     }
+
+    const code = getUserInviteCode(userData.phone)
+    setInviteCode(code)
     setLoading(false)
-  }, [])
+  }, [router])
 
   const referralLink = inviteCode ? `https://www.palamedes-pr.co.uk/r/${inviteCode}` : ''
 
@@ -30,7 +36,6 @@ export default function InvitePage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
-      // Fallback for iOS
       const textArea = document.createElement('textarea')
       textArea.value = inviteCode
       document.body.appendChild(textArea)
@@ -121,21 +126,18 @@ export default function InvitePage() {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>
   }
 
-  if (!inviteCode) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <p className="text-lg font-semibold mb-2">No account found</p>
-          <p className="text-gray-600">Please login first to get your invite link</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6 text-center">Invite & Earn</h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Invite & Earn</h1>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="text-sm text-[#00BFFF] underline"
+          >
+            Refresh
+          </button>
+        </div>
 
         <div className="bg-white p-6 rounded-xl shadow mb-8">
           <p className="text-sm text-gray-600 mb-2">Your Invite Code:</p>
