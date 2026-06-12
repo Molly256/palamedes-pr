@@ -58,7 +58,7 @@ export default function Dashboard() {
  { icon: '👥', label: 'Invite', href: '/invite' },
  { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
  { icon: '📖', label: 'About', href: '/about' },
- { icon: '📱', label: 'Download App', href: '/downloadapp' }, // changed
+ { icon: '📱', label: 'Download App', href: '/downloadapp' },
  { icon: '🎧', label: 'Manager', href: '/manager' }
  ]
 
@@ -82,30 +82,6 @@ export default function Dashboard() {
  minHeight: '140px'
  }}>
  
- {/* Admin Panel Button - only for admin */}
- {user?.phone === ADMIN_PHONE && (
-   <button
-     onClick={() => router.push('/admin')}
-     style={{
-       position: 'absolute',
-       top: '16px',
-       right: '16px',
-       backgroundColor: '#FF69B4',
-       color: '#000',
-       fontWeight: '300',
-       padding: '6px 14px',
-       borderRadius: '16px',
-       border: 'none',
-       cursor: 'pointer',
-       fontSize: '13px',
-       zIndex: 10,
-       boxShadow: '0 2px 6px rgba(255,105,180,0.3)'
-     }}
-   >
-     Admin Panel
-   </button>
- )}
-
  <div style={{ paddingRight: '90px' }}>
  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
  Welcome to PALAMEDES PR
@@ -129,11 +105,12 @@ export default function Dashboard() {
  </div>
  </div>
 
+ {/* 3 lines of 9 icons */}
  <div style={{ 
  display: 'grid', 
  gridTemplateColumns: 'repeat(3, 1fr)',
  gap: '18px 15px',
- marginBottom: '60px'
+ marginBottom: '18px'
  }}>
  {menuItems.map(item => (
  <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
@@ -158,11 +135,35 @@ export default function Dashboard() {
  </div>
  </Link>
  ))}
-
- {[...Array(3)].map((_, i) => (
- <div key={`empty-${i}`} style={{ height: '95px' }}></div>
- ))}
  </div>
+
+ {/* 4th line: Admin Panel button only for admin */}
+ {user?.phone === ADMIN_PHONE && (
+ <div 
+   onClick={() => router.push('/admin')}
+   style={{ 
+     width: '100%',
+     height: '95px',
+     background: '#FF69B4', 
+     borderRadius: '14px',
+     display: 'flex',
+     flexDirection: 'column',
+     alignItems: 'center',
+     justifyContent: 'center',
+     fontSize: '28px',
+     color: '#000',
+     cursor: 'pointer',
+     boxShadow: '0 2px 6px rgba(255,105,180,0.3)',
+     marginBottom: '60px'
+   }}
+ >
+   🛡️
+   <p style={{ margin: '6px 0 0', fontSize: '12px', fontWeight: '900', color: '#000', lineHeight: '1.2' }}>
+     Admin Panel
+   </p>
+ </div>
+ )}
+
  </main>
  </Card>
  )
