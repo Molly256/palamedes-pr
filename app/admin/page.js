@@ -43,14 +43,18 @@ export default function AdminPage() {
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!saved.phone) return router.push('/login')
-    if (saved.phone!== ADMIN_PHONE) return router.push('/dashboard')
 
-    setUser(saved)
-    loadPendingTransactions()
-  }, [])
+    const cleanPhone = saved.phone.replace(/\D/g, '')
+    const cleanAdmin = ADMIN_PHONE.replace(/\D/g, '')
 
-  const loadPendingTransactions = async () => {
-    const res = await fetch('/api/admin?action=pending')
+    if (cleanPhone!== cleanAdmin) return router.push('/dashboard')
+
+    setUser({...saved, phone: cleanPhone })
+    loadPendingTransactions(cleanPhone)
+  }, [router])
+
+  const loadPendingTransactions = async (adminPhone) => {
+    const res = await fetch(`/api/user?action=pending&phone=${adminPhone}`)
     const data = await res.json()
     if (data.success) {
       setPendingDeposits(data.deposits)
@@ -60,7 +64,8 @@ export default function AdminPage() {
 
   const searchUser = async () => {
     if (!searchPhone) return alert('Enter phone number')
-    const res = await fetch(`/api/admin?action=getUser&phone=${searchPhone}`)
+    const cleanPhone = searchPhone.replace(/\D/g, '')
+    const res = await fetch(`/api/user?action=getUser&phone=${cleanPhone}`)
     const data = await res.json()
     if (data.success) {
       setSearchedUser(data.user)
@@ -72,12 +77,15 @@ export default function AdminPage() {
 
   const resetPassword = async () => {
     if (!newPass) return alert('Enter new password')
-    const res = await fetch('/api/admin', {
+    if (!searchedUser) return alert('Search for a user first')
+
+    const res = await fetch('/api/user', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         action: 'resetPassword',
-        phone: searchedUser.phone,
+        phone: user.phone, // admin phone for auth
+        targetPhone: searchedUser.phone, // user to reset
         newPassword: newPass
       })
     })
@@ -86,15 +94,21 @@ export default function AdminPage() {
     if (data.success) setNewPass('')
   }
 
-  const handleTransaction = async (txId, action, type, phone) => {
-    const res = await fetch('/api/admin', {
+  const handleTransaction = async (txId, action, type, targetPhone) => {
+    const res = await fetch('/api/user', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ action, txId, type, phone })
+      body: JSON.stringify({
+        action,
+        txId,
+        type,
+        phone: user.phone, // admin phone for auth check
+        targetPhone: targetPhone // user whose transaction this is
+      })
     })
     const data = await res.json()
     alert(data.message)
-    if (data.success) loadPendingTransactions()
+    if (data.success) loadPendingTransactions(user.phone)
   }
 
   if (!user) return <div style={{padding: '20px'}}>Loading...</div>

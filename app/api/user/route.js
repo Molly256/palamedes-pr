@@ -1,5 +1,6 @@
 import { kv } from '@vercel/kv'
 
+const ADMIN_PHONE = '2567xxxxxxxx' // must match dashboard
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
@@ -57,7 +58,7 @@ function getUGDateObj() {
 
 async function getUserData(phone) {
   const cleanPhone = phone.replace(/\D/g, '')
-  const newKey = `user:0753520252:${cleanPhone}`
+  const newKey = `user:${cleanPhone}`
   const oldKey = `phone:palamedes:${cleanPhone}`
 
   let user = await kv.hgetall(newKey)
@@ -71,13 +72,54 @@ async function getUserData(phone) {
   return { user, userKey, cleanPhone }
 }
 
+async function verifyAdmin(phone) {
+  const cleanPhone = phone.replace(/\D/g, '')
+  return cleanPhone === ADMIN_PHONE
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
     const phone = searchParams.get('phone')
     const action = searchParams.get('action')
 
-    if (!phone) return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
+    if (!phone && action!== 'pending') {
+      return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
+    }
+
+    // Admin: get pending deposits and withdraws
+    if (action === 'pending') {
+      const allPhones = await kv.keys('phone:palamedes:*')
+      let deposits = []
+      let withdraws = []
+
+      for (let key of allPhones) {
+        const userPhone = key.split(':')[2]
+        const txList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
+        txList.forEach(txStr => {
+          const tx = safeParse(txStr)
+          if (tx && tx.status === 'pending') {
+            tx.phone = userPhone
+            if (tx.type === 'deposit') deposits.push(tx)
+            if (tx.type === 'withdraw') withdraws.push(tx)
+          }
+        })
+      }
+
+      deposits.sort((a, b) => new Date(b.date) - new Date(a.date))
+      withdraws.sort((a, b) => new Date(b.date) - new Date(a.date))
+
+      return Response.json({ success: true, deposits, withdraws })
+    }
+
+    // Admin: get single user
+    if (action === 'getUser') {
+      const { user } = await getUserData(phone)
+      if (!user ||!user.username) {
+        return Response.json({ success: false, message: 'User not found' }, { status: 404 })
+      }
+      return Response.json({ success: true, user })
+    }
 
     const { user, userKey, cleanPhone } = await getUserData(phone)
     if (!user ||!user.username) return Response.json({ success: false, message: 'User not found' }, { status: 404 })
@@ -179,7 +221,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names } = body
+    const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names, txId, type, amount, newPassword, targetPhone } = body
 
     if (!phone) return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
 
@@ -202,7 +244,8 @@ export async function POST(request) {
         method: method || '',
         date: getISOTimestamp(),
         status: 'pending',
-        desc: `Deposit via ${method || 'Mobile Money'}`
+        desc: `Deposit via ${method || 'Mobile Money'}`,
+        phone: cleanPhone
       }
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
@@ -253,7 +296,8 @@ export async function POST(request) {
         names: names || '',
         date: getISOTimestamp(),
         status: 'pending',
-        desc: `Withdraw to ${method} - ${number} - ${names}`
+        desc: `Withdraw to ${method} - ${number} - ${names}`,
+        phone: cleanPhone
       }
 
       await kv.lpush(`transactions:${cleanPhone}`, JSON.stringify(tx))
@@ -300,7 +344,8 @@ export async function POST(request) {
         book: bookNum,
         date: getISOTimestamp(),
         status: 'success',
-        desc: `VIP${currentVipLevel} Book ${bookNum}`
+        desc: `VIP${currentVipLevel} Book ${bookNum}`,
+        phone: cleanPhone
       }))
 
       const updatedTasks = await kv.hgetall(todayKey)
@@ -375,7 +420,8 @@ export async function POST(request) {
           amount: currentPricePaid,
           date: timestamp,
           status: 'success',
-          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`
+          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`,
+          phone: cleanPhone
         }))
       }
 
@@ -385,7 +431,8 @@ export async function POST(request) {
         amount: -newPrice,
         date: timestamp,
         status: 'success',
-        desc: `Bought VIP${vipLevel}`
+        desc: `Bought VIP${vipLevel}`,
+        phone: cleanPhone
       }))
 
       if (currentVip === 0 && user.referralPaid!== 'true') {
@@ -403,7 +450,8 @@ export async function POST(request) {
                 amount: rewardA,
                 date: timestamp,
                 status: 'success',
-                desc: `Team A reward from ${user.username} buying VIP${vipLevel}`
+                desc: `Team A reward from ${user.username} buying VIP${vipLevel}`,
+                phone: upline1.phone
               }))
             }
           }
@@ -421,7 +469,8 @@ export async function POST(request) {
                 amount: rewardB,
                 date: timestamp,
                 status: 'success',
-                desc: `Team B reward from ${user.username} buying VIP${vipLevel}`
+                desc: `Team B reward from ${user.username} buying VIP${vipLevel}`,
+                phone: upline2.phone
               }))
             }
           }
@@ -439,7 +488,8 @@ export async function POST(request) {
                 amount: rewardC,
                 date: timestamp,
                 status: 'success',
-                desc: `Team C reward from ${user.username} buying VIP${vipLevel}`
+                desc: `Team C reward from ${user.username} buying VIP${vipLevel}`,
+                phone: upline3.phone
               }))
             }
           }
@@ -518,7 +568,8 @@ export async function POST(request) {
         quantity: qty,
         date: getISOTimestamp(),
         status: 'success',
-        desc: `Bought ${qty} x ${shareData.shareName}`
+        desc: `Bought ${qty} x ${shareData.shareName}`,
+        phone: cleanPhone
       }))
 
       return Response.json({
@@ -566,7 +617,8 @@ export async function POST(request) {
         quantity: share.quantity,
         date: getISOTimestamp(),
         status: 'success',
-        desc: `Profit from ${share.shareName} x${share.quantity}`
+        desc: `Profit from ${share.shareName} x${share.quantity}`,
+        phone: cleanPhone
       }))
 
       return Response.json({
@@ -610,6 +662,57 @@ export async function POST(request) {
 
       await kv.hset(userKey, { password: newPass })
       return Response.json({ success: true, message: 'Password changed' })
+    }
+
+    // Admin actions
+    if (action === 'resetPassword') {
+      const isAdmin = await verifyAdmin(phone)
+      if (!isAdmin) return Response.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+
+      if (!targetPhone) return Response.json({ success: false, message: 'Target phone required' }, { status: 400 })
+
+      const cleanTarget = targetPhone.replace(/\D/g, '')
+      await kv.hset(`phone:palamedes:${cleanTarget}`, { password: newPassword })
+      return Response.json({ success: true, message: 'Password reset successfully' })
+    }
+
+    if (action === 'approve' || action === 'reject') {
+      const isAdmin = await verifyAdmin(phone)
+      if (!isAdmin) return Response.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+
+      if (!targetPhone) return Response.json({ success: false, message: 'Target phone required' }, { status: 400 })
+
+      const userPhone = targetPhone.replace(/\D/g, '')
+      const txList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
+      const txIndex = txList.findIndex(t => safeParse(t)?.id == txId)
+
+      if (txIndex === -1) return Response.json({ success: false, message: 'Transaction not found' })
+
+      const tx = safeParse(txList[txIndex])
+      if (!tx) return Response.json({ success: false, message: 'Invalid transaction data' })
+
+      if (action === 'approve') {
+        tx.status = 'success'
+
+        if (type === 'deposit') {
+          const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
+          const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
+          await kv.hset(targetKey, { balance: String(newBalance) })
+        }
+
+        if (type === 'withdraw') {
+          const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
+          const newBalance = Number(targetUser.balance || 0) - Number(tx.amount)
+          await kv.hset(targetKey, { balance: String(newBalance) })
+        }
+      } else {
+        tx.status = 'rejected'
+      }
+
+      txList[txIndex] = JSON.stringify(tx)
+      await kv.lset(`transactions:${userPhone}`, txIndex, JSON.stringify(tx))
+
+      return Response.json({ success: true, message: `Transaction ${action}d` })
     }
 
     return Response.json({ success: false, message: 'Invalid action' }, { status: 400 })
