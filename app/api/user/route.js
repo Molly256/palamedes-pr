@@ -119,6 +119,10 @@ export async function GET(request) {
       let withdraws = []
 
       for (let key of allKeys) {
+        // Skip keys that aren't hashes to avoid WRONGTYPE error
+        const type = await kv.type(key)
+        if (type!== 'hash') continue
+
         const parts = key.split(':')
         const userPhone = parts[parts.length - 1]
         if (seenPhones.has(userPhone)) continue
