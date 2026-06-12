@@ -10,6 +10,7 @@ export default function Myteam() {
   const [teamB, setTeamB] = useState([])
   const [teamC, setTeamC] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     const stored = localStorage.getItem('palamedes_user')
@@ -19,27 +20,14 @@ export default function Myteam() {
     if (userData.phone) {
       fetchTeamData(userData.phone)
     } else {
-      console.log('No user found - loading test data')
-      loadTestData()
+      setError('Not logged in')
+      setLoading(false)
     }
   }, [])
 
-  const loadTestData = () => {
-    // Fake data for testing UI without login
-    setTotalCommission(45000)
-    setTeamA([
-      {username: 'Alex', phone: '0701111', vipLevel: 3, hasCommission: true},
-      {username: 'Sarah', phone: '0702222', vipLevel: 2, hasCommission: true}
-    ])
-    setTeamB([
-      {username: 'Mike', phone: '0703333', vipLevel: 1, hasCommission: false}
-    ])
-    setTeamC([])
-    setLoading(false)
-  }
-
   const fetchTeamData = async (phone) => {
     setLoading(true)
+    setError(null)
     try {
       const res = await fetch(`/api/myteam?phone=${phone}`)
       const data = await res.json()
@@ -50,11 +38,19 @@ export default function Myteam() {
         setTeamB(data.teamB || [])
         setTeamC(data.teamC || [])
       } else {
-        loadTestData() // fallback if API fails
+        setError(data.message || 'Failed to load team')
+        setTeamA([])
+        setTeamB([])
+        setTeamC([])
+        setTotalCommission(0)
       }
     } catch (err) {
       console.error('Failed to fetch team:', err)
-      loadTestData() // fallback if API fails
+      setError('Network error. Try again.')
+      setTeamA([])
+      setTeamB([])
+      setTeamC([])
+      setTotalCommission(0)
     }
     setLoading(false)
   }
@@ -93,7 +89,7 @@ export default function Myteam() {
               <div>
                 <p style={{ margin: 0, fontWeight: '800', color: '#000' }}>{m.username}</p>
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
-                  {m.phone} • {m.vipLevel > 0 ? `VIP${m.vipLevel}` : 'No VIP'}
+                  {m.phone} • {m.vip > 0 ? `VIP${m.vip}` : 'No VIP'}
                 </p>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -101,9 +97,9 @@ export default function Myteam() {
                   margin: 0, 
                   fontSize: '12px', 
                   fontWeight: '800',
-                  color: m.hasCommission ? '#00BFFF' : '#999'
+                  color: m.vip > 0 ? '#00BFFF' : '#999'
                 }}>
-                  {m.hasCommission ? 'Commission Paid' : 'Pending VIP'}
+                  {m.vip > 0 ? 'Commission Paid' : 'Pending VIP'}
                 </p>
               </div>
             </div>
@@ -117,11 +113,14 @@ export default function Myteam() {
     return <Card><p style={{ textAlign: 'center', padding: '50px' }}>Loading team...</p></Card>
   }
 
+  if (error) {
+    return <Card><p style={{ textAlign: 'center', padding: '50px', color: 'red' }}>{error}</p></Card>
+  }
+
   return (
     <Card>
       <main style={{ minHeight: 'auto', background: '#FFFFFF', padding: '15px 20px' }}>
         
-        {/* Back button */}
         <Link href="/dashboard" style={{ textDecoration: 'none', color: '#00BFFF', fontWeight: '800', marginBottom: '15px', display: 'block' }}>
           ← Back to Dashboard
         </Link>
@@ -130,7 +129,6 @@ export default function Myteam() {
           My Team
         </h1>
 
-        {/* Total Commission Box */}
         <p style={{ textAlign: 'center', margin: '0 0 8px 0', fontSize: '16px', fontWeight: '800', color: '#666' }}>
           Total Commission
         </p>
@@ -155,21 +153,18 @@ export default function Myteam() {
           </p>
         </div>
 
-        {/* Team A */}
         <TeamSection 
           title="Team A - Direct Invites" 
           members={teamA} 
           color="#00BFFF" 
         />
 
-        {/* Team B */}
         <TeamSection 
           title="Team B - Level 2" 
           members={teamB} 
           color="#FF8C00" 
         />
 
-        {/* Team C */}
         <TeamSection 
           title="Team C - Level 3" 
           members={teamC} 

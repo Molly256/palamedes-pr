@@ -1,74 +1,125 @@
 import { kv } from '@vercel/kv'
 
-function safeParse(val) {
-  if (!val || val === '' || val === 'null' || val === 'undefined') return null
-  try {
-    return JSON.parse(val)
-  } catch {
-    return null
-  }
-}
-
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)
     const phone = searchParams.get('phone')?.replace(/\s+/g, '')
-    
+
     if (!phone) {
       return Response.json({ success: false, message: 'Phone required' })
     }
 
-    // 1. Get total commission from transactions
-    const txList = await kv.lrange(`transactions:${phone}`, 0, -1)
-    const totalCommission = txList
-      .map(t => safeParse(t))
-      .filter(t => t && t.type === 'referral_reward')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
-
-    // 2. Get all users to build ABC teams
-    const allKeys = await kv.keys('phone:palamedes:*')
+    let totalCommission = 0
     const teamA = []
     const teamB = []
     const teamC = []
 
-    for (const key of allKeys) {
-      const user = await kv.hgetall(key)
-      if (!user || !user.phone) continue
+    // 1. Get downline phones from sets - works for old and new users after backfill
+    const [downline1, downline2, downline3] = await Promise.all([
+      kv.smembers(`user:${phone}:downline1`),
+      kv.smembers(`user:${phone}:downline2`),
+      kv.smembers(`user:${phone}:downline3`)
+    ])
 
-      // Team A: direct invites
-      if (user.upline1 === phone) {
-        const commission = await getCommissionFromUser(user.phone, phone)
+    // 2. Process Team A - Level 1
+    for (const memberPhone of downline1) {
+      const user = await kv.hgetall(`user:${memberPhone}:${memberPhone}`)
+      if (!user ||!user.phone) continue
+
+      const vip = Number(user.vip) || 0
+      const commissionPaid = user.vip_commission_paid === 'true'
+
+      if (vip > 0) {
         teamA.push({
           username: user.username,
           phone: user.phone,
-          vipLevel: Number(user.vip) || 0,
-          hasCommission: commission > 0,
-          commissionEarned: commission
+          vip: vip,
+          vipPaidAt: user.vip_paid_at
         })
-      }
 
-      // Team B: level 2
-      if (user.upline2 === phone) {
-        const commission = await getCommissionFromUser(user.phone, phone)
+        // Pay commission only on first VIP buy
+        if (!commissionPaid) {
+          const reward = getRewardForVip(vip, 1) // 1 = Level 1
+          if (reward > 0) {
+            totalCommission += reward
+
+            // Mark as paid and record transaction
+            await kv.hset(`user:${memberPhone}:${memberPhone}`, 'vip_commission_paid', 'true')
+            await kv.lpush(`transactions:${phone}`, JSON.stringify({
+              type: 'referral_reward',
+              amount: reward,
+              from: memberPhone,
+              level: 1,
+              timestamp: Date.now()
+            }))
+          }
+        }
+      }
+    }
+
+    // 3. Process Team B - Level 2
+    for (const memberPhone of downline2) {
+      const user = await kv.hgetall(`user:${memberPhone}:${memberPhone}`)
+      if (!user ||!user.phone) continue
+
+      const vip = Number(user.vip) || 0
+      const commissionPaid = user.vip_commission_paid === 'true'
+
+      if (vip > 0) {
         teamB.push({
           username: user.username,
           phone: user.phone,
-          vipLevel: Number(user.vip) || 0,
-          hasCommission: commission > 0,
-          commissionEarned: commission
+          vip: vip,
+          vipPaidAt: user.vip_paid_at
         })
-      }
 
-      // Team C: level 3
-      if (user.upline3 === phone) {
-        const commission = await getCommissionFromUser(user.phone, phone)
+        if (!commissionPaid) {
+          const reward = getRewardForVip(vip, 2) // 2 = Level 2
+          if (reward > 0) {
+            totalCommission += reward
+            await kv.hset(`user:${memberPhone}:${memberPhone}`, 'vip_commission_paid', 'true')
+            await kv.lpush(`transactions:${phone}`, JSON.stringify({
+              type: 'referral_reward',
+              amount: reward,
+              from: memberPhone,
+              level: 2,
+              timestamp: Date.now()
+            }))
+          }
+        }
+      }
+    }
+
+    // 4. Process Team C - Level 3
+    for (const memberPhone of downline3) {
+      const user = await kv.hgetall(`user:${memberPhone}:${memberPhone}`)
+      if (!user ||!user.phone) continue
+
+      const vip = Number(user.vip) || 0
+      const commissionPaid = user.vip_commission_paid === 'true'
+
+      if (vip > 0) {
         teamC.push({
           username: user.username,
           phone: user.phone,
-          vipLevel: Number(user.vip) || 0,
-          hasCommission: commission > 0,
-          commissionEarned: commission
+          vip: vip,
+          vipPaidAt: user.vip_paid_at
         })
+
+        if (!commissionPaid) {
+          const reward = getRewardForVip(vip, 3) // 3 = Level 3
+          if (reward > 0) {
+            totalCommission += reward
+            await kv.hset(`user:${memberPhone}:${memberPhone}`, 'vip_commission_paid', 'true')
+            await kv.lpush(`transactions:${phone}`, JSON.stringify({
+              type: 'referral_reward',
+              amount: reward,
+              from: memberPhone,
+              level: 3,
+              timestamp: Date.now()
+            }))
+          }
+        }
       }
     }
 
@@ -86,16 +137,12 @@ export async function GET(req) {
   }
 }
 
-// Helper: get how much commission this user generated for the upline
-async function getCommissionFromUser(memberPhone, uplinePhone) {
-  const txList = await kv.lrange(`transactions:${uplinePhone}`, 0, -1)
-  return txList
-    .map(t => safeParse(t))
-    .filter(t => 
-      t && 
-      t.type === 'referral_reward' && 
-      t.desc && 
-      t.desc.includes(memberPhone)
-    )
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+// Set your reward amounts here
+function getRewardForVip(vipLevel, teamLevel) {
+  const rewards = {
+    1: { 1: 500, 2: 200, 3: 100 }, // VIP1: 500 for A, 200 for B, 100 for C
+    2: { 1: 1000, 2: 400, 3: 200 },
+    3: { 1: 2000, 2: 800, 3: 400 }
+  }
+  return rewards[vipLevel]?.[teamLevel] || 0
 }
