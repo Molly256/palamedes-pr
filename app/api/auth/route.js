@@ -50,31 +50,47 @@ export async function POST(request) {
         }
         upline1 = upline1Phone
 
-        const upline1Data = await kv.hgetall(`user:0753520252:${upline1Phone}`)
-        if (upline1Data?.referralCode) {
-          const upline2Phone = await kv.get(`referral:${upline1Data.referralCode}`)
-          if (upline2Phone) upline2 = upline2Phone
+        const upline1Key = `user:0753520252:${upline1Phone}`
+        if ((await kv.type(upline1Key)) === 'hash') {
+          const upline1Data = await kv.hgetall(upline1Key)
+          if (upline1Data?.referralCode) {
+            const upline2Phone = await kv.get(`referral:${upline1Data.referralCode}`)
+            if (upline2Phone) upline2 = upline2Phone
+          }
         }
 
         if (upline2) {
-          const upline2Data = await kv.hgetall(`user:0753520252:${upline2}`)
-          if (upline2Data?.referralCode) {
-            const upline3Phone = await kv.get(`referral:${upline2Data.referralCode}`)
-            if (upline3Phone) upline3 = upline3Phone
+          const upline2Key = `user:0753520252:${upline2}`
+          if ((await kv.type(upline2Key)) === 'hash') {
+            const upline2Data = await kv.hgetall(upline2Key)
+            if (upline2Data?.referralCode) {
+              const upline3Phone = await kv.get(`referral:${upline2Data.referralCode}`)
+              if (upline3Phone) upline3 = upline3Phone
+            }
           }
         }
       }
 
-      const exists = await kv.exists(newKey) || await kv.exists(oldKey)
-      if (exists) {
+      // Check if phone exists
+      const newKeyType = await kv.type(newKey)
+      const oldKeyType = await kv.type(oldKey)
+      if (newKeyType === 'hash' || oldKeyType === 'hash') {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
+      if (newKeyType === 'string') await kv.del(newKey)
+      if (oldKeyType === 'string') await kv.del(oldKey)
 
-      const userExists = await kv.exists(usernameKey)
-      if (userExists) {
+      // Check username and clean bad string keys
+      const usernameType = await kv.type(usernameKey)
+      if (usernameType === 'string') {
+        await kv.del(usernameKey)
+      }
+      if (usernameType === 'hash') {
         return Response.json({ success: false, message: 'Username taken' })
       }
 
+      const inviteCode = getUserInviteCode(cleanPhone)
+      
       await kv.hset(newKey, {
         username,
         phone: cleanPhone,
@@ -84,7 +100,7 @@ export async function POST(request) {
         vipPricePaid: '0',
         vipLocked: 'false',
         tasksCompleted: '0',
-        referralCode: referral,
+        referralCode: inviteCode,
         upline1,
         upline2,
         upline3,
@@ -92,10 +108,7 @@ export async function POST(request) {
       })
       
       await kv.hset(usernameKey, { phone: cleanPhone })
-
-      const inviteCode = getUserInviteCode(cleanPhone)
       await kv.set(`referral:${inviteCode}`, cleanPhone)
-      await kv.hset(newKey, { referralCode: inviteCode })
 
       return Response.json({ 
         success: true, 
@@ -110,10 +123,22 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      // Check new key first, fallback to old key
-      let user = await kv.hgetall(newKey)
-      if (!user || !user.username) {
-        user = await kv.hgetall(oldKey)
+      let user = null
+
+      const newKeyType = await kv.type(newKey)
+      if (newKeyType === 'hash') {
+        user = await kv.hgetall(newKey)
+      } else if (newKeyType === 'string') {
+        await kv.del(newKey)
+      }
+
+      if (!user) {
+        const oldKeyType = await kv.type(oldKey)
+        if (oldKeyType === 'hash') {
+          user = await kv.hgetall(oldKey)
+        } else if (oldKeyType === 'string') {
+          await kv.del(oldKey)
+        }
       }
       
       if (!user || !user.username) {
