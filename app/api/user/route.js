@@ -388,7 +388,10 @@ export async function POST(request) {
       })
       await setTransactions(cleanPhone, txList)
 
-      const updatedTasks = await kv.hgetall(todayKey)
+      let updatedTasks = null
+      if ((await kv.type(todayKey)) === 'hash') {
+        updatedTasks = await kv.hgetall(todayKey)
+      }
       const totalBooks = config.books
       const done = Object.keys(updatedTasks || {}).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
 
@@ -545,26 +548,30 @@ export async function POST(request) {
 
       await setTransactions(cleanPhone, txList)
 
-      const freshUser = await kv.hgetall(userKey)
+      let freshUser = null
+      if ((await kv.type(userKey)) === 'hash') {
+        freshUser = await kv.hgetall(userKey)
+      }
+
       return NextResponse.json({
         success: true,
         user: {
-          username: freshUser.username || '',
-          phone: freshUser.phone || cleanPhone,
-          balance: Number(freshUser.balance) || 0,
-          vip: Number(freshUser.vip) || 0,
-          vipPricePaid: Number(freshUser.vipPricePaid) || 0,
-          vipLocked: freshUser.vipLocked === 'true',
-          tasksCompleted: Number(freshUser.tasksCompleted) || 0,
-          nickname: freshUser.nickname || '',
-          avatar: freshUser.avatar || '',
-          bankMTN: safeParse(freshUser.bankMTN),
-          bankAirtel: safeParse(freshUser.bankAirtel),
-          password: freshUser.password || '',
-          referralPaid: freshUser.referralPaid || 'false',
-          upline1: freshUser.upline1 || '',
-          upline2: freshUser.upline2 || '',
-          upline3: freshUser.upline3 || ''
+          username: freshUser?.username || '',
+          phone: freshUser?.phone || cleanPhone,
+          balance: Number(freshUser?.balance) || 0,
+          vip: Number(freshUser?.vip) || 0,
+          vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
+          vipLocked: freshUser?.vipLocked === 'true',
+          tasksCompleted: Number(freshUser?.tasksCompleted) || 0,
+          nickname: freshUser?.nickname || '',
+          avatar: freshUser?.avatar || '',
+          bankMTN: safeParse(freshUser?.bankMTN),
+          bankAirtel: safeParse(freshUser?.bankAirtel),
+          password: freshUser?.password || '',
+          referralPaid: freshUser?.referralPaid || 'false',
+          upline1: freshUser?.upline1 || '',
+          upline2: freshUser?.upline2 || '',
+          upline3: freshUser?.upline3 || ''
         },
         message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
       })
