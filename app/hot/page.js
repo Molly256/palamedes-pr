@@ -34,16 +34,19 @@ const getUGNow = () => {
   return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }))
 }
 
-const getUGDateStr = (date = new Date()) => {
-  return new Intl.DateTimeFormat('en-UG', {
-    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  }).format(date)
+const parseKampalaDate = (dateStr) => {
+  if (!dateStr) return null
+  // Parse "dd/mm/yyyy, hh:mm:ss" format from backend
+  const [datePart, timePart] = dateStr.split(', ')
+  const [day, month, year] = datePart.split('/')
+  return new Date(`${year}-${month}-${day}T${timePart}`)
 }
 
 const getDaysLeft = (endDateStr) => {
+  const end = parseKampalaDate(endDateStr)
+  if (!end || isNaN(end)) return 0
+  
   const now = getUGNow()
-  const end = new Date(endDateStr)
   const diff = end - now
   if (diff <= 0) return 0
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
@@ -66,13 +69,11 @@ export default function HotPage() {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     setPhone(userData.phone || '')
     loadData(userData.phone)
-    
-    const interval = setInterval(() => setOngoing(prev => [...prev]), 60000)
-    return () => clearInterval(interval)
   }, [])
 
   const loadData = async (userPhone) => {
     if (!userPhone) return
+    setLoading(true)
     try {
       const res = await fetch(`/api/user?action=getShares&phone=${userPhone}`)
       const data = await res.json()
@@ -116,7 +117,7 @@ export default function HotPage() {
       if (data.success) {
         alert(`Success! Bought ${quantity} share(s). New balance: ${data.balance.toLocaleString()}shs`)
         setQtySelector(null)
-        loadData(phone)
+        await loadData(phone)
         
         const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
         user.balance = data.balance
@@ -146,7 +147,7 @@ export default function HotPage() {
         const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
         user.balance = data.balance
         localStorage.setItem('palamedes_user', JSON.stringify(user))
-        loadData(phone)
+        await loadData(phone)
       } else {
         alert(data.message)
       }
@@ -255,7 +256,7 @@ export default function HotPage() {
   if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', paddingBottom: '96px' }}>
+    <div style={{ backgroundColor: '#f9fafb', paddingBottom: '96px' }}>
       <h1 style={{ fontSize: '20px', fontWeight: 'bold', textAlign: 'center', padding: '16px', backgroundColor: 'white', borderBottom: '1px solid #e5e7eb' }}>
         PALAMEDES PR COMPANY
       </h1>

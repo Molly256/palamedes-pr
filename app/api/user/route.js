@@ -74,6 +74,13 @@ function getUGDateObj() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
 }
 
+function parseKampalaDate(str) {
+  if (!str) return null
+  const [datePart, timePart] = str.split(', ')
+  const [day, month, year] = datePart.split('/')
+  return new Date(`${year}-${month}-${day}T${timePart}`)
+}
+
 async function getUserData(phone) {
   const userKey = `user:${phone}`
   if ((await kv.type(userKey)) === 'hash') {
@@ -97,6 +104,28 @@ async function pushTransaction(phone, tx) {
 
 async function verifyAdmin(phone) {
   return ADMIN_PHONES.includes(phone)
+}
+
+async function buildTeams(phone) {
+  const keys = await kv.keys('user:*')
+  const allUsers = []
+
+  for (let key of keys) {
+    if ((await kv.type(key))!== 'hash') continue
+    const u = await kv.hgetall(key)
+    if (!u) continue
+    allUsers.push({...u, phone: key.split(':')[1] })
+  }
+
+  const teamA = allUsers.filter(u => normalizePhone(u.upline1) === phone)
+  const teamAPhones = new Set(teamA.map(u => u.phone))
+
+  const teamB = allUsers.filter(u => teamAPhones.has(normalizePhone(u.upline1)))
+  const teamBPhones = new Set(teamB.map(u => u.phone))
+
+  const teamC = allUsers.filter(u => teamBPhones.has(normalizePhone(u.upline1)))
+
+  return { teamA, teamB, teamC }
 }
 
 export async function GET(request) {
@@ -140,53 +169,32 @@ export async function GET(request) {
     }
 
     if (action === 'getTeam') {
-      const keys = await kv.keys('user:*')
-      const teamA = []
-      const teamB = []
-      const teamC = []
-
-      for (let key of keys) {
-        if ((await kv.type(key))!== 'hash') continue
-        const u = await kv.hgetall(key)
-        if (!u) continue
-
-        const userPhone = key.split(':')[1]
-
-        if (u.upline1 && normalizePhone(u.upline1) === phone) {
-          teamA.push({
-            phone: userPhone,
-            username: u.username || '',
-            nickname: u.nickname || '',
-            vip: Number(u.vip) || 0,
-            balance: Number(u.balance) || 0,
-            createdAt: u.createdAt || ''
-          })
-        }
-        if (u.upline2 && normalizePhone(u.upline2) === phone) {
-          teamB.push({
-            phone: userPhone,
-            username: u.username || '',
-            nickname: u.nickname || '',
-            vip: Number(u.vip) || 0,
-            balance: Number(u.balance) || 0
-          })
-        }
-        if (u.upline3 && normalizePhone(u.upline3) === phone) {
-          teamC.push({
-            phone: userPhone,
-            username: u.username || '',
-            nickname: u.nickname || '',
-            vip: Number(u.vip) || 0,
-            balance: Number(u.balance) || 0
-          })
-        }
-      }
+      const { teamA, teamB, teamC } = await buildTeams(phone)
 
       return NextResponse.json({
         success: true,
-        teamA,
-        teamB,
-        teamC,
+        teamA: teamA.map(u => ({
+          phone: u.phone,
+          username: u.username || '',
+          nickname: u.nickname || '',
+          vip: Number(u.vip) || 0,
+          balance: Number(u.balance) || 0,
+          createdAt: u.createdAt || ''
+        })),
+        teamB: teamB.map(u => ({
+          phone: u.phone,
+          username: u.username || '',
+          nickname: u.nickname || '',
+          vip: Number(u.vip) || 0,
+          balance: Number(u.balance) || 0
+        })),
+        teamC: teamC.map(u => ({
+          phone: u.phone,
+          username: u.username || '',
+          nickname: u.nickname || '',
+          vip: Number(u.vip) || 0,
+          balance: Number(u.balance) || 0
+        })),
         totalMembers: teamA.length + teamB.length + teamC.length
       })
     }
@@ -249,7 +257,8 @@ export async function GET(request) {
       const sharesKey = `share:palamedes:${phone}`
       if ((await kv.type(sharesKey)) === 'hash') {
         const sharesHash = await kv.hgetall(sharesKey)
-        const shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
+        let shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
+        shares = shares.filter(s => s.status === 'ongoing')
         return NextResponse.json({ success: true, shares })
       }
       return NextResponse.json({ success: true, shares: [] })
@@ -265,6 +274,12 @@ export async function GET(request) {
       const recentTx = transactions.slice(0, 49)
       const vipTx = transactions.find(t => t.type === 'viptask_purchase')
       const vipPurchaseDate = vipTx? vipTx.date : null
+
+      const { teamA, teamB, teamC } = await buildTeams(phone)
+
+      const totalEarnings = transactions
+      .filter(t => t.type === 'referral_reward' && t.status === 'success')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
@@ -289,7 +304,14 @@ export async function GET(request) {
           createdAt: user.createdAt || ''
         },
         transactions: recentTx,
-        vipPurchaseDate
+        vipPurchaseDate,
+        stats: {
+          teamA: teamA.length,
+          teamB: teamB.length,
+          teamC: teamC.length,
+          totalMembers: teamA.length + teamB.length + teamC.length,
+          totalEarnings
+        }
       })
     }
 
@@ -559,13 +581,11 @@ export async function POST(request) {
         phone: phone
       })
 
-      // Fixed referral payout logic
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
         const timestamp = getISOTimestamp()
         const paidUplines = new Set()
 
-        // Only pay upline1 if it exists and is different from buyer
         if (user.upline1 && user.upline1!== phone &&!paidUplines.has(user.upline1)) {
           const { user: upline1, userKey: upline1Key } = await getUserData(user.upline1)
           if (upline1) {
@@ -586,7 +606,6 @@ export async function POST(request) {
           }
         }
 
-        // Only pay upline2 if it exists, is different from upline1, and different from buyer
         if (user.upline2 && user.upline2!== user.upline1 && user.upline2!== phone &&!paidUplines.has(user.upline2)) {
           const { user: upline2, userKey: upline2Key } = await getUserData(user.upline2)
           if (upline2) {
@@ -607,7 +626,6 @@ export async function POST(request) {
           }
         }
 
-        // Only pay upline3 if it exists, is different from upline1/2, and different from buyer
         if (user.upline3 && user.upline3!== user.upline2 && user.upline3!== user.upline1 && user.upline3!== phone &&!paidUplines.has(user.upline3)) {
           const { user: upline3, userKey: upline3Key } = await getUserData(user.upline3)
           if (upline3) {
@@ -729,8 +747,8 @@ export async function POST(request) {
       }
 
       const now = getUGDateObj()
-      const endDate = new Date(share.endDate.replace(/\//g, '-').replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'))
-      if (now < endDate) {
+      const endDate = parseKampalaDate(share.endDate)
+      if (!endDate || now < endDate) {
         return NextResponse.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
       }
 

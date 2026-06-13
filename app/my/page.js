@@ -49,7 +49,6 @@ export default function MyPage() {
   }
 
   const calculateEarnings = () => {
-    // Fixed: Don't block if vipPurchaseDate is null. VIP0 users should see balance.
     if (!userData ||!transactions.length) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
       total: 0, invitation: 0, deposit: 0, balance: userData?.balance || 0
@@ -65,7 +64,6 @@ export default function MyPage() {
     weekStartUG.setDate(todayUG.getDate() - daysToMonday)
 
     const monthStartUG = new Date(todayUG.getFullYear(), todayUG.getMonth(), 1)
-    // Use epoch start if no vipPurchaseDate
     const vipStart = vipPurchaseDate? new Date(vipPurchaseDate) : new Date(0)
 
     let yesterdayAmt = 0, todayAmt = 0, weekAmt = 0, monthAmt = 0, totalAmt = 0, inviteAmt = 0, deposit = 0
@@ -85,7 +83,6 @@ export default function MyPage() {
         if (txDateUG >= monthStartUG) monthAmt += tx.amount
       }
 
-      // Fixed: backend uses 'referral_reward', not 'invite_reward'
       if (txDateUG >= vipStart && tx.type === 'referral_reward') inviteAmt += tx.amount
       if (tx.type === 'viptask_purchase') deposit = Math.abs(tx.amount)
     })
@@ -162,7 +159,8 @@ export default function MyPage() {
     borderRadius: '12px',
     padding: '16px',
     textAlign: 'center',
-    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+    overflow: 'hidden'
   }
   const boxTitle = { fontSize: '14px', fontWeight: '300', color: 'black', marginBottom: '4px' }
   const boxSub = { fontSize: '12px', fontWeight: '300', color: 'black', marginBottom: '8px' }
@@ -195,11 +193,11 @@ export default function MyPage() {
   const isTodayWeekend = isWeekend(todayUG)
 
   if (loading) {
-    return <div style={{minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>Loading...</div>
+    return <div style={{minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0'}}>Loading...</div>
   }
 
   return (
-    <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
+    <div style={{backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
       <div style={{maxWidth: '448px', margin: '0 auto'}}>
         <h1 style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', marginBottom: '16px'}}>My</h1>
 
@@ -242,13 +240,15 @@ export default function MyPage() {
         <h2 style={{fontSize: '18px', fontWeight: '600', marginBottom: '12px'}}>Recent Transactions</h2>
 
         {transactions.length === 0? (
-          <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>
-            No transactions yet
-          </p>
+          <div style={{...boxStyle, backgroundColor: 'white'}}>
+            <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>
+              No transactions yet
+            </p>
+          </div>
         ) : (
           transactions
-          .filter(t => t && t.id)
-          .map((t) => {
+         .filter(t => t && t.id)
+         .map((t) => {
               const amount = Number(t.amount) || 0
               const isCredit = amount > 0
               const dateStr = formatDate(t.date)
