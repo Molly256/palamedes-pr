@@ -24,7 +24,21 @@ const SHARE_CONFIG = {
 
 function safeParse(val) {
   if (!val || val === '' || val === 'null' || val === 'undefined') return null
-  try { return JSON.parse(val) } catch { return null }
+  try {
+    const parsed = JSON.parse(val)
+    return typeof parsed === 'string'? JSON.parse(parsed) : parsed
+  } catch {
+    return null
+  }
+}
+
+function normalizePhone(phone) {
+  if (!phone) return phone
+  phone = String(phone).replace(/\D/g, '')
+  if (phone.length === 9 &&!phone.startsWith('0')) {
+    phone = '0' + phone
+  }
+  return phone
 }
 
 function getKampalaTime() {
@@ -63,7 +77,11 @@ async function getUserData(phone) {
 }
 
 async function getTransactions(phone) {
-  const tx = await kv.lrange(`transactions:${phone}`, 0, 99)
+  const key = `transactions:${phone}`
+  const type = await kv.type(key)
+  if (type!== 'list') return []
+
+  const tx = await kv.lrange(key, 0, 99)
   return tx.map(t => safeParse(t)).filter(Boolean)
 }
 
@@ -78,8 +96,10 @@ async function verifyAdmin(phone) {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
-    const phone = searchParams.get('phone')
+    let phone = searchParams.get('phone')
     const action = searchParams.get('action')
+
+    phone = normalizePhone(phone)
 
     if (!phone && action!== 'pending') {
       return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
@@ -230,7 +250,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names, txId, type, amount, newPassword, targetPhone } = body
+    let { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names, txId, type, amount, newPassword, targetPhone } = body
+
+    phone = normalizePhone(phone)
+    targetPhone = normalizePhone(targetPhone)
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
 
@@ -692,7 +715,8 @@ export async function POST(request) {
       if (action === 'approve' && type === 'withdraw') {
         const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
         if (targetKey) {
-          const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
+          // Withdraw deducts money, so subtract the amount
+          const newBalance = Number(targetUser.balance || 0) - Math.abs(Number(tx.amount))
           await kv.hset(targetKey, { balance: String(newBalance) })
         }
       }
