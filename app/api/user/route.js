@@ -26,8 +26,6 @@ function safeParse(val) {
   if (!val || val === '' || val === 'null' || val === 'undefined') return null
   try {
     let parsed = val
-
-    // Keep parsing until it's an object, max 2 times for double-stringified data
     for (let i = 0; i < 2; i++) {
       if (typeof parsed === 'string') {
         parsed = JSON.parse(parsed)
@@ -35,10 +33,8 @@ function safeParse(val) {
         break
       }
     }
-
     return parsed
-  } catch (e) {
-    console.log('[safeParse] failed for:', val)
+  } catch {
     return null
   }
 }
@@ -90,16 +86,9 @@ async function getUserData(phone) {
 async function getTransactions(phone) {
   const key = `transactions:${phone}`
   const type = await kv.type(key)
-
-  if (type!== 'list') {
-    console.log(`[getTransactions] ${key} is type ${type}, returning []`)
-    return []
-  }
-
+  if (type!== 'list') return []
   const raw = await kv.lrange(key, 0, 99)
-  const parsed = raw.map(t => safeParse(t)).filter(Boolean)
-  console.log(`[getTransactions] ${key}: raw=${raw.length}, parsed=${parsed.length}`)
-  return parsed
+  return raw.map(t => safeParse(t)).filter(Boolean)
 }
 
 async function pushTransaction(phone, tx) {
@@ -134,7 +123,6 @@ export async function GET(request) {
       for (let key of keys) {
         if ((await kv.type(key))!== 'hash') continue
         const userPhone = key.split(':')[1]
-
         const txList = await getTransactions(userPhone)
         txList.forEach(tx => {
           if (tx && tx.status === 'pending') {
