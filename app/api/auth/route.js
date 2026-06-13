@@ -23,8 +23,7 @@ export async function POST(request) {
       return Response.json({ success: false, message: 'Username must be 3-20 lowercase letters, numbers, or _' })
     }
 
-    const newKey = `user:0753520252:${cleanPhone}`
-    const oldKey = `phone:palamedes:${cleanPhone}`
+    const userKey = `user:${cleanPhone}`
     const usernameKey = `username:${username}`
 
     // REGISTER
@@ -57,7 +56,7 @@ export async function POST(request) {
         }
         upline1 = upline1Phone
 
-        const upline1Key = `user:0753520252:${upline1Phone}`
+        const upline1Key = `user:${upline1Phone}`
         if ((await kv.type(upline1Key)) === 'hash') {
           const upline1Data = await kv.hgetall(upline1Key)
           if (upline1Data?.referralCode) {
@@ -67,7 +66,7 @@ export async function POST(request) {
         }
 
         if (upline2) {
-          const upline2Key = `user:0753520252:${upline2}`
+          const upline2Key = `user:${upline2}`
           if ((await kv.type(upline2Key)) === 'hash') {
             const upline2Data = await kv.hgetall(upline2Key)
             if (upline2Data?.referralCode) {
@@ -79,13 +78,9 @@ export async function POST(request) {
       }
 
       // Check if phone exists
-      const newKeyType = await kv.type(newKey)
-      const oldKeyType = await kv.type(oldKey)
-      if (newKeyType === 'hash' || oldKeyType === 'hash') {
+      if ((await kv.type(userKey)) === 'hash') {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
-      if (newKeyType === 'string') await kv.del(newKey)
-      if (oldKeyType === 'string') await kv.del(oldKey)
 
       // Clean ALL case variants of username key to prevent WRONGTYPE
       const variants = [
@@ -106,7 +101,7 @@ export async function POST(request) {
 
       const inviteCode = getUserInviteCode(cleanPhone)
       
-      await kv.hset(newKey, {
+      await kv.hset(userKey, {
         username,
         displayName: body.username?.trim(),
         phone: cleanPhone,
@@ -120,7 +115,9 @@ export async function POST(request) {
         upline1,
         upline2,
         upline3,
-        referralPaid: 'false'
+        referralPaid: 'false',
+        role: 'user',
+        hasBoughtVIP: 'false'
       })
       
       await kv.hset(usernameKey, { phone: cleanPhone })
@@ -139,25 +136,9 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      let user = null
-
-      const newKeyType = await kv.type(newKey)
-      if (newKeyType === 'hash') {
-        user = await kv.hgetall(newKey)
-      } else if (newKeyType === 'string') {
-        await kv.del(newKey)
-      }
-
-      if (!user) {
-        const oldKeyType = await kv.type(oldKey)
-        if (oldKeyType === 'hash') {
-          user = await kv.hgetall(oldKey)
-        } else if (oldKeyType === 'string') {
-          await kv.del(oldKey)
-        }
-      }
+      const user = await kv.hgetall(userKey)
       
-      if (!user || !user.username) {
+      if (!user || Object.keys(user).length === 0) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
@@ -179,7 +160,9 @@ export async function POST(request) {
           upline1: user.upline1 || '',
           upline2: user.upline2 || '',
           upline3: user.upline3 || '',
-          referralPaid: user.referralPaid || 'false'
+          referralPaid: user.referralPaid || 'false',
+          role: user.role || 'user',
+          hasBoughtVIP: user.hasBoughtVIP === 'true'
         }
       })
     }
