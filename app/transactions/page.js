@@ -13,6 +13,13 @@ export default function Transactions() {
     const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
     if (!u) return router.push('/login')
 
+    // Auto-fix phone if leading 0 is missing
+    if (u.phone &&!u.phone.startsWith('0') && u.phone.length === 9) {
+      u.phone = '0' + u.phone
+      localStorage.setItem('palamedes_user', JSON.stringify(u))
+    }
+
+    console.log('Fetching transactions for phone:', u.phone)
     setUser(u)
     fetchTransactions(u.phone)
   }, [router])
