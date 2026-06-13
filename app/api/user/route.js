@@ -309,9 +309,6 @@ export async function POST(request) {
       return NextResponse.json({ success: true, tx, message: 'Withdraw request submitted. Pending approval.' })
     }
 
-    //... rest of your POST actions stay the same, they already use userKey and cleanPhone correctly now
-    // Keep all your existing submitTask, buyvip, buyShare, collectShare, updateProfile, changePassword, resetPassword, approve/reject code here
-
     if (action === 'submitTask') {
       if (!isWeekdayKampala()) {
         return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
@@ -371,8 +368,354 @@ export async function POST(request) {
       return NextResponse.json({ success: true, balance: Number(newBalance), done: Number(done), totalBooks: Number(totalBooks) })
     }
 
-    // Paste your remaining actions here unchanged - buyvip, buyShare, collectShare, etc.
-    // They will now work because userKey is correct
+    if (action === 'buyvip') {
+      const currentVip = Number(user.vip) || 0
+      const currentPricePaid = Number(user.vipPricePaid) || 0
+      const config = VIP_CONFIG[vipLevel]
+
+      if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
+
+      const newPrice = Number(config.price)
+      const balance = Number(user.balance) || 0
+
+      if (!vipLevel || vipLevel <= currentVip) {
+        return NextResponse.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
+      }
+      if (balance < newPrice) {
+        return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
+      }
+
+      let newBalance = balance - newPrice
+      if (currentPricePaid > 0) newBalance += currentPricePaid
+
+      const todayKey = getTodayKey(cleanPhone)
+      let oldTasks = null
+      if ((await kv.type(todayKey)) === 'hash') {
+        oldTasks = await kv.hgetall(todayKey)
+      }
+
+      const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
+      const doneToday = oldTasks? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length : 0
+      const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
+
+      await kv.hset(userKey, {
+        balance: String(newBalance),
+        vip: String(vipLevel),
+        vipPricePaid: String(newPrice),
+        vipLocked: 'false',
+        tasksCompleted: '0'
+      })
+
+      await kv.del(todayKey)
+
+      if (isWeekdayKampala() &&!alreadyFinishedToday) {
+        const taskObj = {}
+        for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
+        taskObj.income = String(config.books * config.perBook)
+        await kv.hset(todayKey, taskObj)
+      }
+
+      const timestamp = getISOTimestamp()
+
+      if (currentPricePaid > 0) {
+        await pushTransaction(cleanPhone, {
+          id: Date.now(),
+          type: 'refund',
+          amount: currentPricePaid,
+          date: timestamp,
+          status: 'success',
+          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`,
+          phone: cleanPhone
+        })
+      }
+
+      await pushTransaction(cleanPhone, {
+        id: Date.now() + 1,
+        type: 'viptask_purchase',
+        amount: -newPrice,
+        date: timestamp,
+        status: 'success',
+        desc: `Bought VIP${vipLevel}`,
+        phone: cleanPhone
+      })
+
+      // Referral commission on first VIP purchase
+      if (currentVip === 0 && user.referralPaid!== 'true') {
+        const paidPrice = Number(config.price)
+
+        if (user.upline1) {
+          const { user: upline1, userKey: upline1Key } = await getUserData(user.upline1)
+          if (upline1) {
+            const rewardA = Math.floor(paidPrice * 0.05)
+            if (rewardA > 0) {
+              await kv.hset(upline1Key, { balance: String(Number(upline1.balance) + rewardA) })
+              await pushTransaction(upline1.phone || user.upline1, {
+                id: Date.now() + 2,
+                type: 'referral_reward',
+                amount: rewardA,
+                date: timestamp,
+                status: 'success',
+                desc: `Team A reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
+                phone: upline1.phone || user.upline1
+              })
+            }
+          }
+        }
+
+        if (user.upline2) {
+          const { user: upline2, userKey: upline2Key } = await getUserData(user.upline2)
+          if (upline2) {
+            const rewardB = Math.floor(paidPrice * 0.02)
+            if (rewardB > 0) {
+              await kv.hset(upline2Key, { balance: String(Number(upline2.balance) + rewardB) })
+              await pushTransaction(upline2.phone || user.upline2, {
+                id: Date.now() + 3,
+                type: 'referral_reward',
+                amount: rewardB,
+                date: timestamp,
+                status: 'success',
+                desc: `Team B reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
+                phone: upline2.phone || user.upline2
+              })
+            }
+          }
+        }
+
+        if (user.upline3) {
+          const { user: upline3, userKey: upline3Key } = await getUserData(user.upline3)
+          if (upline3) {
+            const rewardC = Math.floor(paidPrice * 0.01)
+            if (rewardC > 0) {
+              await kv.hset(upline3Key, { balance: String(Number(upline3.balance) + rewardC) })
+              await pushTransaction(upline3.phone || user.upline3, {
+                id: Date.now() + 4,
+                type: 'referral_reward',
+                amount: rewardC,
+                date: timestamp,
+                status: 'success',
+                desc: `Team C reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
+                phone: upline3.phone || user.upline3
+              })
+            }
+          }
+        }
+
+        await kv.hset(userKey, { referralPaid: 'true' })
+      }
+
+      let freshUser = await kv.hgetall(userKey)
+
+      return NextResponse.json({
+        success: true,
+        user: {
+          username: freshUser?.username || '',
+          phone: freshUser?.phone || cleanPhone,
+          balance: Number(freshUser?.balance) || 0,
+          vip: Number(freshUser?.vip) || 0,
+          vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
+          vipLocked: freshUser?.vipLocked === 'true',
+          tasksCompleted: Number(freshUser?.tasksCompleted) || 0,
+          nickname: freshUser?.nickname || '',
+          avatar: freshUser?.avatar || '',
+          bankMTN: safeParse(freshUser?.bankMTN),
+          bankAirtel: safeParse(freshUser?.bankAirtel),
+          password: freshUser?.password || '',
+          referralPaid: freshUser?.referralPaid || 'false',
+          vip_commission_paid: freshUser?.vip_commission_paid || 'false',
+          upline1: freshUser?.upline1 || '',
+          upline2: freshUser?.upline2 || '',
+          upline3: freshUser?.upline3 || ''
+        },
+        message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
+      })
+    }
+
+    if (action === 'buyShare') {
+      const config = SHARE_CONFIG[shareId]
+      if (!config) return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
+
+      const qty = Number(quantity) || 1
+      const cost = Number(totalCost) || config.price * qty
+      const balance = Number(user.balance) || 0
+
+      if (balance < cost) {
+        return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
+      }
+
+      const newBalance = balance - cost
+      await kv.hset(userKey, { balance: String(newBalance) })
+
+      const buyDate = getUGDateObj()
+      const endDate = new Date(buyDate)
+      endDate.setDate(endDate.getDate() + Number(cycleDays || config.cycle))
+
+      const shareIdUnique = `${shareId}_${Date.now()}`
+      const shareData = {
+        id: shareIdUnique,
+        shareId: shareId,
+        shareName: shareName || config.name,
+        quantity: qty,
+        pricePerShare: config.price,
+        dailyProfit: Number(dailyProfit || config.daily * 100),
+        cycleDays: Number(cycleDays || config.cycle),
+        buyDate: getKampalaTime(),
+        endDate: getKampalaTime.call(null, endDate),
+        status: 'ongoing',
+        collectedAt: null,
+        profitReceived: 0
+      }
+
+      await kv.hset(sharesKey, shareIdUnique, JSON.stringify(shareData))
+
+      await pushTransaction(cleanPhone, {
+        id: Date.now(),
+        type: 'share_purchase',
+        amount: -cost,
+        shareName: shareData.shareName,
+        quantity: qty,
+        date: getISOTimestamp(),
+        status: 'success',
+        desc: `Bought ${qty} x ${shareData.shareName}`,
+        phone: cleanPhone
+      })
+
+      return NextResponse.json({ success: true, balance: newBalance, message: `Bought ${qty} share(s) of ${shareData.shareName}!` })
+    }
+
+    if (action === 'collectShare') {
+      const shareIdUnique = body.shareId
+      if (!shareIdUnique) return NextResponse.json({ success: false, message: 'Share ID required' }, { status: 400 })
+
+      if ((await kv.type(sharesKey))!== 'hash') {
+        return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
+      }
+
+      const shareStr = await kv.hget(sharesKey, shareIdUnique)
+      if (!shareStr) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
+
+      const share = safeParse(shareStr)
+      if (!share) return NextResponse.json({ success: false, message: 'Invalid share data' }, { status: 400 })
+      if (share.status!== 'ongoing') {
+        return NextResponse.json({ success: false, message: 'Share already collected' }, { status: 400 })
+      }
+
+      const now = getUGDateObj()
+      const endDate = new Date(share.endDate)
+      if (now < endDate) {
+        return NextResponse.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
+      }
+
+      const profit = Math.round(share.pricePerShare * share.quantity * (share.dailyProfit / 100) * share.cycleDays)
+      const newBalance = Number(user.balance) + profit
+
+      share.status = 'expired'
+      share.collectedAt = getKampalaTime()
+      share.profitReceived = profit
+
+      await kv.hset(sharesKey, shareIdUnique, JSON.stringify(share))
+      await kv.hset(userKey, { balance: String(newBalance) })
+
+      await pushTransaction(cleanPhone, {
+        id: Date.now(),
+        type: 'share_profit',
+        amount: profit,
+        shareName: share.shareName,
+        quantity: share.quantity,
+        date: getISOTimestamp(),
+        status: 'success',
+        desc: `Profit from ${share.shareName} x${share.quantity}`,
+        phone: cleanPhone
+      })
+
+      return NextResponse.json({ success: true, balance: newBalance, profit, message: 'Profits collected successfully' })
+    }
+
+    if (action === 'updateProfile') {
+      if (field === 'nickname') {
+        if (value.length > 6) return NextResponse.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
+        await kv.hset(userKey, { nickname: value })
+        return NextResponse.json({ success: true, message: 'Nickname saved' })
+      }
+      if (field === 'bankMTN') {
+        await kv.hset(userKey, { bankMTN: JSON.stringify(value) })
+        return NextResponse.json({ success: true, message: 'MTN bank saved' })
+      }
+      if (field === 'bankAirtel') {
+        await kv.hset(userKey, { bankAirtel: JSON.stringify(value) })
+        return NextResponse.json({ success: true, message: 'Airtel bank saved' })
+      }
+      if (field === 'avatar') {
+        await kv.hset(userKey, { avatar: value })
+        return NextResponse.json({ success: true, message: 'Avatar updated' })
+      }
+    }
+
+    if (action === 'changePassword') {
+      if (String(user.password)!== String(oldPass)) {
+        return NextResponse.json({ success: false, message: 'Old password incorrect' }, { status: 400 })
+      }
+      if (newPass.length < 6) {
+        return NextResponse.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
+      }
+      await kv.hset(userKey, { password: newPass })
+      return NextResponse.json({ success: true, message: 'Password changed' })
+    }
+
+    if (action === 'resetPassword') {
+      if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
+
+      const cleanTarget = targetPhone.replace(/\D/g, '')
+      const { userKey: targetKey } = await getUserData(cleanTarget)
+      if (!targetKey) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
+
+      await kv.hset(targetKey, { password: newPassword })
+      return NextResponse.json({ success: true, message: 'Password reset successfully' })
+    }
+
+    if (action === 'approve' || action === 'reject') {
+      if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
+
+      const userPhone = targetPhone.replace(/\D/g, '')
+      const txList = await getTransactions(userPhone)
+      const txIndex = txList.findIndex(t => t.id == txId)
+
+      if (txIndex === -1) return NextResponse.json({ success: false, message: 'Transaction not found' })
+
+      const tx = txList[txIndex]
+
+      if (action === 'approve') {
+        tx.status = 'success'
+
+        if (type === 'deposit') {
+          const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
+          if (targetKey) {
+            const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
+            await kv.hset(targetKey, { balance: String(newBalance) })
+          }
+        }
+
+        if (type === 'withdraw') {
+          const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
+          if (targetKey) {
+            const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
+            await kv.hset(targetKey, { balance: String(newBalance) })
+          }
+        }
+      } else {
+        tx.status = 'rejected'
+      }
+
+      const rawList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
+      rawList[txIndex] = JSON.stringify(tx)
+      await kv.del(`transactions:${userPhone}`)
+      if (rawList.length > 0) {
+        await kv.lpush(`transactions:${userPhone}`,...rawList.reverse())
+      }
+
+      return NextResponse.json({ success: true, message: `Transaction ${action}d` })
+    }
 
     return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
   } catch (err) {
