@@ -25,13 +25,20 @@ const SHARE_CONFIG = {
 function safeParse(val) {
   if (!val || val === '' || val === 'null' || val === 'undefined') return null
   try {
-    let parsed = JSON.parse(val)
-    // Handle double-stringified data
-    if (typeof parsed === 'string') {
-      parsed = JSON.parse(parsed)
+    let parsed = val
+
+    // Keep parsing until it's an object, max 2 times for double-stringified data
+    for (let i = 0; i < 2; i++) {
+      if (typeof parsed === 'string') {
+        parsed = JSON.parse(parsed)
+      } else {
+        break
+      }
     }
+
     return parsed
-  } catch {
+  } catch (e) {
+    console.log('[safeParse] failed for:', val)
     return null
   }
 }
