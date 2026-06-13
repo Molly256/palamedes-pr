@@ -54,15 +54,12 @@ function getUGDateObj() {
 }
 
 async function getUserData(phone) {
-  const cleanPhone = phone.replace(/\D/g, '')
-  const userKey = `user:${cleanPhone}`
-
+  const userKey = `user:${phone}`
   if ((await kv.type(userKey)) === 'hash') {
     const user = await kv.hgetall(userKey)
-    return { user, userKey, cleanPhone }
+    return { user, userKey }
   }
-
-  return { user: null, userKey: null, cleanPhone }
+  return { user: null, userKey: null }
 }
 
 async function getTransactions(phone) {
@@ -75,8 +72,7 @@ async function pushTransaction(phone, tx) {
 }
 
 async function verifyAdmin(phone) {
-  const cleanPhone = phone.replace(/\D/g, '')
-  return ADMIN_PHONES.includes(cleanPhone)
+  return ADMIN_PHONES.includes(phone)
 }
 
 export async function GET(request) {
@@ -127,11 +123,11 @@ export async function GET(request) {
       return NextResponse.json({ success: true, user })
     }
 
-    const { user, userKey, cleanPhone } = await getUserData(phone)
+    const { user, userKey } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getShares') {
-      const sharesKey = `share:${cleanPhone}`
+      const sharesKey = `share:palamedes:${phone}`
       if ((await kv.type(sharesKey)) === 'hash') {
         const sharesHash = await kv.hgetall(sharesKey)
         const shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
@@ -141,12 +137,12 @@ export async function GET(request) {
     }
 
     if (action === 'getTransactions') {
-      const transactions = await getTransactions(cleanPhone)
+      const transactions = await getTransactions(phone)
       return NextResponse.json({ success: true, transactions })
     }
 
     if (action === 'getDashboard') {
-      const transactions = await getTransactions(cleanPhone)
+      const transactions = await getTransactions(phone)
       const recentTx = transactions.slice(0, 49)
       const vipTx = transactions.find(t => t.type === 'viptask_purchase')
       const vipPurchaseDate = vipTx? vipTx.date : null
@@ -155,7 +151,7 @@ export async function GET(request) {
         success: true,
         user: {
           username: user.username || '',
-          phone: user.phone || cleanPhone,
+          phone: user.phone || phone,
           balance: Number(user.balance) || 0,
           vip: Number(user.vip) || 0,
           avatar: user.avatar || '',
@@ -179,7 +175,7 @@ export async function GET(request) {
 
     let tasks = null
     const vipLevel = Number(user.vip) || 0
-    const todayKey = getTodayKey(cleanPhone)
+    const todayKey = getTodayKey(phone)
 
     if (isWeekdayKampala() && user.vipLocked!== 'true') {
       if ((await kv.type(todayKey)) === 'hash') {
@@ -205,7 +201,7 @@ export async function GET(request) {
       success: true,
       user: {
         username: user.username || '',
-        phone: user.phone || cleanPhone,
+        phone: user.phone || phone,
         balance: Number(user.balance) || 0,
         vip: vipLevel,
         nickname: user.nickname || '',
@@ -238,10 +234,10 @@ export async function POST(request) {
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
 
-    const { user, userKey, cleanPhone } = await getUserData(phone)
+    const { user, userKey } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
-    const sharesKey = `share:${cleanPhone}`
+    const sharesKey = `share:palamedes:${phone}`
     const vipLevel = Number(rawVipLevel)
 
     if (action === 'deposit') {
@@ -258,10 +254,10 @@ export async function POST(request) {
         date: getISOTimestamp(),
         status: 'pending',
         desc: `Deposit via ${method || 'Mobile Money'}`,
-        phone: cleanPhone
+        phone: phone
       }
 
-      await pushTransaction(cleanPhone, tx)
+      await pushTransaction(phone, tx)
       return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending approval.' })
     }
 
@@ -302,10 +298,10 @@ export async function POST(request) {
         date: getISOTimestamp(),
         status: 'pending',
         desc: `Withdraw to ${method} - ${number} - ${names}`,
-        phone: cleanPhone
+        phone: phone
       }
 
-      await pushTransaction(cleanPhone, tx)
+      await pushTransaction(phone, tx)
       return NextResponse.json({ success: true, tx, message: 'Withdraw request submitted. Pending approval.' })
     }
 
@@ -324,7 +320,7 @@ export async function POST(request) {
       }
 
       const bookKey = `book${bookNum}`
-      const todayKey = getTodayKey(cleanPhone)
+      const todayKey = getTodayKey(phone)
 
       let tasks = null
       if ((await kv.type(todayKey)) === 'hash') {
@@ -341,7 +337,7 @@ export async function POST(request) {
       const newBalance = Number(user.balance) + perBook
       await kv.hset(userKey, { balance: String(newBalance) })
 
-      await pushTransaction(cleanPhone, {
+      await pushTransaction(phone, {
         id: Date.now(),
         type: 'task_reward',
         amount: perBook,
@@ -349,7 +345,7 @@ export async function POST(request) {
         date: getISOTimestamp(),
         status: 'success',
         desc: `VIP${currentVipLevel} Book ${bookNum}`,
-        phone: cleanPhone
+        phone: phone
       })
 
       let updatedTasks = null
@@ -388,7 +384,7 @@ export async function POST(request) {
       let newBalance = balance - newPrice
       if (currentPricePaid > 0) newBalance += currentPricePaid
 
-      const todayKey = getTodayKey(cleanPhone)
+      const todayKey = getTodayKey(phone)
       let oldTasks = null
       if ((await kv.type(todayKey)) === 'hash') {
         oldTasks = await kv.hgetall(todayKey)
@@ -418,30 +414,30 @@ export async function POST(request) {
       const timestamp = getISOTimestamp()
 
       if (currentPricePaid > 0) {
-        await pushTransaction(cleanPhone, {
+        await pushTransaction(phone, {
           id: Date.now(),
           type: 'refund',
           amount: currentPricePaid,
           date: timestamp,
           status: 'success',
           desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`,
-          phone: cleanPhone
+          phone: phone
         })
       }
 
-      await pushTransaction(cleanPhone, {
+      await pushTransaction(phone, {
         id: Date.now() + 1,
         type: 'viptask_purchase',
         amount: -newPrice,
         date: timestamp,
         status: 'success',
         desc: `Bought VIP${vipLevel}`,
-        phone: cleanPhone
+        phone: phone
       })
 
-      // Referral commission on first VIP purchase
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
+        const timestamp = getISOTimestamp()
 
         if (user.upline1) {
           const { user: upline1, userKey: upline1Key } = await getUserData(user.upline1)
@@ -449,14 +445,14 @@ export async function POST(request) {
             const rewardA = Math.floor(paidPrice * 0.05)
             if (rewardA > 0) {
               await kv.hset(upline1Key, { balance: String(Number(upline1.balance) + rewardA) })
-              await pushTransaction(upline1.phone || user.upline1, {
+              await pushTransaction(user.upline1, {
                 id: Date.now() + 2,
                 type: 'referral_reward',
                 amount: rewardA,
                 date: timestamp,
                 status: 'success',
-                desc: `Team A reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
-                phone: upline1.phone || user.upline1
+                desc: `Team A reward from ${user.username || phone} buying VIP${vipLevel}`,
+                phone: user.upline1
               })
             }
           }
@@ -468,14 +464,14 @@ export async function POST(request) {
             const rewardB = Math.floor(paidPrice * 0.02)
             if (rewardB > 0) {
               await kv.hset(upline2Key, { balance: String(Number(upline2.balance) + rewardB) })
-              await pushTransaction(upline2.phone || user.upline2, {
+              await pushTransaction(user.upline2, {
                 id: Date.now() + 3,
                 type: 'referral_reward',
                 amount: rewardB,
                 date: timestamp,
                 status: 'success',
-                desc: `Team B reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
-                phone: upline2.phone || user.upline2
+                desc: `Team B reward from ${user.username || phone} buying VIP${vipLevel}`,
+                phone: user.upline2
               })
             }
           }
@@ -487,14 +483,14 @@ export async function POST(request) {
             const rewardC = Math.floor(paidPrice * 0.01)
             if (rewardC > 0) {
               await kv.hset(upline3Key, { balance: String(Number(upline3.balance) + rewardC) })
-              await pushTransaction(upline3.phone || user.upline3, {
+              await pushTransaction(user.upline3, {
                 id: Date.now() + 4,
                 type: 'referral_reward',
                 amount: rewardC,
                 date: timestamp,
                 status: 'success',
-                desc: `Team C reward from ${user.username || cleanPhone} buying VIP${vipLevel}`,
-                phone: upline3.phone || user.upline3
+                desc: `Team C reward from ${user.username || phone} buying VIP${vipLevel}`,
+                phone: user.upline3
               })
             }
           }
@@ -509,7 +505,7 @@ export async function POST(request) {
         success: true,
         user: {
           username: freshUser?.username || '',
-          phone: freshUser?.phone || cleanPhone,
+          phone: freshUser?.phone || phone,
           balance: Number(freshUser?.balance) || 0,
           vip: Number(freshUser?.vip) || 0,
           vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
@@ -567,7 +563,7 @@ export async function POST(request) {
 
       await kv.hset(sharesKey, shareIdUnique, JSON.stringify(shareData))
 
-      await pushTransaction(cleanPhone, {
+      await pushTransaction(phone, {
         id: Date.now(),
         type: 'share_purchase',
         amount: -cost,
@@ -576,7 +572,7 @@ export async function POST(request) {
         date: getISOTimestamp(),
         status: 'success',
         desc: `Bought ${qty} x ${shareData.shareName}`,
-        phone: cleanPhone
+        phone: phone
       })
 
       return NextResponse.json({ success: true, balance: newBalance, message: `Bought ${qty} share(s) of ${shareData.shareName}!` })
@@ -600,7 +596,7 @@ export async function POST(request) {
       }
 
       const now = getUGDateObj()
-      const endDate = new Date(share.endDate)
+      const endDate = new Date(share.endDate.replace(/\//g, '-').replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'))
       if (now < endDate) {
         return NextResponse.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
       }
@@ -615,7 +611,7 @@ export async function POST(request) {
       await kv.hset(sharesKey, shareIdUnique, JSON.stringify(share))
       await kv.hset(userKey, { balance: String(newBalance) })
 
-      await pushTransaction(cleanPhone, {
+      await pushTransaction(phone, {
         id: Date.now(),
         type: 'share_profit',
         amount: profit,
@@ -624,7 +620,7 @@ export async function POST(request) {
         date: getISOTimestamp(),
         status: 'success',
         desc: `Profit from ${share.shareName} x${share.quantity}`,
-        phone: cleanPhone
+        phone: phone
       })
 
       return NextResponse.json({ success: true, balance: newBalance, profit, message: 'Profits collected successfully' })
@@ -665,8 +661,7 @@ export async function POST(request) {
       if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
       if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
 
-      const cleanTarget = targetPhone.replace(/\D/g, '')
-      const { userKey: targetKey } = await getUserData(cleanTarget)
+      const { userKey: targetKey } = await getUserData(targetPhone)
       if (!targetKey) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
 
       await kv.hset(targetKey, { password: newPassword })
@@ -677,8 +672,7 @@ export async function POST(request) {
       if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
       if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
 
-      const userPhone = targetPhone.replace(/\D/g, '')
-      const txList = await getTransactions(userPhone)
+      const txList = await getTransactions(targetPhone)
       const txIndex = txList.findIndex(t => t.id == txId)
 
       if (txIndex === -1) return NextResponse.json({ success: false, message: 'Transaction not found' })
@@ -689,7 +683,7 @@ export async function POST(request) {
         tx.status = 'success'
 
         if (type === 'deposit') {
-          const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
+          const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
           if (targetKey) {
             const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
             await kv.hset(targetKey, { balance: String(newBalance) })
@@ -697,7 +691,7 @@ export async function POST(request) {
         }
 
         if (type === 'withdraw') {
-          const { user: targetUser, userKey: targetKey } = await getUserData(userPhone)
+          const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
           if (targetKey) {
             const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
             await kv.hset(targetKey, { balance: String(newBalance) })
@@ -707,11 +701,11 @@ export async function POST(request) {
         tx.status = 'rejected'
       }
 
-      const rawList = await kv.lrange(`transactions:${userPhone}`, 0, 99)
+      const rawList = await kv.lrange(`transactions:${targetPhone}`, 0, 99)
       rawList[txIndex] = JSON.stringify(tx)
-      await kv.del(`transactions:${userPhone}`)
+      await kv.del(`transactions:${targetPhone}`)
       if (rawList.length > 0) {
-        await kv.lpush(`transactions:${userPhone}`,...rawList.reverse())
+        await kv.lpush(`transactions:${targetPhone}`,...rawList.reverse())
       }
 
       return NextResponse.json({ success: true, message: `Transaction ${action}d` })

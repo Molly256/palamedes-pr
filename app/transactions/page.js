@@ -13,16 +13,15 @@ export default function Transactions() {
     const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
     if (!u) return router.push('/login')
 
-    const cleanPhone = u.phone.replace(/\D/g, '')
-    const cleanedUser = {...u, phone: cleanPhone }
-    setUser(cleanedUser)
-    fetchTransactions(cleanPhone)
+    // Use phone exactly as registered. No trimming, no cleaning.
+    setUser(u)
+    fetchTransactions(u.phone)
   }, [router])
 
   const fetchTransactions = async (phone) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/user?action=getTransactions&phone=${phone}`)
+      const res = await fetch(`/api/user?action=getTransactions&phone=${encodeURIComponent(phone)}`)
       const data = await res.json()
 
       if (data.success) {
