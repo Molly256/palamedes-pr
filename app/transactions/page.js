@@ -13,7 +13,6 @@ export default function Transactions() {
     const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
     if (!u) return router.push('/login')
 
-    // Use phone exactly as registered. No trimming, no cleaning.
     setUser(u)
     fetchTransactions(u.phone)
   }, [router])
