@@ -4,6 +4,14 @@ import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 const TZ = 'Africa/Kampala'
 
+const VIP_LEVELS = {
+ 0: 0,
+ 1: 80000,
+ 2: 200000,
+ 3: 500000,
+ 4: 1000000
+}
+
 export default function MyPage() {
   const [userData, setUserData] = useState(null)
   const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
@@ -20,6 +28,15 @@ export default function MyPage() {
     return new Date(`${y}-${m}-${d}T00:00:00+03:00`)
   }
 
+  const getVipPeriod = (purchaseDateStr) => {
+    if (!purchaseDateStr) return null
+    const start = new Date(purchaseDateStr)
+    if (isNaN(start)) return null
+    const end = new Date(start)
+    end.setFullYear(end.getFullYear() + 1)
+    return `Effective date: ${formatDate(start)} ~ ${formatDate(end)}`
+  }
+
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
     return new Intl.DateTimeFormat('en-UG', {
@@ -32,15 +49,6 @@ export default function MyPage() {
     }).format(new Date(dateStr))
   }
 
-  const getVipPeriod = (purchaseDateStr) => {
-    if (!purchaseDateStr) return null
-    const start = new Date(purchaseDateStr)
-    if (isNaN(start)) return null
-    const end = new Date(start)
-    end.setFullYear(end.getFullYear() + 1)
-    return `Effective date: ${formatDate(start)} ~ ${formatDate(end)}`
-  }
-
   const isWeekend = (date) => {
     const day = new Intl.DateTimeFormat('en-UG', {
       timeZone: TZ, weekday: 'short'
@@ -49,9 +57,11 @@ export default function MyPage() {
   }
 
   const calculateEarnings = () => {
-    if (!userData ||!transactions.length) return {
+    if (!userData) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
-      total: 0, invitation: 0, deposit: 0, balance: userData?.balance || 0
+      total: 0, inviteA: 0, inviteB: 0, inviteC: 0,
+      deposit: VIP_LEVELS[userData?.vip || 0] || 0,
+      balance: userData?.balance || 0
     }
 
     const todayUG = getUGDate()
@@ -66,7 +76,8 @@ export default function MyPage() {
     const monthStartUG = new Date(todayUG.getFullYear(), todayUG.getMonth(), 1)
     const vipStart = vipPurchaseDate? new Date(vipPurchaseDate) : new Date(0)
 
-    let yesterdayAmt = 0, todayAmt = 0, weekAmt = 0, monthAmt = 0, totalAmt = 0, inviteAmt = 0, deposit = 0
+    let yesterdayAmt = 0, todayAmt = 0, weekAmt = 0, monthAmt = 0, totalAmt = 0
+    let inviteA = 0, inviteB = 0, inviteC = 0
 
     transactions.forEach(tx => {
       const txDate = new Date(tx.date)
@@ -83,14 +94,15 @@ export default function MyPage() {
         if (txDateUG >= monthStartUG) monthAmt += tx.amount
       }
 
-      if (txDateUG >= vipStart && tx.type === 'referral_reward') inviteAmt += tx.amount
-      if (tx.type === 'viptask_purchase') deposit = Math.abs(tx.amount)
+      if (tx.type === 'referral_reward') {
+        if (tx.desc?.includes('Team A')) inviteA += tx.amount
+        else if (tx.desc?.includes('Team B')) inviteB += tx.amount
+        else if (tx.desc?.includes('Team C')) inviteC += tx.amount
+      }
     })
 
     if (isWeekend(yesterdayUG)) yesterdayAmt = 0
     if (isWeekend(todayUG)) todayAmt = 0
-
-    const balance = userData.balance || 0
 
     return {
       yesterday: yesterdayAmt,
@@ -98,9 +110,11 @@ export default function MyPage() {
       thisWeek: weekAmt,
       thisMonth: monthAmt,
       total: totalAmt,
-      invitation: inviteAmt,
-      deposit,
-      balance
+      inviteA,
+      inviteB,
+      inviteC,
+      deposit: VIP_LEVELS[userData.vip || 0] || 0,
+      balance: userData.balance || 0
     }
   }
 
@@ -112,8 +126,6 @@ export default function MyPage() {
 
   const loadDashboard = async () => {
     const stored = localStorage.getItem('palamedes_user')
-    console.log('[MyPage] localStorage:', stored)
-
     if (!stored || stored === 'undefined' || stored === 'null') {
       setLoading(false)
       return
@@ -128,8 +140,6 @@ export default function MyPage() {
       return
     }
 
-    console.log('[MyPage] Parsed user:', user)
-
     if (!user.phone) {
       setLoading(false)
       return
@@ -138,14 +148,11 @@ export default function MyPage() {
     try {
       const res = await fetch(`/api/user?action=getDashboard&phone=${user.phone}`)
       const data = await res.json()
-      console.log('[MyPage] API response:', data)
 
       if (data.success) {
         setUserData(data.user)
         setTransactions(data.transactions || [])
         setVipPurchaseDate(data.vipPurchaseDate)
-      } else {
-        console.error('[MyPage] API error:', data.message)
       }
     } catch (err) {
       console.error('[MyPage] Load dashboard error:', err)
@@ -173,21 +180,6 @@ export default function MyPage() {
       <p style={boxAmount}>{amount.toLocaleString()}shs</p>
     </div>
   )
-
-  const txName = (type) => {
-    const names = {
-      deposit: 'Deposit',
-      withdraw: 'Withdraw',
-      task_reward: 'Task Reward',
-      viptask_purchase: 'VIP Purchase',
-      referral_reward: 'Referral Reward',
-      share_purchase: 'Share Purchase',
-      share_profit: 'Share Profit',
-      refund: 'Refund',
-      invite_reward: 'Invite Reward'
-    }
-    return names[type] || type
-  }
 
   const todayUG = getUGDate()
   const isTodayWeekend = isWeekend(todayUG)
@@ -227,68 +219,19 @@ export default function MyPage() {
           </p>
         )}
 
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px'}}>
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
           <Box title="Yesterday's income" amount={earnings.yesterday} />
           <Box title="Today's income" amount={earnings.today} />
           <Box title="This month's income" amount={earnings.thisMonth} />
           <Box title="This week's income" amount={earnings.thisWeek} />
           <Box title="Total revenue" amount={earnings.total} />
-          <Box title="Invitation reward" subtitle="(5%-2%-1%)" amount={earnings.invitation} />
+
+          <Box title="Invitation reward A" subtitle="(5%)" amount={earnings.inviteA} />
+          <Box title="Invitation reward B" subtitle="(2%)" amount={earnings.inviteB} />
+          <Box title="Invitation reward C" subtitle="(1%)" amount={earnings.inviteC} />
+
           <Box title="Job security deposit" amount={earnings.deposit} isBig={true} />
         </div>
-
-        <h2 style={{fontSize: '18px', fontWeight: '600', marginBottom: '12px'}}>Recent Transactions</h2>
-
-        {transactions.length === 0? (
-          <div style={{...boxStyle, backgroundColor: 'white'}}>
-            <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>
-              No transactions yet
-            </p>
-          </div>
-        ) : (
-          transactions
-         .filter(t => t && t.id)
-         .map((t) => {
-              const amount = Number(t.amount) || 0
-              const isCredit = amount > 0
-              const dateStr = formatDate(t.date)
-
-              return (
-                <div
-                  key={t.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '14px',
-                    backgroundColor: 'white',
-                    borderRadius: '8px',
-                    marginBottom: '8px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                  }}
-                >
-                  <div style={{flex: 1}}>
-                    <p style={{ fontSize: '15px', fontWeight: '500', color: '#000', marginBottom: '4px' }}>
-                      {txName(t.type)}
-                    </p>
-                    <p style={{ fontSize: '12px', color: '#777' }}>{dateStr}</p>
-                    {t.desc && (
-                      <p style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{t.desc}</p>
-                    )}
-                  </div>
-
-                  <p style={{
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    color: isCredit? '#22c55e' : '#ef4444',
-                    marginLeft: '12px'
-                  }}>
-                    {isCredit? '+' : '-'}{Math.abs(amount).toLocaleString()}shs
-                  </p>
-                </div>
-              )
-            })
-        )}
       </div>
     </div>
   )
