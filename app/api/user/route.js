@@ -25,8 +25,12 @@ const SHARE_CONFIG = {
 function safeParse(val) {
   if (!val || val === '' || val === 'null' || val === 'undefined') return null
   try {
-    const parsed = JSON.parse(val)
-    return typeof parsed === 'string'? JSON.parse(parsed) : parsed
+    let parsed = JSON.parse(val)
+    // Handle double-stringified data
+    if (typeof parsed === 'string') {
+      parsed = JSON.parse(parsed)
+    }
+    return parsed
   } catch {
     return null
   }
@@ -79,10 +83,16 @@ async function getUserData(phone) {
 async function getTransactions(phone) {
   const key = `transactions:${phone}`
   const type = await kv.type(key)
-  if (type!== 'list') return []
 
-  const tx = await kv.lrange(key, 0, 99)
-  return tx.map(t => safeParse(t)).filter(Boolean)
+  if (type!== 'list') {
+    console.log(`[getTransactions] ${key} is type ${type}, returning []`)
+    return []
+  }
+
+  const raw = await kv.lrange(key, 0, 99)
+  const parsed = raw.map(t => safeParse(t)).filter(Boolean)
+  console.log(`[getTransactions] ${key}: raw=${raw.length}, parsed=${parsed.length}`)
+  return parsed
 }
 
 async function pushTransaction(phone, tx) {
@@ -715,7 +725,6 @@ export async function POST(request) {
       if (action === 'approve' && type === 'withdraw') {
         const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
         if (targetKey) {
-          // Withdraw deducts money, so subtract the amount
           const newBalance = Number(targetUser.balance || 0) - Math.abs(Number(tx.amount))
           await kv.hset(targetKey, { balance: String(newBalance) })
         }
