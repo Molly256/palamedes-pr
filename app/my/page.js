@@ -20,23 +20,22 @@ export default function MyPage() {
     return new Date(`${y}-${m}-${d}T00:00:00+03:00`)
   }
 
-  const parseTxDate = (dateStr) => {
-    if (!dateStr) return null
-    const [datePart, timePart] = dateStr.split(' ')
-    const [day, month, year] = datePart.split('/')
-    return new Date(`${year}-${month}-${day}T${timePart}+03:00`)
-  }
-
-  const formatDate = (date) => {
+  const formatDate = (dateStr) => {
+    if (!dateStr) return ''
     return new Intl.DateTimeFormat('en-UG', {
-      timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric'
-    }).format(new Date(date))
+      timeZone: TZ,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(dateStr))
   }
 
   const getVipPeriod = (purchaseDateStr) => {
     if (!purchaseDateStr) return null
-    const start = parseTxDate(purchaseDateStr)
-    if (!start) return null
+    const start = new Date(purchaseDateStr)
+    if (isNaN(start)) return null
     const end = new Date(start)
     end.setFullYear(end.getFullYear() + 1)
     return `Effective date: ${formatDate(start)} ~ ${formatDate(end)}`
@@ -50,8 +49,7 @@ export default function MyPage() {
   }
 
   const calculateEarnings = () => {
-    // FIX 2: Return 0s if userData not loaded yet
-    if (!userData || !vipPurchaseDate || !transactions.length) return {
+    if (!userData ||!vipPurchaseDate ||!transactions.length) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
       total: 0, invitation: 0, deposit: 0, balance: 0
     }
@@ -62,19 +60,19 @@ export default function MyPage() {
 
     const weekStartUG = new Date(todayUG)
     const dayOfWeek = todayUG.getDay()
-    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    const daysToMonday = dayOfWeek === 0? 6 : dayOfWeek - 1
     weekStartUG.setDate(todayUG.getDate() - daysToMonday)
 
     const monthStartUG = new Date(todayUG.getFullYear(), todayUG.getMonth(), 1)
-    const vipStart = parseTxDate(vipPurchaseDate)
+    const vipStart = new Date(vipPurchaseDate)
 
     let yesterdayAmt = 0, todayAmt = 0, weekAmt = 0, monthAmt = 0, totalAmt = 0, inviteAmt = 0, deposit = 0
 
     transactions.forEach(tx => {
-      const txDate = parseTxDate(tx.date)
-      if (!txDate) return
+      const txDate = new Date(tx.date)
+      if (isNaN(txDate)) return
       const txDateUG = getUGDate(txDate)
-      
+
       if (isWeekend(txDateUG)) return
 
       if (txDateUG >= vipStart && tx.type === 'task_reward') {
@@ -86,7 +84,7 @@ export default function MyPage() {
       }
 
       if (txDateUG >= vipStart && tx.type === 'invite_reward') inviteAmt += tx.amount
-      if (tx.type === 'vip') deposit = Math.abs(tx.amount)
+      if (tx.type === 'viptask_purchase') deposit = Math.abs(tx.amount)
     })
 
     if (isWeekend(yesterdayUG)) yesterdayAmt = 0
@@ -94,15 +92,15 @@ export default function MyPage() {
 
     const balance = userData.balance || 0
 
-    return { 
-      yesterday: yesterdayAmt, 
-      today: todayAmt, 
-      thisWeek: weekAmt, 
-      thisMonth: monthAmt, 
-      total: totalAmt, 
-      invitation: inviteAmt, 
-      deposit, 
-      balance 
+    return {
+      yesterday: yesterdayAmt,
+      today: todayAmt,
+      thisWeek: weekAmt,
+      thisMonth: monthAmt,
+      total: totalAmt,
+      invitation: inviteAmt,
+      deposit,
+      balance
     }
   }
 
@@ -113,7 +111,6 @@ export default function MyPage() {
   }, [])
 
   const loadDashboard = async () => {
-    // FIX 1: Safe parse
     const stored = localStorage.getItem('palamedes_user')
     if (!stored || stored === 'undefined' || stored === 'null') {
       setLoading(false)
@@ -162,12 +159,27 @@ export default function MyPage() {
   const boxAmount = { fontSize: '24px', fontWeight: 'bold', color: 'black' }
 
   const Box = ({ title, subtitle, amount, isBig = false }) => (
-    <div style={{...boxStyle, gridColumn: isBig ? 'span 2' : 'span 1'}}>
+    <div style={{...boxStyle, gridColumn: isBig? 'span 2' : 'span 1'}}>
       <p style={boxTitle}>{title}</p>
       {subtitle && <p style={boxSub}>{subtitle}</p>}
       <p style={boxAmount}>{amount.toLocaleString()}shs</p>
     </div>
   )
+
+  const txName = (type) => {
+    const names = {
+      deposit: 'Deposit',
+      withdraw: 'Withdraw',
+      task_reward: 'Task Reward',
+      viptask_purchase: 'VIP Purchase',
+      referral_reward: 'Referral Reward',
+      share_purchase: 'Share Purchase',
+      share_profit: 'Share Profit',
+      refund: 'Refund',
+      invite_reward: 'Invite Reward'
+    }
+    return names[type] || type
+  }
 
   const todayUG = getUGDate()
   const isTodayWeekend = isWeekend(todayUG)
@@ -202,10 +214,12 @@ export default function MyPage() {
         )}
 
         {isTodayWeekend && (
-          <p style={{textAlign: 'center', fontSize: '12px', color: '#ef4444', marginBottom: '12px'}}>No tasks available on weekends</p>
+          <p style={{textAlign: 'center', fontSize: '12px', color: '#ef4444', marginBottom: '12px'}}>
+            No tasks available on weekends
+          </p>
         )}
 
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
+        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px'}}>
           <Box title="Yesterday's income" amount={earnings.yesterday} />
           <Box title="Today's income" amount={earnings.today} />
           <Box title="This month's income" amount={earnings.thisMonth} />
@@ -214,6 +228,57 @@ export default function MyPage() {
           <Box title="Invitation reward" subtitle="(5%-2%-1%)" amount={earnings.invitation} />
           <Box title="Job security deposit" amount={earnings.deposit} isBig={true} />
         </div>
+
+        <h2 style={{fontSize: '18px', fontWeight: '600', marginBottom: '12px'}}>Recent Transactions</h2>
+
+        {transactions.length === 0? (
+          <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>
+            No transactions yet
+          </p>
+        ) : (
+          transactions
+         .filter(t => t && t.id)
+         .map((t) => {
+              const amount = Number(t.amount) || 0
+              const isCredit = amount > 0
+              const dateStr = formatDate(t.date)
+
+              return (
+                <div
+                  key={t.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '14px',
+                    backgroundColor: 'white',
+                    borderRadius: '8px',
+                    marginBottom: '8px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                  }}
+                >
+                  <div style={{flex: 1}}>
+                    <p style={{ fontSize: '15px', fontWeight: '500', color: '#000', marginBottom: '4px' }}>
+                      {txName(t.type)}
+                    </p>
+                    <p style={{ fontSize: '12px', color: '#777' }}>{dateStr}</p>
+                    {t.desc && (
+                      <p style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{t.desc}</p>
+                    )}
+                  </div>
+
+                  <p style={{
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    color: isCredit? '#22c55e' : '#ef4444',
+                    marginLeft: '12px'
+                  }}>
+                    {isCredit? '+' : '-'}{Math.abs(amount).toLocaleString()}shs
+                  </p>
+                </div>
+              )
+            })
+        )}
       </div>
     </div>
   )
