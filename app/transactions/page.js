@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Transactions() {
@@ -9,22 +9,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  useEffect(() => {
-    const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
-    if (!u) return router.push('/login')
-
-    // Auto-fix phone if leading 0 is missing
-    if (u.phone &&!u.phone.startsWith('0') && u.phone.length === 9) {
-      u.phone = '0' + u.phone
-      localStorage.setItem('palamedes_user', JSON.stringify(u))
-    }
-
-    console.log('Fetching transactions for phone:', u.phone)
-    setUser(u)
-    fetchTransactions(u.phone)
-  }, [router])
-
-  const fetchTransactions = async (phone) => {
+  const fetchTransactions = useCallback(async (phone) => {
     setLoading(true)
     try {
       const res = await fetch(`/api/user?action=getTransactions&phone=${encodeURIComponent(phone)}`)
@@ -41,7 +26,36 @@ export default function Transactions() {
       setTx([])
     }
     setLoading(false)
-  }
+  }, [])
+
+  useEffect(() => {
+    const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
+    if (!u) return router.push('/login')
+
+    // Auto-fix phone if leading 0 is missing
+    if (u.phone &&!u.phone.startsWith('0') && u.phone.length === 9) {
+      u.phone = '0' + u.phone
+      localStorage.setItem('palamedes_user', JSON.stringify(u))
+    }
+
+    setUser(u)
+    fetchTransactions(u.phone)
+
+    // Listen for refresh event from deposit page
+    const handleRefresh = () => fetchTransactions(u.phone)
+    window.addEventListener('refreshTransactions', handleRefresh)
+
+    // Also refresh when tab becomes visible again
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        fetchTransactions(u.phone)
+      }
+    })
+
+    return () => {
+      window.removeEventListener('refreshTransactions', handleRefresh)
+    }
+  }, [router, fetchTransactions])
 
   if (!user) return null
 
@@ -98,7 +112,12 @@ export default function Transactions() {
     <main style={{ minHeight: '100vh', background: '#f5f5f5', padding: '20px' }}>
       <div style={{ maxWidth: '650px', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px' }}>
-          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', marginRight: '15px' }}>←</button>
+          <button
+            onClick={() => router.back()}
+            style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', marginRight: '15px' }}
+          >
+            ←
+          </button>
           <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#000' }}>Transactions</h1>
         </div>
 
@@ -136,25 +155,39 @@ export default function Transactions() {
               const displayAmount = Math.abs(t.amount).toLocaleString()
 
               return (
-                <div key={t.id} style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '16px 0',
-                  borderBottom: '1px solid #eee'
-                }}>
+                <div
+                  key={t.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '16px',
+                    borderBottom: '1px solid #eee',
+                    backgroundColor: t.status === 'pending'? '#fef3c7' : 'white',
+                    borderRadius: '8px',
+                    marginBottom: '8px'
+                  }}
+                >
                   <div>
                     <p style={{ fontSize: '16px', fontWeight: '500', color: '#000', marginBottom: '4px' }}>
                       {txName(t.type)}
                     </p>
                     <p style={{ fontSize: '13px', color: '#777' }}>{formatDate(t.date)}</p>
+                    {t.method && (
+                      <p style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{t.method}</p>
+                    )}
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: '16px', fontWeight: '300', color: isCredit? '#22c55e' : '#000', marginBottom: '4px' }}>
+                    <p style={{
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      color: isCredit? '#22c55e' : '#000',
+                      marginBottom: '4px'
+                    }}>
                       {isCredit? '+' : '-'}{displayAmount}shs
                     </p>
-                    <p style={{ fontSize: '13px', fontWeight: '500', color: statusColor }}>
+                    <p style={{ fontSize: '13px', fontWeight: '600', color: statusColor }}>
                       {statusText}
                     </p>
                   </div>

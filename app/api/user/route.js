@@ -1,7 +1,7 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
 
-const ADMIN_PHONES = ['0753520252', '753520252']
+const ADMIN_PHONES = ['0753520252']
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
@@ -672,40 +672,35 @@ export async function POST(request) {
       if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
       if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
 
-      const txList = await getTransactions(targetPhone)
+      const rawList = await kv.lrange(`transactions:${targetPhone}`, 0, 99)
+      const txList = rawList.map(t => safeParse(t)).filter(Boolean)
       const txIndex = txList.findIndex(t => t.id == txId)
 
       if (txIndex === -1) return NextResponse.json({ success: false, message: 'Transaction not found' })
 
       const tx = txList[txIndex]
+      tx.status = action === 'approve'? 'success' : 'rejected'
 
-      if (action === 'approve') {
-        tx.status = 'success'
-
-        if (type === 'deposit') {
-          const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
-          if (targetKey) {
-            const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
-            await kv.hset(targetKey, { balance: String(newBalance) })
-          }
+      if (action === 'approve' && type === 'deposit') {
+        const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
+        if (targetKey) {
+          const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
+          await kv.hset(targetKey, { balance: String(newBalance) })
         }
-
-        if (type === 'withdraw') {
-          const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
-          if (targetKey) {
-            const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
-            await kv.hset(targetKey, { balance: String(newBalance) })
-          }
-        }
-      } else {
-        tx.status = 'rejected'
       }
 
-      const rawList = await kv.lrange(`transactions:${targetPhone}`, 0, 99)
+      if (action === 'approve' && type === 'withdraw') {
+        const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
+        if (targetKey) {
+          const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
+          await kv.hset(targetKey, { balance: String(newBalance) })
+        }
+      }
+
       rawList[txIndex] = JSON.stringify(tx)
       await kv.del(`transactions:${targetPhone}`)
       if (rawList.length > 0) {
-        await kv.lpush(`transactions:${targetPhone}`,...rawList.reverse())
+        await kv.lpush(`transactions:${targetPhone}`,...rawList)
       }
 
       return NextResponse.json({ success: true, message: `Transaction ${action}d` })

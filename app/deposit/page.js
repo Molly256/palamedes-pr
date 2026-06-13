@@ -49,7 +49,7 @@ export default function Deposit() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'deposit', // <- this triggers the deposit block in /api/user
+          action: 'deposit',
           phone: cleanPhone,
           value: depositAmount,
           method: selectedMethod
@@ -65,6 +65,10 @@ export default function Deposit() {
       }
 
       alert(`Deposit request submitted! ${depositAmount.toLocaleString()}shs pending approval.`)
+
+      // Trigger refresh on transactions page
+      window.dispatchEvent(new Event('refreshTransactions'))
+
       router.push('/transactions')
 
     } catch (err) {
@@ -121,18 +125,41 @@ export default function Deposit() {
         {selectedMethod && (
           <>
             <div style={{ marginBottom: '20px' }}>
-              <input type="number" placeholder="Input amount............." value={amount} onChange={(e) => setAmount(e.target.value)} style={{
-                width: '100%', padding: '18px', border: '2px solid #87CEEB', borderRadius: '12px', fontSize: '16px', outline: 'none'
-              }} />
+              <input
+                type="number"
+                placeholder="Input amount............."
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '18px',
+                  border: '2px solid #87CEEB',
+                  borderRadius: '12px',
+                  fontSize: '16px',
+                  outline: 'none'
+                }}
+              />
               <p style={{ color: '#666', fontSize: '13px', marginTop: '8px', marginLeft: '5px' }}>
                 Minimum deposit is 10,000shs
               </p>
             </div>
 
-            <button onClick={handlePaid} disabled={loading} style={{
-              width: '100%', padding: '18px', background: loading? '#666' : '#000', border: 'none', borderRadius: '12px',
-              fontSize: '17px', fontWeight: '700', color: '#87CEEB', cursor: loading? 'not-allowed' : 'pointer', transition: 'all 0.2s'
-            }}>
+            <button
+              onClick={handlePaid}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '18px',
+                background: loading? '#666' : '#000',
+                border: 'none',
+                borderRadius: '12px',
+                fontSize: '17px',
+                fontWeight: '700',
+                color: '#87CEEB',
+                cursor: loading? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
               {loading? 'Processing...' : 'I HAVE PAID MONEY'}
             </button>
           </>
