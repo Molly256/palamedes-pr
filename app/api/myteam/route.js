@@ -14,7 +14,7 @@ export async function GET(req) {
     const teamB = []
     const teamC = []
 
-    // 1. Get downline phones from sets - works for old and new users after backfill
+    // 1. Get downline phones from sets
     const [downline1, downline2, downline3] = await Promise.all([
       kv.smembers(`user:${phone}:downline1`),
       kv.smembers(`user:${phone}:downline2`),
@@ -23,8 +23,8 @@ export async function GET(req) {
 
     // 2. Process Team A - Level 1
     for (const memberPhone of downline1) {
-      const user = await kv.hgetall(`user:${memberPhone}:${memberPhone}`)
-      if (!user ||!user.phone) continue
+      const user = await kv.hgetall(`user:${memberPhone}`)
+      if (!user || !user.phone) continue
 
       const vip = Number(user.vip) || 0
       const commissionPaid = user.vip_commission_paid === 'true'
@@ -39,12 +39,12 @@ export async function GET(req) {
 
         // Pay commission only on first VIP buy
         if (!commissionPaid) {
-          const reward = getRewardForVip(vip, 1) // 1 = Level 1
+          const reward = getRewardForVip(vip, 1)
           if (reward > 0) {
             totalCommission += reward
 
             // Mark as paid and record transaction
-            await kv.hset(`user:${memberPhone}:${memberPhone}`, 'vip_commission_paid', 'true')
+            await kv.hset(`user:${memberPhone}`, 'vip_commission_paid', 'true')
             await kv.lpush(`transactions:${phone}`, JSON.stringify({
               type: 'referral_reward',
               amount: reward,
@@ -59,8 +59,8 @@ export async function GET(req) {
 
     // 3. Process Team B - Level 2
     for (const memberPhone of downline2) {
-      const user = await kv.hgetall(`user:${memberPhone}:${memberPhone}`)
-      if (!user ||!user.phone) continue
+      const user = await kv.hgetall(`user:${memberPhone}`)
+      if (!user || !user.phone) continue
 
       const vip = Number(user.vip) || 0
       const commissionPaid = user.vip_commission_paid === 'true'
@@ -74,10 +74,10 @@ export async function GET(req) {
         })
 
         if (!commissionPaid) {
-          const reward = getRewardForVip(vip, 2) // 2 = Level 2
+          const reward = getRewardForVip(vip, 2)
           if (reward > 0) {
             totalCommission += reward
-            await kv.hset(`user:${memberPhone}:${memberPhone}`, 'vip_commission_paid', 'true')
+            await kv.hset(`user:${memberPhone}`, 'vip_commission_paid', 'true')
             await kv.lpush(`transactions:${phone}`, JSON.stringify({
               type: 'referral_reward',
               amount: reward,
@@ -92,8 +92,8 @@ export async function GET(req) {
 
     // 4. Process Team C - Level 3
     for (const memberPhone of downline3) {
-      const user = await kv.hgetall(`user:${memberPhone}:${memberPhone}`)
-      if (!user ||!user.phone) continue
+      const user = await kv.hgetall(`user:${memberPhone}`)
+      if (!user || !user.phone) continue
 
       const vip = Number(user.vip) || 0
       const commissionPaid = user.vip_commission_paid === 'true'
@@ -107,10 +107,10 @@ export async function GET(req) {
         })
 
         if (!commissionPaid) {
-          const reward = getRewardForVip(vip, 3) // 3 = Level 3
+          const reward = getRewardForVip(vip, 3)
           if (reward > 0) {
             totalCommission += reward
-            await kv.hset(`user:${memberPhone}:${memberPhone}`, 'vip_commission_paid', 'true')
+            await kv.hset(`user:${memberPhone}`, 'vip_commission_paid', 'true')
             await kv.lpush(`transactions:${phone}`, JSON.stringify({
               type: 'referral_reward',
               amount: reward,
@@ -140,7 +140,7 @@ export async function GET(req) {
 // Set your reward amounts here
 function getRewardForVip(vipLevel, teamLevel) {
   const rewards = {
-    1: { 1: 500, 2: 200, 3: 100 }, // VIP1: 500 for A, 200 for B, 100 for C
+    1: { 1: 500, 2: 200, 3: 100 },
     2: { 1: 1000, 2: 400, 3: 200 },
     3: { 1: 2000, 2: 800, 3: 400 }
   }
