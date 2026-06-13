@@ -12,8 +12,13 @@ export default function Transactions() {
   const fetchTransactions = useCallback(async (phone) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/user?action=getTransactions&phone=${encodeURIComponent(phone)}`)
+      const url = `/api/user?action=getTransactions&phone=${encodeURIComponent(phone)}`
+      console.log('[TX] Fetching:', url)
+
+      const res = await fetch(url)
       const data = await res.json()
+
+      console.log('[TX] API response:', data)
 
       if (data.success) {
         setTx(data.transactions || [])
@@ -36,24 +41,32 @@ export default function Transactions() {
     if (u.phone &&!u.phone.startsWith('0') && u.phone.length === 9) {
       u.phone = '0' + u.phone
       localStorage.setItem('palamedes_user', JSON.stringify(u))
+      console.log('[TX] Fixed phone to:', u.phone)
     }
 
+    console.log('[TX] Using phone:', u.phone)
     setUser(u)
     fetchTransactions(u.phone)
 
     // Listen for refresh event from deposit page
-    const handleRefresh = () => fetchTransactions(u.phone)
+    const handleRefresh = () => {
+      console.log('[TX] Refresh event received')
+      fetchTransactions(u.phone)
+    }
     window.addEventListener('refreshTransactions', handleRefresh)
 
     // Also refresh when tab becomes visible again
-    document.addEventListener('visibilitychange', () => {
+    const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
+        console.log('[TX] Tab visible, refreshing')
         fetchTransactions(u.phone)
       }
-    })
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
       window.removeEventListener('refreshTransactions', handleRefresh)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [router, fetchTransactions])
 
