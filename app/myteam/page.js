@@ -29,14 +29,25 @@ export default function Myteam() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/myteam?phone=${phone}`)
+      // Call the correct endpoint
+      const res = await fetch(`/api/user?action=getTeam&phone=${phone}`)
       const data = await res.json()
       
       if (data.success) {
-        setTotalCommission(data.totalCommission || 0)
         setTeamA(data.teamA || [])
         setTeamB(data.teamB || [])
         setTeamC(data.teamC || [])
+        
+        // Get total commission from transactions
+        const txRes = await fetch(`/api/user?action=getTransactions&phone=${phone}`)
+        const txData = await txRes.json()
+        
+        if (txData.success) {
+          const commission = txData.transactions
+            .filter(tx => tx.type === 'referral_reward' && tx.status === 'success')
+            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
+          setTotalCommission(commission)
+        }
       } else {
         setError(data.message || 'Failed to load team')
         setTeamA([])
@@ -87,7 +98,9 @@ export default function Myteam() {
               borderBottom: i < members.length - 1 ? '1px solid #F0F0F0' : 'none'
             }}>
               <div>
-                <p style={{ margin: 0, fontWeight: '800', color: '#000' }}>{m.username}</p>
+                <p style={{ margin: 0, fontWeight: '800', color: '#000' }}>
+                  {m.nickname || m.username || 'User'}
+                </p>
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
                   {m.phone} • {m.vip > 0 ? `VIP${m.vip}` : 'No VIP'}
                 </p>

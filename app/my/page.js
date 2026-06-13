@@ -49,9 +49,10 @@ export default function MyPage() {
   }
 
   const calculateEarnings = () => {
-    if (!userData ||!vipPurchaseDate ||!transactions.length) return {
+    // Fixed: Don't block if vipPurchaseDate is null. VIP0 users should see balance.
+    if (!userData ||!transactions.length) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
-      total: 0, invitation: 0, deposit: 0, balance: 0
+      total: 0, invitation: 0, deposit: 0, balance: userData?.balance || 0
     }
 
     const todayUG = getUGDate()
@@ -64,7 +65,8 @@ export default function MyPage() {
     weekStartUG.setDate(todayUG.getDate() - daysToMonday)
 
     const monthStartUG = new Date(todayUG.getFullYear(), todayUG.getMonth(), 1)
-    const vipStart = new Date(vipPurchaseDate)
+    // Use epoch start if no vipPurchaseDate
+    const vipStart = vipPurchaseDate? new Date(vipPurchaseDate) : new Date(0)
 
     let yesterdayAmt = 0, todayAmt = 0, weekAmt = 0, monthAmt = 0, totalAmt = 0, inviteAmt = 0, deposit = 0
 
@@ -83,7 +85,8 @@ export default function MyPage() {
         if (txDateUG >= monthStartUG) monthAmt += tx.amount
       }
 
-      if (txDateUG >= vipStart && tx.type === 'invite_reward') inviteAmt += tx.amount
+      // Fixed: backend uses 'referral_reward', not 'invite_reward'
+      if (txDateUG >= vipStart && tx.type === 'referral_reward') inviteAmt += tx.amount
       if (tx.type === 'viptask_purchase') deposit = Math.abs(tx.amount)
     })
 
@@ -112,6 +115,8 @@ export default function MyPage() {
 
   const loadDashboard = async () => {
     const stored = localStorage.getItem('palamedes_user')
+    console.log('[MyPage] localStorage:', stored)
+
     if (!stored || stored === 'undefined' || stored === 'null') {
       setLoading(false)
       return
@@ -126,6 +131,8 @@ export default function MyPage() {
       return
     }
 
+    console.log('[MyPage] Parsed user:', user)
+
     if (!user.phone) {
       setLoading(false)
       return
@@ -134,14 +141,17 @@ export default function MyPage() {
     try {
       const res = await fetch(`/api/user?action=getDashboard&phone=${user.phone}`)
       const data = await res.json()
+      console.log('[MyPage] API response:', data)
 
       if (data.success) {
         setUserData(data.user)
         setTransactions(data.transactions || [])
         setVipPurchaseDate(data.vipPurchaseDate)
+      } else {
+        console.error('[MyPage] API error:', data.message)
       }
     } catch (err) {
-      console.error('Load dashboard error:', err)
+      console.error('[MyPage] Load dashboard error:', err)
     } finally {
       setLoading(false)
     }
@@ -237,8 +247,8 @@ export default function MyPage() {
           </p>
         ) : (
           transactions
-         .filter(t => t && t.id)
-         .map((t) => {
+          .filter(t => t && t.id)
+          .map((t) => {
               const amount = Number(t.amount) || 0
               const isCredit = amount > 0
               const dateStr = formatDate(t.date)

@@ -107,7 +107,7 @@ export async function GET(request) {
 
     phone = normalizePhone(phone)
 
-    if (!phone && action!== 'pending') {
+    if (!phone && action!== 'pending' && action!== 'getTeam' && action!== 'register') {
       return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
     }
 
@@ -139,6 +139,58 @@ export async function GET(request) {
       return NextResponse.json({ success: true, deposits, withdraws })
     }
 
+    if (action === 'getTeam') {
+      const keys = await kv.keys('user:*')
+      const teamA = []
+      const teamB = []
+      const teamC = []
+
+      for (let key of keys) {
+        if ((await kv.type(key))!== 'hash') continue
+        const u = await kv.hgetall(key)
+        if (!u) continue
+
+        const userPhone = key.split(':')[1]
+
+        if (u.upline1 && normalizePhone(u.upline1) === phone) {
+          teamA.push({
+            phone: userPhone,
+            username: u.username || '',
+            nickname: u.nickname || '',
+            vip: Number(u.vip) || 0,
+            balance: Number(u.balance) || 0,
+            createdAt: u.createdAt || ''
+          })
+        }
+        if (u.upline2 && normalizePhone(u.upline2) === phone) {
+          teamB.push({
+            phone: userPhone,
+            username: u.username || '',
+            nickname: u.nickname || '',
+            vip: Number(u.vip) || 0,
+            balance: Number(u.balance) || 0
+          })
+        }
+        if (u.upline3 && normalizePhone(u.upline3) === phone) {
+          teamC.push({
+            phone: userPhone,
+            username: u.username || '',
+            nickname: u.nickname || '',
+            vip: Number(u.vip) || 0,
+            balance: Number(u.balance) || 0
+          })
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        teamA,
+        teamB,
+        teamC,
+        totalMembers: teamA.length + teamB.length + teamC.length
+      })
+    }
+
     if (action === 'getUser') {
       if (!await verifyAdmin(phone)) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
@@ -146,6 +198,48 @@ export async function GET(request) {
       const { user } = await getUserData(phone)
       if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
       return NextResponse.json({ success: true, user })
+    }
+
+    if (action === 'register') {
+      const { username, password, inviteCode } = Object.fromEntries(searchParams)
+
+      if (!username ||!password) {
+        return NextResponse.json({ success: false, message: 'Username and password required' }, { status: 400 })
+      }
+
+      phone = normalizePhone(phone)
+      const { user: existingUser } = await getUserData(phone)
+      if (existingUser) {
+        return NextResponse.json({ success: false, message: 'User already exists' }, { status: 400 })
+      }
+
+      let upline1 = ''
+      if (inviteCode) {
+        const inviterPhone = normalizePhone(inviteCode.replace('PM', ''))
+        const { user: inviter } = await getUserData(inviterPhone)
+        if (inviter) {
+          upline1 = inviterPhone
+        }
+      }
+
+      const userKey = `user:${phone}`
+      await kv.hset(userKey, {
+        phone,
+        username,
+        password,
+        upline1,
+        upline2: '',
+        upline3: '',
+        referralPaid: 'false',
+        vip: '0',
+        balance: '0',
+        vipPricePaid: '0',
+        tasksCompleted: '0',
+        vipLocked: 'false',
+        createdAt: getISOTimestamp()
+      })
+
+      return NextResponse.json({ success: true, message: 'User registered' })
     }
 
     const { user, userKey } = await getUserData(phone)
@@ -191,7 +285,8 @@ export async function GET(request) {
           vip_commission_paid: user.vip_commission_paid || 'false',
           upline1: user.upline1 || '',
           upline2: user.upline2 || '',
-          upline3: user.upline3 || ''
+          upline3: user.upline3 || '',
+          createdAt: user.createdAt || ''
         },
         transactions: recentTx,
         vipPurchaseDate
@@ -241,7 +336,8 @@ export async function GET(request) {
         vip_commission_paid: user.vip_commission_paid || 'false',
         upline1: user.upline1 || '',
         upline2: user.upline2 || '',
-        upline3: user.upline3 || ''
+        upline3: user.upline3 || '',
+        createdAt: user.createdAt || ''
       },
       tasks,
       isWeekday: isWeekdayKampala()
@@ -463,11 +559,14 @@ export async function POST(request) {
         phone: phone
       })
 
+      // Fixed referral payout logic
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
         const timestamp = getISOTimestamp()
+        const paidUplines = new Set()
 
-        if (user.upline1) {
+        // Only pay upline1 if it exists and is different from buyer
+        if (user.upline1 && user.upline1!== phone &&!paidUplines.has(user.upline1)) {
           const { user: upline1, userKey: upline1Key } = await getUserData(user.upline1)
           if (upline1) {
             const rewardA = Math.floor(paidPrice * 0.05)
@@ -482,11 +581,13 @@ export async function POST(request) {
                 desc: `Team A reward from ${user.username || phone} buying VIP${vipLevel}`,
                 phone: user.upline1
               })
+              paidUplines.add(user.upline1)
             }
           }
         }
 
-        if (user.upline2) {
+        // Only pay upline2 if it exists, is different from upline1, and different from buyer
+        if (user.upline2 && user.upline2!== user.upline1 && user.upline2!== phone &&!paidUplines.has(user.upline2)) {
           const { user: upline2, userKey: upline2Key } = await getUserData(user.upline2)
           if (upline2) {
             const rewardB = Math.floor(paidPrice * 0.02)
@@ -501,11 +602,13 @@ export async function POST(request) {
                 desc: `Team B reward from ${user.username || phone} buying VIP${vipLevel}`,
                 phone: user.upline2
               })
+              paidUplines.add(user.upline2)
             }
           }
         }
 
-        if (user.upline3) {
+        // Only pay upline3 if it exists, is different from upline1/2, and different from buyer
+        if (user.upline3 && user.upline3!== user.upline2 && user.upline3!== user.upline1 && user.upline3!== phone &&!paidUplines.has(user.upline3)) {
           const { user: upline3, userKey: upline3Key } = await getUserData(user.upline3)
           if (upline3) {
             const rewardC = Math.floor(paidPrice * 0.01)
@@ -520,6 +623,7 @@ export async function POST(request) {
                 desc: `Team C reward from ${user.username || phone} buying VIP${vipLevel}`,
                 phone: user.upline3
               })
+              paidUplines.add(user.upline3)
             }
           }
         }
@@ -548,7 +652,8 @@ export async function POST(request) {
           vip_commission_paid: freshUser?.vip_commission_paid || 'false',
           upline1: freshUser?.upline1 || '',
           upline2: freshUser?.upline2 || '',
-          upline3: freshUser?.upline3 || ''
+          upline3: freshUser?.upline3 || '',
+          createdAt: freshUser?.createdAt || ''
         },
         message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
       })
