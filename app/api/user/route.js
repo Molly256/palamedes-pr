@@ -48,8 +48,12 @@ function normalizePhone(phone) {
   return phone
 }
 
-function getKampalaTime() {
-  return new Date().toLocaleString('en-GB', {
+function getKampalaTime(date = new Date()) {
+  return new Date(date.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
+}
+
+function formatKampalaDate(date) {
+  return new Date(date).toLocaleString('en-GB', {
     timeZone: 'Africa/Kampala',
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
@@ -76,9 +80,12 @@ function getUGDateObj() {
 
 function parseKampalaDate(str) {
   if (!str) return null
-  const [datePart, timePart] = str.split(', ')
-  const [day, month, year] = datePart.split('/')
-  return new Date(`${year}-${month}-${day}T${timePart}`)
+  if (str.includes('/')) {
+    const [datePart, timePart] = str.split(', ')
+    const [day, month, year] = datePart.split('/')
+    return new Date(`${year}-${month}-${day}T${timePart}`)
+  }
+  return new Date(str)
 }
 
 async function getUserData(phone) {
@@ -258,10 +265,23 @@ export async function GET(request) {
       if ((await kv.type(sharesKey)) === 'hash') {
         const sharesHash = await kv.hgetall(sharesKey)
         let shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
-        shares = shares.filter(s => s.status === 'ongoing')
-        return NextResponse.json({ success: true, shares })
+
+        const now = getUGDateObj()
+
+        shares = shares.map(s => {
+          const endDate = parseKampalaDate(s.endDate)
+          if (endDate &&!isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
+            s.status = 'expired'
+          }
+          return s
+        })
+
+        const ongoing = shares.filter(s => s.status === 'ongoing')
+        const expired = shares.filter(s => s.status === 'expired')
+
+        return NextResponse.json({ success: true, shares: ongoing, expired })
       }
-      return NextResponse.json({ success: true, shares: [] })
+      return NextResponse.json({ success: true, shares: [], expired: [] })
     }
 
     if (action === 'getTransactions') {
@@ -278,8 +298,8 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-      .filter(t => t.type === 'referral_reward' && t.status === 'success')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+  .filter(t => t.type === 'referral_reward' && t.status === 'success')
+  .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
@@ -705,8 +725,8 @@ export async function POST(request) {
         pricePerShare: config.price,
         dailyProfit: Number(dailyProfit || config.daily * 100),
         cycleDays: Number(cycleDays || config.cycle),
-        buyDate: getKampalaTime(),
-        endDate: getKampalaTime.call(null, endDate),
+        buyDate: formatKampalaDate(buyDate),
+        endDate: formatKampalaDate(endDate),
         status: 'ongoing',
         collectedAt: null,
         profitReceived: 0
@@ -748,7 +768,7 @@ export async function POST(request) {
 
       const now = getUGDateObj()
       const endDate = parseKampalaDate(share.endDate)
-      if (!endDate || now < endDate) {
+      if (!endDate || isNaN(endDate) || now < endDate) {
         return NextResponse.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
       }
 
@@ -756,7 +776,7 @@ export async function POST(request) {
       const newBalance = Number(user.balance) + profit
 
       share.status = 'expired'
-      share.collectedAt = getKampalaTime()
+      share.collectedAt = formatKampalaDate(now)
       share.profitReceived = profit
 
       await kv.hset(sharesKey, shareIdUnique, JSON.stringify(share))
@@ -858,8 +878,8 @@ export async function POST(request) {
     }
 
     return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
-  } catch (err) {
+  } catch (err){
     console.error('POST /api/user error:', err)
     return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
-}
+}        
