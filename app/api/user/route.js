@@ -24,6 +24,7 @@ const SHARE_CONFIG = {
 
 function safeParse(val) {
   if (!val || val === '' || val === 'null' || val === 'undefined') return null
+  if (typeof val === 'object') return val
   try {
     let parsed = val
     for (let i = 0; i < 2; i++) {
@@ -147,7 +148,7 @@ export async function GET(request) {
       return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
     }
 
-    if (action === 'pending') {
+     ]   if (action === 'pending') {
       if (!await verifyAdmin(phone)) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
       }
@@ -261,28 +262,28 @@ export async function GET(request) {
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getShares') {
-      const sharesKey = `share:palamedes:${phone}`
-      if ((await kv.type(sharesKey)) === 'hash') {
-        const sharesHash = await kv.hgetall(sharesKey)
-        let shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
+  const sharesKey = `share:palamedes:${phone}`
+  if ((await kv.type(sharesKey)) === 'hash') {
+    const sharesHash = await kv.hgetall(sharesKey)
+    let shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
 
-        const now = getUGDateObj()
+    const now = getUGDateObj()
 
-        shares = shares.map(s => {
-          const endDate = parseKampalaDate(s.endDate)
-          if (endDate &&!isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
-            s.status = 'expired'
-          }
-          return s
-        })
-
-        const ongoing = shares.filter(s => s.status === 'ongoing')
-        const expired = shares.filter(s => s.status === 'expired')
-
-        return NextResponse.json({ success: true, shares: ongoing, expired })
+    shares = shares.map(s => {
+      const endDate = parseKampalaDate(s.endDate)
+      if (endDate && !isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
+        s.status = 'expired'
       }
-      return NextResponse.json({ success: true, shares: [], expired: [] })
-    }
+      return s
+    })
+
+    const ongoing = shares.filter(s => s.status === 'ongoing')
+    const expired = shares.filter(s => s.status === 'expired')
+
+    return NextResponse.json({ success: true, shares: ongoing, expired })
+  }
+  return NextResponse.json({ success: true, shares: [], expired: [] })
+}
 
     if (action === 'getTransactions') {
       const transactions = await getTransactions(phone)
