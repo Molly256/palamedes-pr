@@ -8,7 +8,6 @@ export default function MyPage() {
   const [userData, setUserData] = useState(null)
   const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
   const [vipPurchaseAmount, setVipPurchaseAmount] = useState(0)
-  const [jobSecurity, setJobSecurity] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -40,13 +39,10 @@ export default function MyPage() {
       const res = await fetch(`/api/my?phone=${user.phone}&t=${Date.now()}`)
       const data = await res.json()
 
-      console.log('API response:', data)
-
       if (data.success) {
         setUserData(data.user)
         setVipPurchaseDate(data.vipPurchaseDate || null)
         setVipPurchaseAmount(data.vipPurchaseAmount || 0)
-        setJobSecurity(data.jobSecurity)
       }
     } catch (err) {
       console.error('[MyPage] Load dashboard error:', err)
@@ -121,7 +117,6 @@ export default function MyPage() {
   }
 
   const balance = Number(userData?.balance) || 0
-  const jobSecurityText = jobSecurity? 'Active' : 'Inactive'
   const vipPeriod = getVipPeriod()
 
   return (
@@ -154,20 +149,13 @@ export default function MyPage() {
 
           {/* VIP Effective Period */}
           {vipPeriod && (
-            <>
-              <p style={periodText}>{vipPeriod}</p>
-              {vipPurchaseAmount > 0 && (
-                <p style={periodText}>
-                  Amount paid: {vipPurchaseAmount.toLocaleString()}shs
-                </p>
-              )}
-            </>
+            <p style={periodText}>{vipPeriod}</p>
           )}
 
-          {/* Box 2: Job Security */}
+          {/* Box 2: Amount Paid for VIP */}
           <div style={boxStyle}>
-            <p style={boxTitle}>Job Security</p>
-            <p style={boxAmount}>{jobSecurityText}</p>
+            <p style={boxTitle}>Amount Paid for VIP</p>
+            <p style={boxAmount}>{vipPurchaseAmount.toLocaleString()}shs</p>
           </div>
         </div>
       </div>
