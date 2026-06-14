@@ -46,16 +46,7 @@ export default function Withdraw() {
       return
     }
 
-    const now = new Date()
-    const ugandaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
-    const day = ugandaTime.getDay()
-    const hour = ugandaTime.getHours()
-
-    if (day === 0 || day === 6 || hour < 10 || hour >= 17) {
-      alert('not time for withdraw')
-      return
-    }
-
+    // REMOVED time check - withdrawals work 24/7 now
     if (!presetAmounts.includes(withdrawAmount)) {
       alert('enter any amount from above list')
       return
@@ -224,8 +215,7 @@ export default function Withdraw() {
             <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', border: '2px solid #87CEEB', marginBottom: '20px', fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
               <p>Note:</p>
               <p>Withdraw fee: 10%</p>
-              <p>Withdraw days: Monday-Friday</p>
-              <p>Withdraw time: 10:00am - 5:00pm</p>
+              <p>Withdraws are available 24/7</p>
             </div>
 
             <button
