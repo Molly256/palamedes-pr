@@ -18,7 +18,7 @@ const VIP_CONFIG = {
  0: { books: 4, perBook: 625 },
  1: { books: 4, perBook: 625 },
  2: { books: 4, perBook: 2000 },
- 3: { books: 4, perBook: 6500 }, // correct value
+ 3: { books: 4, perBook: 6500 },
  4: { books: 5, perBook: 7000 },
  5: { books: 5, perBook: 10000 },
  6: { books: 5, perBook: 14000 },
@@ -59,18 +59,19 @@ export async function GET(request) {
       return NextResponse.json({ success: true, tasks, completed: 0, total: config.books })
     }
 
-    const taskData = await kv.hgetall(`task:${phone}:${today}`)
+    const taskData = await kv.hgetall(`task:${phone}:${today}`) || {}
     const tasks = Object.keys(taskData).map(k => ({
       taskId: k,
       bookId: Number(k.replace('book', '')),
       status: taskData[k],
-      reward: config.perBook // use current config, not old stored value
+      reward: config.perBook
     }))
 
     const completed = tasks.filter(t => t.status === 'submitted').length
     return NextResponse.json({ success: true, tasks, completed, total: config.books })
 
   } catch (err) {
+    console.error('Tasks GET error:', err)
     return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
 }
