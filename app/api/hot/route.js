@@ -73,9 +73,33 @@ export async function GET(request) {
     if (sharesHash) {
       for (const [id, val] of Object.entries(sharesHash)) {
         try {
-          shares.push(JSON.parse(val))
+          // If it starts with { it's JSON, else it's the old number format
+          if (typeof val === 'string' && val.startsWith('{')) {
+            shares.push(JSON.parse(val))
+          } else {
+            // Convert old number format to share object
+            const qty = Number(val) || 0
+            if (qty > 0) {
+              shares.push({
+                id: id,
+                shareId: 'unknown',
+                shareName: 'Legacy Share',
+                quantity: qty,
+                pricePerShare: 50000,
+                totalInvested: qty * 50000,
+                dailyProfit: 0,
+                cycleDays: 0,
+                expectedProfit: 0,
+                buyDate: '',
+                endDate: '',
+                status: 'ongoing',
+                collectedAt: null,
+                profitReceived: 0
+              })
+            }
+          }
         } catch (e) {
-          console.error('Deleting corrupted share:', id, val)
+          console.error('Deleting bad share:', id, val)
           await kv.hdel(sharesKey, id)
         }
       }
@@ -83,8 +107,9 @@ export async function GET(request) {
 
     const now = getUGNow()
 
-    // Auto-expire shares
+    // Auto-expire shares that have JSON data
     const updatedShares = await Promise.all(shares.map(async (s) => {
+      if (!s.endDate) return s
       const endDate = parseKampalaDate(s.endDate)
       if (endDate && !isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
         s.status = 'expired'
