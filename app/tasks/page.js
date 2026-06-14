@@ -5,22 +5,22 @@ import booksData from "../../data/books.json"
 const SKYBLUE = "#00BFFF"
 
 const VIP_CONFIG = {
- 0: { books: 4, incomePerBook: 100 },
- 1: { books: 4, incomePerBook: 100 },
- 2: { books: 4, incomePerBook: 100 },
- 3: { books: 4, incomePerBook: 100 },
- 4: { books: 5, incomePerBook: 200 },
- 5: { books: 5, incomePerBook: 200 },
- 6: { books: 5, incomePerBook: 200 },
- 7: { books: 5, incomePerBook: 200 },
- 8: { books: 5, incomePerBook: 200 },
- 9: { books: 5, incomePerBook: 200 },
- 10: { books: 5, incomePerBook: 200 },
+ 0: { books: 4, incomePerBook: 625 },
+ 1: { books: 4, incomePerBook: 625 },
+ 2: { books: 4, incomePerBook: 2000 },
+ 3: { books: 4, incomePerBook: 6500 },
+ 4: { books: 5, incomePerBook: 7000 },
+ 5: { books: 5, incomePerBook: 10000 },
+ 6: { books: 5, incomePerBook: 14000 },
+ 7: { books: 5, incomePerBook: 28000 },
+ 8: { books: 5, incomePerBook: 32000 },
+ 9: { books: 5, incomePerBook: 40000 },
+ 10: { books: 5, incomePerBook: 60000 },
 }
 
 export default function TasksPage() {
   const [user, setUser] = useState(null)
-  const [tasks, setTasks] = useState(null)
+  const [tasks, setTasks] = useState([])
   const [todayBooks, setTodayBooks] = useState([])
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
@@ -35,33 +35,43 @@ export default function TasksPage() {
   }, [])
 
   const fetchTasks = async (phone) => {
-    const res = await fetch(`/api/user?phone=${phone}`)
-    const data = await res.json()
-    if (data.success) {
-      setUser(data.user)
-      setTasks(data.tasks)
+    try {
+      const res = await fetch(`/api/tasks?phone=${phone}`)
+      const data = await res.json()
 
-      if (data.tasks) {
-        const maxBooks = VIP_CONFIG[data.user.vip]?.books || 0
-        const bookKeys = Object.keys(data.tasks)
-         .filter(k => k.startsWith('book') &&!k.includes('_'))
-         .slice(0, maxBooks)
-
-        const books = bookKeys.map((key) => {
-          const bookNum = parseInt(key.replace('book', ''))
-          return {
-            bookNum,
-            taskKey: key,
-            title: booksData[bookNum - 1]?.title || `Book ${bookNum}`,
-            cover: booksData[bookNum - 1]?.cover || booksData[0]?.cover,
-            preview: booksData[bookNum - 1]?.preview || "",
-            status: data.tasks[key]
-          }
-        })
-        setTodayBooks(books)
-      } else {
+      if (!data.success) {
+        console.error(data.message)
         setTodayBooks([])
+        return
       }
+
+      const userRes = await fetch(`/api/user?phone=${phone}`)
+      const userData = await userRes.json()
+      if (userData.success) {
+        setUser(userData.user)
+        localStorage.setItem('palamedes_user', JSON.stringify(userData.user))
+      }
+
+      const taskList = data.tasks || []
+      setTasks(taskList)
+
+      const maxBooks = VIP_CONFIG[userData.user?.vip || 0]?.books || 0
+      const books = taskList.slice(0, maxBooks).map((task) => {
+        const bookNum = Number(task.bookId)
+        return {
+          bookNum,
+          taskKey: `book${bookNum}`,
+          taskId: task.id,
+          title: booksData[bookNum - 1]?.title || `Book ${bookNum}`,
+          cover: booksData[bookNum - 1]?.cover || booksData[0]?.cover,
+          preview: booksData[bookNum - 1]?.preview || "",
+          status: task.status
+        }
+      })
+      setTodayBooks(books)
+    } catch (err) {
+      console.error('fetchTasks error:', err)
+      setTodayBooks([])
     }
   }
 
@@ -70,11 +80,6 @@ export default function TasksPage() {
     const t = setTimeout(() => setTimer(timer - 1), 1000)
 
     if (timer === 1) {
-      setTasks(prev => {
-        if (!prev ||!(readingBook.taskKey in prev)) return prev
-        return {...prev, [readingBook.taskKey]: 'read' }
-      })
-
       setTodayBooks(prev => prev.map(b =>
         b.taskKey === readingBook.taskKey? {...b, status: 'read' } : b
       ))
@@ -103,7 +108,7 @@ export default function TasksPage() {
   const handleSubmit = async () => {
     if (!user || loading || user.vipLocked === 'true') return
 
-    const config = VIP_CONFIG[user.vip] || { books: 4, incomePerBook: 100 }
+    const config = VIP_CONFIG[user.vip] || { books: 4, incomePerBook: 625 }
     const maxBooks = config.books
     const incomePerBook = config.incomePerBook
 
@@ -133,7 +138,7 @@ export default function TasksPage() {
         const newBalance = oldBalance + totalIncome
 
         const updatedUser = {
-         ...user,
+        ...user,
           balance: newBalance,
           tasksCompleted: maxBooks,
           vipLocked: 'true'
@@ -143,7 +148,7 @@ export default function TasksPage() {
         localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
         setTodayBooks(prev => prev.map(b => ({...b, status: 'submitted' })))
-        alert(`+${totalIncome}shs added!`)
+        alert(`+${totalIncome.toLocaleString()}shs added!`)
         localStorage.setItem('palamedes_refresh_my', 'true')
       } else {
         alert(data.message || 'Failed to submit task')
@@ -266,7 +271,7 @@ export default function TasksPage() {
                 marginTop: 20
               }}
             >
-              {loading? 'Submitting...' : `Submit All Tasks (+${VIP_CONFIG[user.vip]?.books * VIP_CONFIG[user.vip]?.incomePerBook}shs)`}
+              {loading? 'Submitting...' : `Submit All Tasks (+${(VIP_CONFIG[user.vip]?.books * VIP_CONFIG[user.vip]?.incomePerBook).toLocaleString()}shs)`}
             </button>
           )}
         </>
