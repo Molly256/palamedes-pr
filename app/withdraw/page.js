@@ -8,7 +8,6 @@ export default function Withdraw() {
   const [amount, setAmount] = useState('')
   const [withdrawNumber, setWithdrawNumber] = useState('')
   const [names, setNames] = useState('')
-  const [bankInfoSaved, setBankInfoSaved] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
@@ -23,11 +22,11 @@ export default function Withdraw() {
       return
     }
 
+    // Load saved bank info if it exists, but don't block if it's missing
     const bankInfo = JSON.parse(localStorage.getItem('palamedes_bank_info') || 'null')
     if (bankInfo && bankInfo.number && bankInfo.names) {
       setWithdrawNumber(bankInfo.number)
       setNames(bankInfo.names)
-      setBankInfoSaved(true)
     }
   }, [router])
 
@@ -46,7 +45,6 @@ export default function Withdraw() {
       return
     }
 
-    // REMOVED time check - withdrawals work 24/7 now
     if (!presetAmounts.includes(withdrawAmount)) {
       alert('enter any amount from above list')
       return
@@ -57,9 +55,9 @@ export default function Withdraw() {
       return
     }
 
-    if (!bankInfoSaved) {
-      alert('please first add bank information')
-      router.push('/settings')
+    // REMOVED bank info check - allow any number/names
+    if (!withdrawNumber ||!names) {
+      alert('Please enter phone number and names')
       return
     }
 
@@ -148,7 +146,6 @@ export default function Withdraw() {
               placeholder="Number........"
               value={withdrawNumber}
               onChange={(e) => setWithdrawNumber(e.target.value)}
-              readOnly={bankInfoSaved}
               style={{
                 width: '100%',
                 padding: '18px',
@@ -157,7 +154,7 @@ export default function Withdraw() {
                 fontSize: '16px',
                 outline: 'none',
                 marginBottom: '15px',
-                background: bankInfoSaved? '#f5f5f5' : '#fff'
+                background: '#fff'
               }}
             />
             <input
@@ -165,7 +162,6 @@ export default function Withdraw() {
               placeholder="Names........."
               value={names}
               onChange={(e) => setNames(e.target.value)}
-              readOnly={bankInfoSaved}
               style={{
                 width: '100%',
                 padding: '18px',
@@ -174,7 +170,7 @@ export default function Withdraw() {
                 fontSize: '16px',
                 outline: 'none',
                 marginBottom: '15px',
-                background: bankInfoSaved? '#f5f5f5' : '#fff'
+                background: '#fff'
               }}
             />
 
