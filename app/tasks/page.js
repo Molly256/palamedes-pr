@@ -5,17 +5,17 @@ import booksData from "../../data/books.json"
 const SKYBLUE = "#00BFFF"
 
 const VIP_CONFIG = {
- 0: { books: 4 },
- 1: { books: 4 },
- 2: { books: 4 },
- 3: { books: 4 },
- 4: { books: 5 },
- 5: { books: 5 },
- 6: { books: 5 },
- 7: { books: 5 },
- 8: { books: 5 },
- 9: { books: 5 },
- 10: { books: 5 },
+ 0: { books: 4, incomePerBook: 100 },
+ 1: { books: 4, incomePerBook: 100 },
+ 2: { books: 4, incomePerBook: 100 },
+ 3: { books: 4, incomePerBook: 100 },
+ 4: { books: 5, incomePerBook: 200 },
+ 5: { books: 5, incomePerBook: 200 },
+ 6: { books: 5, incomePerBook: 200 },
+ 7: { books: 5, incomePerBook: 200 },
+ 8: { books: 5, incomePerBook: 200 },
+ 9: { books: 5, incomePerBook: 200 },
+ 10: { books: 5, incomePerBook: 200 },
 }
 
 export default function TasksPage() {
@@ -26,7 +26,6 @@ export default function TasksPage() {
   const [timer, setTimer] = useState(10)
   const [showPopup, setShowPopup] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [submittingBook, setSubmittingBook] = useState(null)
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
@@ -45,8 +44,8 @@ export default function TasksPage() {
       if (data.tasks) {
         const maxBooks = VIP_CONFIG[data.user.vip]?.books || 0
         const bookKeys = Object.keys(data.tasks)
-      .filter(k => k.startsWith('book') &&!k.includes('_'))
-      .slice(0, maxBooks)
+         .filter(k => k.startsWith('book') &&!k.includes('_'))
+         .slice(0, maxBooks)
 
         const books = bookKeys.map((key) => {
           const bookNum = parseInt(key.replace('book', ''))
@@ -59,7 +58,6 @@ export default function TasksPage() {
             status: data.tasks[key]
           }
         })
-
         setTodayBooks(books)
       } else {
         setTodayBooks([])
@@ -102,60 +100,51 @@ export default function TasksPage() {
     setTimer(10)
   }
 
-  const handleSubmit = async (bookNum) => {
-    if (!user || loading || submittingBook) return
-    if (user.vipLocked === 'true') {
-      alert('Daily tasks completed. Wait for next weekday.')
+  const handleSubmit = async () => {
+    if (!user || loading || user.vipLocked === 'true') return
+
+    const config = VIP_CONFIG[user.vip] || { books: 4, incomePerBook: 100 }
+    const maxBooks = config.books
+    const incomePerBook = config.incomePerBook
+
+    const allRead = todayBooks.slice(0, maxBooks).every(b => b.status === 'read')
+    if (!allRead) {
+      alert('Read all books first')
       return
     }
 
-    const maxBooks = VIP_CONFIG[user.vip]?.books || 0
-    if (bookNum > maxBooks) {
-      alert(`Invalid book for VIP${user.vip}`)
-      return
-    }
-
-    const bookKey = `book${bookNum}`
-    const currentBook = todayBooks.find(b => b.bookNum === bookNum)
-
-    if (!currentBook || currentBook.status === 'submitted') {
-      alert('Already submitted')
-      return
-    }
-
-    setSubmittingBook(bookNum)
+    const totalIncome = maxBooks * incomePerBook
     setLoading(true)
 
     try {
-      const res = await fetch('/api/user', {
+      const res = await fetch('/api/tasks/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'submitTask',
           phone: user.phone,
-          bookNumber: bookNum
+          taskIncome: totalIncome
         })
       })
 
       const data = await res.json()
 
       if (data.success) {
-        const oldBalance = user.balance
-        const newBalance = data.balance
+        const oldBalance = Number(user.balance) || 0
+        const newBalance = oldBalance + totalIncome
 
-        setUser(prev => {
-          const updated = {...prev, balance: newBalance }
-          localStorage.setItem('palamedes_user', JSON.stringify(updated))
-          return updated
-        })
+        const updatedUser = {
+         ...user,
+          balance: newBalance,
+          tasksCompleted: maxBooks,
+          vipLocked: 'true'
+        }
 
-        // Only update the 1 book that was submitted
-        setTodayBooks(prev => prev.map(b =>
-          b.bookNum === bookNum? {...b, status: 'submitted' } : b
-        ))
-        setTasks(prev => ({...prev, [bookKey]: 'submitted' }))
+        setUser(updatedUser)
+        localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
-        alert(`+${newBalance - oldBalance}shs added!`)
+        setTodayBooks(prev => prev.map(b => ({...b, status: 'submitted' })))
+        alert(`+${totalIncome}shs added!`)
+        localStorage.setItem('palamedes_refresh_my', 'true')
       } else {
         alert(data.message || 'Failed to submit task')
       }
@@ -164,7 +153,6 @@ export default function TasksPage() {
       alert('Network error')
     } finally {
       setLoading(false)
-      setSubmittingBook(null)
     }
   }
 
@@ -208,6 +196,7 @@ export default function TasksPage() {
 
   const pendingBooks = todayBooks.filter(b => b.status === 'pending' || b.status === 'read' || b.status === 'reading')
   const submittedBooks = todayBooks.filter(b => b.status === 'submitted')
+  const allRead = pendingBooks.length > 0 && pendingBooks.every(b => b.status === 'read')
 
   return (
     <div style={{ padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000" }}>
@@ -221,25 +210,23 @@ export default function TasksPage() {
           {user.vipLocked === 'true'? "Tasks locked. Wait for next weekday." : "No tasks available"}
         </p>
       ) : (
-        pendingBooks.map((book) => {
-          const isRead = book.status === 'read' || book.status === 'submitted'
-          const isReading = book.status === 'reading'
-          const canSubmit = book.status === 'read'
-          const isSubmitting = submittingBook === book.bookNum
+        <>
+          {pendingBooks.map((book) => {
+            const isRead = book.status === 'read' || book.status === 'submitted'
+            const isReading = book.status === 'reading'
 
-          return (
-            <div key={book.taskKey} style={{
-              padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
-              borderBottom: "1px solid #E0E0E0"
-            }}>
-              <img src={book.cover} alt={book.title} style={{
-                width: 70, height: 100, objectFit: "cover", borderRadius: 8
-              }} />
-              <div style={{ flex: 1 }}>
-                <h4 style={{ margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
-                  {book.title}
-                </h4>
-                <div style={{ display: "flex", gap: 10 }}>
+            return (
+              <div key={book.taskKey} style={{
+                padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
+                borderBottom: "1px solid #E0E0E0"
+              }}>
+                <img src={book.cover} alt={book.title} style={{
+                  width: 70, height: 100, objectFit: "cover", borderRadius: 8
+                }} />
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
+                    {book.title}
+                  </h4>
                   <button
                     onClick={() => handleRead(book)}
                     disabled={isRead || isReading}
@@ -256,27 +243,33 @@ export default function TasksPage() {
                   >
                     {isRead? "Read ✓" : isReading? "Reading..." : "Read"}
                   </button>
-                  <button
-                    onClick={() => handleSubmit(book.bookNum)}
-                    disabled={loading ||!canSubmit || user.vipLocked === 'true'}
-                    style={{
-                      padding: "8px 16px",
-                      background: SKYBLUE,
-                      border: "none",
-                      borderRadius: 6,
-                      color: "#000",
-                      cursor: loading ||!canSubmit || user.vipLocked === 'true'? "not-allowed" : "pointer",
-                      fontWeight: "400",
-                      opacity: loading ||!canSubmit || user.vipLocked === 'true'? 0.6 : 1
-                    }}
-                  >
-                    {isSubmitting? 'Submitting...' : 'Submit'}
-                  </button>
                 </div>
               </div>
-            </div>
-          )
-        })
+            )
+          })}
+
+          {allRead && (
+            <button
+              onClick={handleSubmit}
+              disabled={loading || user.vipLocked === 'true'}
+              style={{
+                width: '100%',
+                padding: "14px",
+                background: SKYBLUE,
+                border: "none",
+                borderRadius: 8,
+                color: "#000",
+                fontWeight: "600",
+                fontSize: 16,
+                cursor: loading || user.vipLocked === 'true'? "not-allowed" : "pointer",
+                opacity: loading || user.vipLocked === 'true'? 0.6 : 1,
+                marginTop: 20
+              }}
+            >
+              {loading? 'Submitting...' : `Submit All Tasks (+${VIP_CONFIG[user.vip]?.books * VIP_CONFIG[user.vip]?.incomePerBook}shs)`}
+            </button>
+          )}
+        </>
       )}
 
       <h2 style={{ marginTop: 40, marginBottom: 20, fontWeight: "400", color: "#000" }}>

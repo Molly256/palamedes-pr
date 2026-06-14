@@ -21,34 +21,22 @@ function safeParse(val) {
   try {
     let parsed = val
     for (let i = 0; i < 2; i++) {
-      if (typeof parsed === 'string') {
-        parsed = JSON.parse(parsed)
-      } else {
-        break
-      }
+      if (typeof parsed === 'string') parsed = JSON.parse(parsed)
+      else break
     }
     return parsed
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
-  if (phone.length === 9 &&!phone.startsWith('0')) {
-    phone = '0' + phone
-  }
+  if (phone.length === 9 &&!phone.startsWith('0')) phone = '0' + phone
   return phone
 }
 
 function getISOTimestamp() {
   return new Date().toISOString()
-}
-
-function getTodayKey(phone) {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
-  return `task:${phone}:${today}`
 }
 
 async function getUserData(phone) {
@@ -123,9 +111,7 @@ export async function GET(request) {
       if (inviteCode) {
         const inviterPhone = normalizePhone(inviteCode.replace('PM', ''))
         const { user: inviter } = await getUserData(inviterPhone)
-        if (inviter) {
-          upline1 = inviterPhone
-        }
+        if (inviter) upline1 = inviterPhone
       }
 
       const userKey = `user:${phone}`
@@ -148,7 +134,7 @@ export async function GET(request) {
       return NextResponse.json({ success: true, message: 'User registered' })
     }
 
-    const { user, userKey } = await getUserData(phone)
+    const { user } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getTransactions') {
@@ -165,8 +151,8 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-.filter(t => t.type === 'referral_reward' && t.status === 'success')
-.reduce((sum, t) => sum + Number(t.amount || 0), 0)
+       .filter(t => t.type === 'referral_reward' && t.status === 'success')
+       .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
@@ -202,37 +188,14 @@ export async function GET(request) {
       })
     }
 
-    let tasks = null
-    const vipLevel = Number(user.vip) || 0
-    const todayKey = getTodayKey(phone)
-
-    if (user.vipLocked!== 'true') {
-      if ((await kv.type(todayKey)) === 'hash') {
-        tasks = await kv.hgetall(todayKey)
-      }
-
-      if (!tasks) {
-        const config = VIP_CONFIG[vipLevel]
-        if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
-
-        const taskObj = {}
-        for (let i = 1; i <= config.books; i++) {
-          taskObj[`book${i}`] = 'pending'
-        }
-        taskObj.income = String(config.books * config.perBook)
-        await kv.hset(todayKey, taskObj)
-        tasks = taskObj
-        await kv.hset(userKey, { tasksCompleted: '0' })
-      }
-    }
-
+    // Default: return user only. Tasks are handled by /api/tasks/submit
     return NextResponse.json({
       success: true,
       user: {
         username: user.username || '',
         phone: user.phone || phone,
         balance: Number(user.balance) || 0,
-        vip: vipLevel,
+        vip: Number(user.vip) || 0,
         nickname: user.nickname || '',
         avatar: user.avatar || '',
         bankMTN: safeParse(user.bankMTN),
@@ -247,9 +210,7 @@ export async function GET(request) {
         upline2: user.upline2 || '',
         upline3: user.upline3 || '',
         createdAt: user.createdAt || ''
-      },
-      tasks,
-      isWeekday: true
+      }
     })
   } catch (err) {
     console.error('GET /api/user error:', err)
@@ -260,7 +221,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    let { action, phone, bookNumber, vipLevel: rawVipLevel, field, value, oldPass, newPass, number, method, names, amount } = body
+    let { action, phone, field, value, oldPass, newPass, number, method, names, amount } = body
 
     phone = normalizePhone(phone)
 
@@ -268,8 +229,6 @@ export async function POST(request) {
 
     const { user, userKey } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-
-    const vipLevel = Number(rawVipLevel)
 
     if (action === 'deposit') {
       const amount = Number(value)
@@ -328,64 +287,10 @@ export async function POST(request) {
       return NextResponse.json({ success: true, tx, message: 'Withdraw request submitted. Pending approval.' })
     }
 
-    if (action === 'submitTask') {
-      const currentVipLevel = Number(user.vip) || 0
-      const config = VIP_CONFIG[currentVipLevel]
-      if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
-
-      const bookNum = Number(bookNumber)
-      if (!bookNum || bookNum < 1 || bookNum > config.books) {
-        return NextResponse.json({ success: false, message: 'Invalid book number for your VIP level' }, { status: 400 })
-      }
-
-      const bookKey = `book${bookNum}`
-      const todayKey = getTodayKey(phone)
-
-      let tasks = null
-      if ((await kv.type(todayKey)) === 'hash') {
-        tasks = await kv.hgetall(todayKey)
-      }
-
-      if (!tasks || (tasks[bookKey]!== 'pending' && tasks[bookKey]!== 'read')) {
-        return NextResponse.json({ success: false, message: 'Task already submitted or invalid' }, { status: 400 })
-      }
-
-      const perBook = Number(config.perBook)
-      await kv.hset(todayKey, { [bookKey]: 'submitted' })
-
-      const newBalance = Number(user.balance) + perBook
-      await kv.hset(userKey, { balance: String(newBalance) })
-
-      await pushTransaction(phone, {
-        id: Date.now(),
-        type: 'task_reward',
-        amount: perBook,
-        book: bookNum,
-        date: getISOTimestamp(),
-        status: 'success',
-        desc: `VIP${currentVipLevel} Book ${bookNum}`,
-        phone: phone
-      })
-
-      let updatedTasks = null
-      if ((await kv.type(todayKey)) === 'hash') {
-        updatedTasks = await kv.hgetall(todayKey)
-      }
-      const totalBooks = config.books
-      const done = Object.keys(updatedTasks || {}).filter(k => k.startsWith('book') && updatedTasks[k] === 'submitted').length
-
-      if (done === totalBooks) {
-        await kv.hset(userKey, { vipLocked: 'true', tasksCompleted: String(done) })
-      } else {
-        await kv.hset(userKey, { tasksCompleted: String(done) })
-      }
-
-      return NextResponse.json({ success: true, balance: Number(newBalance), done: Number(done), totalBooks: Number(totalBooks) })
-    }
-
     if (action === 'buyvip') {
       const currentVip = Number(user.vip) || 0
       const currentPricePaid = Number(user.vipPricePaid) || 0
+      const vipLevel = Number(body.vipLevel)
       const config = VIP_CONFIG[vipLevel]
 
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
@@ -403,16 +308,6 @@ export async function POST(request) {
       let newBalance = balance - newPrice
       if (currentPricePaid > 0) newBalance += currentPricePaid
 
-      const todayKey = getTodayKey(phone)
-      let oldTasks = null
-      if ((await kv.type(todayKey)) === 'hash') {
-        oldTasks = await kv.hgetall(todayKey)
-      }
-
-      const oldTotalBooks = VIP_CONFIG[currentVip]?.books || 0
-      const doneToday = oldTasks? Object.keys(oldTasks).filter(k => k.startsWith('book') && oldTasks[k] === 'submitted').length : 0
-      const alreadyFinishedToday = doneToday === oldTotalBooks && oldTotalBooks > 0
-
       await kv.hset(userKey, {
         balance: String(newBalance),
         vip: String(vipLevel),
@@ -420,15 +315,6 @@ export async function POST(request) {
         vipLocked: 'false',
         tasksCompleted: '0'
       })
-
-      await kv.del(todayKey)
-
-      if (!alreadyFinishedToday) {
-        const taskObj = {}
-        for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
-        taskObj.income = String(config.books * config.perBook)
-        await kv.hset(todayKey, taskObj)
-      }
 
       const timestamp = getISOTimestamp()
 
@@ -454,9 +340,9 @@ export async function POST(request) {
         phone: phone
       })
 
+      // Referral rewards logic stays here
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
-        const timestamp = getISOTimestamp()
         const paidUplines = new Set()
 
         if (user.upline1 && user.upline1!== phone &&!paidUplines.has(user.upline1)) {
