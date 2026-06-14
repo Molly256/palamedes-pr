@@ -7,6 +7,8 @@ const TZ = 'Africa/Kampala'
 export default function MyPage() {
   const [userData, setUserData] = useState(null)
   const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
+  const [vipPurchaseAmount, setVipPurchaseAmount] = useState(0)
+  const [jobSecurity, setJobSecurity] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -35,15 +37,16 @@ export default function MyPage() {
     }
 
     try {
-      // Add cache buster to prevent stale responses
       const res = await fetch(`/api/my?phone=${user.phone}&t=${Date.now()}`)
       const data = await res.json()
 
-      console.log('API response jobSecurity:', data.user?.jobSecurity)
+      console.log('API response:', data)
 
       if (data.success) {
         setUserData(data.user)
         setVipPurchaseDate(data.vipPurchaseDate || null)
+        setVipPurchaseAmount(data.vipPurchaseAmount || 0)
+        setJobSecurity(data.jobSecurity)
       }
     } catch (err) {
       console.error('[MyPage] Load dashboard error:', err)
@@ -81,8 +84,20 @@ export default function MyPage() {
     boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
     overflow: 'hidden'
   }
-  const boxTitle = { fontSize: '14px', fontWeight: '300', color: 'black', marginBottom: '4px' }
-  const boxAmount = { fontSize: '24px', fontWeight: 'bold', color: 'black' }
+
+  const boxTitle = {
+    fontSize: '14px',
+    fontWeight: '300',
+    color: 'black',
+    marginBottom: '4px'
+  }
+
+  const boxAmount = {
+    fontSize: '24px',
+    fontWeight: 'bold',
+    color: 'black'
+  }
+
   const periodText = {
     fontSize: '14px',
     color: '#6b7280',
@@ -92,17 +107,34 @@ export default function MyPage() {
   }
 
   if (loading) {
-    return <div style={{minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0'}}>Loading...</div>
+    return (
+      <div style={{
+        minHeight: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '40px 0'
+      }}>
+        Loading...
+      </div>
+    )
   }
 
   const balance = Number(userData?.balance) || 0
-  const jobSecurity = userData?.jobSecurity? 'Active' : 'Inactive'
+  const jobSecurityText = jobSecurity? 'Active' : 'Inactive'
   const vipPeriod = getVipPeriod()
 
   return (
     <div style={{backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
       <div style={{maxWidth: '448px', margin: '0 auto'}}>
-        <h1 style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', marginBottom: '16px'}}>My</h1>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: 'bold',
+          textAlign: 'center',
+          marginBottom: '16px'
+        }}>
+          My
+        </h1>
 
         <div style={{display: 'flex', justifyContent: 'center', marginBottom: '16px'}}>
           <AvatarWithBadge
@@ -120,13 +152,22 @@ export default function MyPage() {
             <p style={boxAmount}>{balance.toLocaleString()}shs</p>
           </div>
 
-          {/* VIP Effective Period - shows between boxes */}
-          {vipPeriod && <p style={periodText}>{vipPeriod}</p>}
+          {/* VIP Effective Period */}
+          {vipPeriod && (
+            <>
+              <p style={periodText}>{vipPeriod}</p>
+              {vipPurchaseAmount > 0 && (
+                <p style={periodText}>
+                  Amount paid: {vipPurchaseAmount.toLocaleString()}shs
+                </p>
+              )}
+            </>
+          )}
 
           {/* Box 2: Job Security */}
           <div style={boxStyle}>
             <p style={boxTitle}>Job Security</p>
-            <p style={boxAmount}>{jobSecurity}</p>
+            <p style={boxAmount}>{jobSecurityText}</p>
           </div>
         </div>
       </div>
