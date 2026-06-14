@@ -46,12 +46,6 @@ function getISOTimestamp() {
   return new Date().toISOString()
 }
 
-// REMOVED: Weekend restriction
-// function isWeekdayKampala() {
-// const weekday = new Date().toLocaleDateString('en-US', { timeZone: 'Africa/Kampala', weekday: 'short' })
-// return!['Sat', 'Sun'].includes(weekday)
-// }
-
 function getTodayKey(phone) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
   return `task:${phone}:${today}`
@@ -212,7 +206,6 @@ export async function GET(request) {
     const vipLevel = Number(user.vip) || 0
     const todayKey = getTodayKey(phone)
 
-    // REMOVED: isWeekdayKampala() check - tasks now work every day
     if (user.vipLocked!== 'true') {
       if ((await kv.type(todayKey)) === 'hash') {
         tasks = await kv.hgetall(todayKey)
@@ -256,7 +249,7 @@ export async function GET(request) {
         createdAt: user.createdAt || ''
       },
       tasks,
-      isWeekday: true // Always true now
+      isWeekday: true
     })
   } catch (err) {
     console.error('GET /api/user error:', err)
@@ -309,16 +302,8 @@ export async function POST(request) {
       if (amount > balance) {
         return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
-
-      let savedBank = null
-      if (method === 'MTN Mobile money') {
-        savedBank = safeParse(user.bankMTN)
-      } else if (method === 'Airtel mobile money') {
-        savedBank = safeParse(user.bankAirtel)
-      }
-
-      if (!savedBank || savedBank.number!== number || savedBank.names!== names) {
-        return NextResponse.json({ success: false, message: 'Bank details mismatch. Please update in settings first.' }, { status: 400 })
+      if (!number ||!names) {
+        return NextResponse.json({ success: false, message: 'Phone number and names required' }, { status: 400 })
       }
 
       const fee = Math.floor(amount * 0.1)
@@ -331,8 +316,8 @@ export async function POST(request) {
         netAmount: netAmount,
         fee: fee,
         method: method || '',
-        number: number || '',
-        names: names || '',
+        number: number,
+        names: names,
         date: getISOTimestamp(),
         status: 'pending',
         desc: `Withdraw to ${method} - ${number} - ${names}`,
@@ -344,11 +329,6 @@ export async function POST(request) {
     }
 
     if (action === 'submitTask') {
-      // REMOVED: Weekend check
-      // if (!isWeekdayKampala()) {
-      // return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
-      // }
-
       const currentVipLevel = Number(user.vip) || 0
       const config = VIP_CONFIG[currentVipLevel]
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
@@ -443,7 +423,6 @@ export async function POST(request) {
 
       await kv.del(todayKey)
 
-      // REMOVED: isWeekdayKampala() check - create tasks every day
       if (!alreadyFinishedToday) {
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
