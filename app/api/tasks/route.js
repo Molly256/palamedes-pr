@@ -16,9 +16,9 @@ function normalizePhone(phone) {
 
 const VIP_CONFIG = {
  0: { books: 4, reward: 625 },
- 1: { books: 4, reward: 1250 },
- 2: { books: 4, reward: 2500 },
- 3: { books: 4, reward: 5000 },
+ 1: { books: 4, reward: 625 },
+ 2: { books: 4, reward: 2000 },
+ 3: { books: 4, reward: 6500 },
  4: { books: 5, reward: 8000 },
  5: { books: 5, reward: 12000 },
  6: { books: 5, reward: 15000 },

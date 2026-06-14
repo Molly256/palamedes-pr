@@ -38,12 +38,11 @@ export default function TasksPage() {
       }
 
       const taskList = data.tasks || []
-      setTasks(taskList)
 
       const books = taskList.slice(0, 4).map((task) => {
         const bookNum = Number(task.bookId)
         return {
-          taskId: task.id,
+          taskId: task.taskId,
           bookNum,
           title: booksData[bookNum - 1]?.title || `Book ${bookNum}`,
           cover: booksData[bookNum - 1]?.cover || booksData[0]?.cover,
@@ -64,7 +63,7 @@ export default function TasksPage() {
 
     if (timer === 1) {
       setTodayBooks(prev => prev.map(b =>
-        b.taskId === readingBook.taskId? {...b, status: 'read' } : b
+        b.taskId === readingBook.taskId ? {...b, status: 'read' } : b
       ))
       setShowPopup(true)
       setReadingBook(null)
@@ -73,13 +72,13 @@ export default function TasksPage() {
   }, [timer, readingBook])
 
   const handleRead = (book) => {
-    if (book.status!== 'pending' || readingBook) return
+    if (book.status !== 'pending' || readingBook) return
     setReadingBook(book)
     setTimer(10)
     setShowPopup(false)
 
     setTodayBooks(prev => prev.map(b =>
-      b.taskId === book.taskId? {...b, status: 'reading' } : b
+      b.taskId === book.taskId ? {...b, status: 'reading' } : b
     ))
   }
 
@@ -89,7 +88,7 @@ export default function TasksPage() {
   }
 
   const handleSubmit = async (book) => {
-    if (submittingId || book.status!== 'read') return
+    if (submittingId || book.status !== 'read') return
 
     setSubmittingId(book.taskId)
     try {
@@ -111,7 +110,7 @@ export default function TasksPage() {
         localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
         setTodayBooks(prev => prev.map(b =>
-          b.taskId === book.taskId? {...b, status: 'submitted' } : b
+          b.taskId === book.taskId ? {...b, status: 'submitted' } : b
         ))
 
         alert(`+${Number(data.reward).toLocaleString()}shs added!`)
@@ -164,7 +163,7 @@ export default function TasksPage() {
     )
   }
 
-  const pendingCount = todayBooks.filter(b => b.status!== 'submitted').length
+  const pendingCount = todayBooks.filter(b => b.status !== 'submitted').length
   const doneCount = todayBooks.filter(b => b.status === 'submitted').length
 
   return (
@@ -173,7 +172,7 @@ export default function TasksPage() {
         Today's Tasks - VIP{user.vip} {doneCount}/4 Done
       </h2>
 
-      {todayBooks.length === 0? (
+      {todayBooks.length === 0 ? (
         <p style={{ textAlign: "center", marginTop: 100, color: "#666" }}>
           No tasks available
         </p>
@@ -184,7 +183,7 @@ export default function TasksPage() {
           const isSubmitted = book.status === 'submitted'
 
           return (
-            <div key={book.taskId} style={{
+            <div key={`${book.taskId}-${book.bookNum}`} style={{
               padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
               borderBottom: "1px solid #E0E0E0"
             }}>
@@ -201,16 +200,16 @@ export default function TasksPage() {
                     disabled={isRead || isReading || isSubmitted}
                     style={{
                       padding: "8px 16px",
-                      background: isRead || isSubmitted? "#E0E0E0" : isReading? "#B0B0B0" : SKYBLUE,
+                      background: isRead || isSubmitted ? "#E0E0E0" : isReading ? "#B0B0B0" : SKYBLUE,
                       border: "none",
                       borderRadius: 6,
                       fontWeight: "400",
-                      cursor: (isRead || isReading || isSubmitted)? "not-allowed" : "pointer",
+                      cursor: (isRead || isReading || isSubmitted) ? "not-allowed" : "pointer",
                       color: "#000",
-                      opacity: (isRead || isReading || isSubmitted)? 0.6 : 1
+                      opacity: (isRead || isReading || isSubmitted) ? 0.6 : 1
                     }}
                   >
-                    {isSubmitted? "Done" : isRead? "Read ✓" : isReading? "Reading..." : "Read"}
+                    {isSubmitted ? "Done" : isRead ? "Read ✓" : isReading ? "Reading..." : "Read"}
                   </button>
 
                   <button
@@ -218,16 +217,16 @@ export default function TasksPage() {
                     disabled={!isRead || submittingId === book.taskId}
                     style={{
                       padding: "8px 16px",
-                      background: isRead? "#4CAF50" : "#E0E0E0",
+                      background: isRead ? "#4CAF50" : "#E0E0E0",
                       border: "none",
                       borderRadius: 6,
                       fontWeight: "400",
-                      cursor:!isRead || submittingId === book.taskId? "not-allowed" : "pointer",
+                      cursor: !isRead || submittingId === book.taskId ? "not-allowed" : "pointer",
                       color: "#000",
-                      opacity:!isRead || submittingId === book.taskId? 0.6 : 1
+                      opacity: !isRead || submittingId === book.taskId ? 0.6 : 1
                     }}
                   >
-                    {submittingId === book.taskId? "Submitting..." : "Submit"}
+                    {submittingId === book.taskId ? "Submitting..." : "Submit"}
                   </button>
                 </div>
               </div>
