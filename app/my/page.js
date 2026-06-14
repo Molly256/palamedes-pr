@@ -35,8 +35,11 @@ export default function MyPage() {
     }
 
     try {
-      const res = await fetch(`/api/my?phone=${user.phone}`)
+      // Add cache buster to prevent stale responses
+      const res = await fetch(`/api/my?phone=${user.phone}&t=${Date.now()}`)
       const data = await res.json()
+
+      console.log('API response jobSecurity:', data.user?.jobSecurity)
 
       if (data.success) {
         setUserData(data.user)
@@ -80,10 +83,10 @@ export default function MyPage() {
   }
   const boxTitle = { fontSize: '14px', fontWeight: '300', color: 'black', marginBottom: '4px' }
   const boxAmount = { fontSize: '24px', fontWeight: 'bold', color: 'black' }
-  const periodText = { 
-    fontSize: '14px', 
-    color: '#6b7280', 
-    textAlign: 'center', 
+  const periodText = {
+    fontSize: '14px',
+    color: '#6b7280',
+    textAlign: 'center',
     margin: '8px 0',
     fontWeight: '500'
   }
@@ -93,7 +96,7 @@ export default function MyPage() {
   }
 
   const balance = Number(userData?.balance) || 0
-  const jobSecurity = userData?.jobSecurity ? 'Active' : 'Inactive'
+  const jobSecurity = userData?.jobSecurity? 'Active' : 'Inactive'
   const vipPeriod = getVipPeriod()
 
   return (
