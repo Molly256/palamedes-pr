@@ -10,22 +10,22 @@ function getUGDateStr(date = new Date()) {
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
-  if (phone.length === 9 && !phone.startsWith('0')) phone = '0' + phone
+  if (phone.length === 9 &&!phone.startsWith('0')) phone = '0' + phone
   return phone
 }
 
 const VIP_CONFIG = {
- 0: { books: 4, reward: 625 },
- 1: { books: 4, reward: 625 },
- 2: { books: 4, reward: 2000 },
- 3: { books: 4, reward: 6500 },
- 4: { books: 5, reward: 8000 },
- 5: { books: 5, reward: 12000 },
- 6: { books: 5, reward: 15000 },
- 7: { books: 5, reward: 20000 },
- 8: { books: 5, reward: 25000 },
- 9: { books: 5, reward: 30000 },
- 10: { books: 5, reward: 35000 },
+ 0: { books: 4, perBook: 625 },
+ 1: { books: 4, perBook: 625 },
+ 2: { books: 4, perBook: 2000 },
+ 3: { books: 4, perBook: 6500 }, // correct value
+ 4: { books: 5, perBook: 7000 },
+ 5: { books: 5, perBook: 10000 },
+ 6: { books: 5, perBook: 14000 },
+ 7: { books: 5, perBook: 28000 },
+ 8: { books: 5, perBook: 32000 },
+ 9: { books: 5, perBook: 40000 },
+ 10: { books: 5, perBook: 60000 },
 }
 
 export async function GET(request) {
@@ -46,56 +46,31 @@ export async function GET(request) {
     const vip = Number(user.vip) || 0
     const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
 
-    // VIP0: only on registration day
-    if (vip === 0) {
-      if (today !== user.regDate) {
-        return NextResponse.json({ 
-          success: true, 
-          tasks: [], 
-          message: 'VIP0 tasks expired. Upgrade to continue.'
-        })
-      }
-    }
-
-    // Check if tasks exist for today
     let taskIds = await kv.smembers(`tasks:${phone}:${today}`)
-    
-    // If no tasks exist, create them now
+
     if (!taskIds || taskIds.length === 0) {
       const tasks = []
       for (let i = 1; i <= config.books; i++) {
-        const taskId = `vip${vip}_${phone}_${today}_${i}`
-        await kv.hset(taskId, {
-          userPhone: phone,
-          vipLevel: String(vip),
-          bookId: i,
-          reward: String(config.reward),
-          status: 'pending',
-          date: today
-        })
-        tasks.push(taskId)
+        const taskId = `book${i}`
+        await kv.hset(`task:${phone}:${today}`, { [taskId]: 'pending' })
+        tasks.push({ taskId, bookId: i, status: 'pending', reward: config.perBook })
       }
-      await kv.sadd(`tasks:${phone}:${today}`, ...tasks)
-      taskIds = tasks
+      await kv.sadd(`tasks:${phone}:${today}`,...tasks.map(t => t.taskId))
+      return NextResponse.json({ success: true, tasks, completed: 0, total: config.books })
     }
 
-    // Fetch all task data
-    const tasks = await Promise.all(taskIds.map(id => kv.hgetall(id)))
-    const validTasks = tasks.filter(t => t && Object.keys(t).length > 0)
+    const taskData = await kv.hgetall(`task:${phone}:${today}`)
+    const tasks = Object.keys(taskData).map(k => ({
+      taskId: k,
+      bookId: Number(k.replace('book', '')),
+      status: taskData[k],
+      reward: config.perBook // use current config, not old stored value
+    }))
 
-    // Check completed count for today
-    const completedData = await kv.hgetall(`task:${phone}:${today}`)
-    const completedCount = completedData?.income ? config.books : 0
+    const completed = tasks.filter(t => t.status === 'submitted').length
+    return NextResponse.json({ success: true, tasks, completed, total: config.books })
 
-    return NextResponse.json({ 
-      success: true, 
-      tasks: validTasks,
-      completed: completedCount,
-      total: config.books
-    })
-    
   } catch (err) {
-    console.error('Tasks GET error:', err)
     return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
 }
