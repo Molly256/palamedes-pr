@@ -51,10 +51,17 @@ export async function GET(request) {
     }
 
     const availableBalance = Number(user.balance) || 0
-    const createdAt = new Date(user.createdAt || Date.now()).getTime()
-    const daysActive = (Date.now() - createdAt) / (1000 * 60 * 60 * 24)
-    const jobSecurity = Number(user.vip) >= 3 && daysActive >= 7
     const vipPurchaseDate = await getVipPurchaseDate(phone)
+    
+    // Job Security: Active for 1 year from VIP purchase date if VIP >= 3
+    let jobSecurity = false
+    if (Number(user.vip) >= 3 && vipPurchaseDate) {
+      const purchaseTime = new Date(vipPurchaseDate).getTime()
+      if (!isNaN(purchaseTime)) {
+        const expiryTime = purchaseTime + (365 * 24 * 60 * 60 * 1000) // 1 year
+        jobSecurity = Date.now() < expiryTime
+      }
+    }
 
     return NextResponse.json({
       success: true,
