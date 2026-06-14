@@ -34,8 +34,8 @@ export default function Register() {
     e.preventDefault()
     setError('')
     
-    if(form.username.length < 6) {
-      setError('Username must be 6+ characters')
+    if(!/^[a-zA-Z0-9]{3,6}$/.test(form.username)) {
+      setError('Username must be 3-6 letters or digits only')
       return
     }
     
@@ -112,7 +112,10 @@ export default function Register() {
             value={form.username}
             onChange={handleChange}
             required
-            minLength={6}
+            minLength={3}
+            maxLength={6}
+            pattern="[a-zA-Z0-9]{3,6}"
+            title="3-6 letters or digits only"
             style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
           />
         </div>

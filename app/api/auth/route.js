@@ -29,9 +29,9 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Password must be at least 6 characters' })
       }
 
-      // Validate username
-      if (!/^[a-z0-9_]{3,20}$/.test(username)) {
-        return Response.json({ success: false, message: 'Username must be 3-20 lowercase letters, numbers, or _' })
+      // Validate username: 3-6 letters and digits only, any case
+      if (!/^[a-zA-Z0-9]{3,6}$/.test(username)) {
+        return Response.json({ success: false, message: 'Username must be 3-6 letters or digits only' })
       }
 
       const userKey = `user:${phone}`
