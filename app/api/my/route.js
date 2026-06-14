@@ -24,9 +24,9 @@ async function getUserData(phone) {
   return { user: null, userKey: null }
 }
 
-async function getVipPurchaseDate(phone) {
+async function getVipPurchaseInfo(phone) {
   const key = `transactions:${phone}`
-  if ((await kv.type(key)) !== 'list') return null
+  if ((await kv.type(key)) !== 'list') return { date: null, amount: 0 }
   
   const raw = await kv.lrange(key, 0, 199)
   const tx = raw
@@ -34,7 +34,10 @@ async function getVipPurchaseDate(phone) {
     .filter(Boolean)
     .find(t => t.type === 'viptask_purchase' || t.type === 'vip_purchase')
   
-  return tx?.date || tx?.time || tx?.createdAt || null
+  return {
+    date: tx?.date || tx?.time || tx?.createdAt || null,
+    amount: Number(tx?.amount) || 0
+  }
 }
 
 export async function GET(request) {
@@ -51,17 +54,10 @@ export async function GET(request) {
     }
 
     const availableBalance = Number(user.balance) || 0
-    const vipPurchaseDate = await getVipPurchaseDate(phone)
+    const { date: vipPurchaseDate, amount: vipPurchaseAmount } = await getVipPurchaseInfo(phone)
     
-    // Job Security: Active for 1 year from VIP purchase date if VIP >= 3
-    let jobSecurity = false
-    if (Number(user.vip) >= 3 && vipPurchaseDate) {
-      const purchaseTime = new Date(vipPurchaseDate).getTime()
-      if (!isNaN(purchaseTime)) {
-        const expiryTime = purchaseTime + (365 * 24 * 60 * 60 * 1000) // 1 year
-        jobSecurity = Date.now() < expiryTime
-      }
-    }
+    // Force jobSecurity true for now
+    const jobSecurity = true
 
     return NextResponse.json({
       success: true,
@@ -75,7 +71,8 @@ export async function GET(request) {
       },
       availableBalance,
       jobSecurity,
-      vipPurchaseDate
+      vipPurchaseDate,
+      vipPurchaseAmount  // amount user paid for current VIP
     })
   } catch (err) {
     console.error('GET /api/my error:', err)
