@@ -6,102 +6,7 @@ const TZ = 'Africa/Kampala'
 
 export default function MyPage() {
   const [userData, setUserData] = useState(null)
-  const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
-  const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
-
-  const getUGDate = (date = new Date()) => {
-    const parts = new Intl.DateTimeFormat('en-UG', {
-      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
-    }).formatToParts(date)
-    const y = parts.find(p => p.type === 'year').value
-    const m = parts.find(p => p.type === 'month').value
-    const d = parts.find(p => p.type === 'day').value
-    return new Date(`${y}-${m}-${d}T00:00:00+03:00`)
-  }
-
-  const getVipPeriod = (purchaseDateStr) => {
-    if (!purchaseDateStr) return null
-    const start = new Date(purchaseDateStr)
-    if (isNaN(start)) return null
-    const end = new Date(start)
-    end.setFullYear(end.getFullYear() + 1)
-    return `Effective date: ${formatDate(start)} ~ ${formatDate(end)}`
-  }
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return ''
-    return new Intl.DateTimeFormat('en-UG', {
-      timeZone: TZ,
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(new Date(dateStr))
-  }
-
-  const calculateEarnings = () => {
-    if (!userData) return {
-      yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
-      total: 0, inviteA: 0, inviteB: 0, inviteC: 0,
-      deposit: 0,
-      balance: 0
-    }
-
-    const todayUG = getUGDate()
-    const yesterdayUG = new Date(todayUG)
-    yesterdayUG.setDate(yesterdayUG.getDate() - 1)
-
-    const weekStartUG = new Date(todayUG)
-    const dayOfWeek = todayUG.getDay()
-    const daysToMonday = dayOfWeek === 0? 6 : dayOfWeek - 1
-    weekStartUG.setDate(todayUG.getDate() - daysToMonday)
-
-    const monthStartUG = new Date(todayUG.getFullYear(), todayUG.getMonth(), 1)
-    const vipStart = vipPurchaseDate? new Date(vipPurchaseDate) : new Date(0)
-
-    let yesterdayAmt = 0, todayAmt = 0, weekAmt = 0, monthAmt = 0, totalAmt = 0
-    let inviteA = 0, inviteB = 0, inviteC = 0
-
-    transactions.forEach(tx => {
-      const txDate = new Date(tx.date)
-      if (isNaN(txDate)) return
-      const txDateUG = getUGDate(txDate)
-
-      // REMOVED: isWeekend check - now counts all days
-      const amt = Math.abs(Number(tx.amount) || 0)
-
-      if (txDateUG >= vipStart && tx.type === 'task_reward') {
-        totalAmt += amt
-        if (txDateUG.getTime() === todayUG.getTime()) todayAmt += amt
-        if (txDateUG.getTime() === yesterdayUG.getTime()) yesterdayAmt += amt
-        if (txDateUG >= weekStartUG) weekAmt += amt
-        if (txDateUG >= monthStartUG) monthAmt += amt
-      }
-
-      if (tx.type === 'referral_reward') {
-        if (tx.desc?.includes('Team A')) inviteA += amt
-        else if (tx.desc?.includes('Team B')) inviteB += amt
-        else if (tx.desc?.includes('Team C')) inviteC += amt
-      }
-    })
-
-    return {
-      yesterday: yesterdayAmt,
-      today: todayAmt,
-      thisWeek: weekAmt,
-      thisMonth: monthAmt,
-      total: totalAmt,
-      inviteA,
-      inviteB,
-      inviteC,
-      deposit: Number(userData.vipPricePaid) || 0,
-      balance: userData.balance || 0
-    }
-  }
-
-  const earnings = calculateEarnings()
 
   useEffect(() => {
     loadDashboard()
@@ -129,14 +34,11 @@ export default function MyPage() {
     }
 
     try {
-      // Keep using /api/my since you have it
       const res = await fetch(`/api/my?phone=${user.phone}`)
       const data = await res.json()
 
       if (data.success) {
         setUserData(data.user)
-        setTransactions(data.transactions || [])
-        setVipPurchaseDate(data.vipPurchaseDate)
       }
     } catch (err) {
       console.error('[MyPage] Load dashboard error:', err)
@@ -154,20 +56,14 @@ export default function MyPage() {
     overflow: 'hidden'
   }
   const boxTitle = { fontSize: '14px', fontWeight: '300', color: 'black', marginBottom: '4px' }
-  const boxSub = { fontSize: '12px', fontWeight: '300', color: 'black', marginBottom: '8px' }
   const boxAmount = { fontSize: '24px', fontWeight: 'bold', color: 'black' }
-
-  const Box = ({ title, subtitle, amount, isBig = false }) => (
-    <div style={{...boxStyle, gridColumn: isBig? 'span 2' : 'span 1'}}>
-      <p style={boxTitle}>{title}</p>
-      {subtitle && <p style={boxSub}>{subtitle}</p>}
-      <p style={boxAmount}>{amount.toLocaleString()}shs</p>
-    </div>
-  )
 
   if (loading) {
     return <div style={{minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0'}}>Loading...</div>
   }
+
+  const balance = Number(userData?.balance) || 0
+  const jobSecurity = userData?.jobSecurity? 'Active' : 'Inactive'
 
   return (
     <div style={{backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
@@ -183,31 +79,18 @@ export default function MyPage() {
           />
         </div>
 
-        <div style={{...boxStyle, marginBottom: '16px'}}>
-          <p style={boxTitle}>Available Balance</p>
-          <p style={boxAmount}>{earnings.balance.toLocaleString()}shs</p>
-        </div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+          {/* Box 1: Available Balance */}
+          <div style={boxStyle}>
+            <p style={boxTitle}>Available Balance</p>
+            <p style={boxAmount}>{balance.toLocaleString()}shs</p>
+          </div>
 
-        {vipPurchaseDate && (
-          <p style={{textAlign: 'center', fontSize: '14px', color: '#9ca3af', marginBottom: '16px'}}>
-            {getVipPeriod(vipPurchaseDate)}
-          </p>
-        )}
-
-        {/* REMOVED: Red weekend text is gone */}
-
-        <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
-          <Box title="Yesterday's income" amount={earnings.yesterday} />
-          <Box title="Today's income" amount={earnings.today} />
-          <Box title="This month's income" amount={earnings.thisMonth} />
-          <Box title="This week's income" amount={earnings.thisWeek} />
-          <Box title="Total revenue" amount={earnings.total} />
-
-          <Box title="Invitation reward A" subtitle="(5%)" amount={earnings.inviteA} />
-          <Box title="Invitation reward B" subtitle="(2%)" amount={earnings.inviteB} />
-          <Box title="Invitation reward C" subtitle="(1%)" amount={earnings.inviteC} />
-
-          <Box title="Job security deposit" amount={earnings.deposit} isBig={true} />
+          {/* Box 2: Job Security */}
+          <div style={boxStyle}>
+            <p style={boxTitle}>Job Security</p>
+            <p style={boxAmount}>{jobSecurity}</p>
+          </div>
         </div>
       </div>
     </div>
