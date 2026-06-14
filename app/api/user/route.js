@@ -128,6 +128,7 @@ export async function GET(request) {
         vipPricePaid: '0',
         tasksCompleted: '0',
         vipLocked: 'false',
+        hasBoughtVIP: 'false',
         createdAt: getISOTimestamp()
       })
 
@@ -151,8 +152,8 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-       .filter(t => t.type === 'referral_reward' && t.status === 'success')
-       .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+      .filter(t => t.type === 'referral_reward' && t.status === 'success')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
@@ -164,6 +165,7 @@ export async function GET(request) {
           avatar: user.avatar || '',
           nickname: user.nickname || '',
           vipLocked: user.vipLocked === 'true',
+          hasBoughtVIP: user.hasBoughtVIP === 'true',
           tasksCompleted: Number(user.tasksCompleted) || 0,
           vipPricePaid: Number(user.vipPricePaid) || 0,
           bankMTN: safeParse(user.bankMTN),
@@ -202,6 +204,7 @@ export async function GET(request) {
         bankAirtel: safeParse(user.bankAirtel),
         password: user.password || '',
         vipLocked: user.vipLocked === 'true',
+        hasBoughtVIP: user.hasBoughtVIP === 'true',
         tasksCompleted: Number(user.tasksCompleted) || 0,
         vipPricePaid: Number(user.vipPricePaid) || 0,
         referralPaid: user.referralPaid || 'false',
@@ -313,7 +316,8 @@ export async function POST(request) {
         vip: String(vipLevel),
         vipPricePaid: String(newPrice),
         vipLocked: 'false',
-        tasksCompleted: '0'
+        tasksCompleted: '0',
+        hasBoughtVIP: 'true'
       })
 
       const timestamp = getISOTimestamp()
@@ -419,6 +423,7 @@ export async function POST(request) {
           vip: Number(freshUser?.vip) || 0,
           vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
           vipLocked: freshUser?.vipLocked === 'true',
+          hasBoughtVIP: freshUser?.hasBoughtVIP === 'true',
           tasksCompleted: Number(freshUser?.tasksCompleted) || 0,
           nickname: freshUser?.nickname || '',
           avatar: freshUser?.avatar || '',
