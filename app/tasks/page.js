@@ -4,20 +4,6 @@ import booksData from "../../data/books.json"
 
 const SKYBLUE = "#00BFFF"
 
-const VIP_CONFIG = {
- 0: { books: 4, incomePerBook: 625 },
- 1: { books: 4, incomePerBook: 625 },
- 2: { books: 4, incomePerBook: 2000 },
- 3: { books: 4, incomePerBook: 6500 },
- 4: { books: 5, incomePerBook: 7000 },
- 5: { books: 5, incomePerBook: 10000 },
- 6: { books: 5, incomePerBook: 14000 },
- 7: { books: 5, incomePerBook: 28000 },
- 8: { books: 5, incomePerBook: 32000 },
- 9: { books: 5, incomePerBook: 40000 },
- 10: { books: 5, incomePerBook: 60000 },
-}
-
 export default function TasksPage() {
   const [user, setUser] = useState(null)
   const [tasks, setTasks] = useState([])
@@ -25,7 +11,7 @@ export default function TasksPage() {
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const [showPopup, setShowPopup] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [submittingId, setSubmittingId] = useState(null)
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
@@ -54,18 +40,15 @@ export default function TasksPage() {
       const taskList = data.tasks || []
       setTasks(taskList)
 
-      const maxBooks = VIP_CONFIG[userData.user?.vip || 0]?.books || 0
-      const books = taskList.slice(0, maxBooks).map((task) => {
+      const books = taskList.slice(0, 4).map((task) => {
         const bookNum = Number(task.bookId)
         return {
-          bookNum,
-          taskKey: `book${bookNum}`,
           taskId: task.id,
+          bookNum,
           title: booksData[bookNum - 1]?.title || `Book ${bookNum}`,
           cover: booksData[bookNum - 1]?.cover || booksData[0]?.cover,
           preview: booksData[bookNum - 1]?.preview || "",
-          status: task.status,
-          reward: task.reward
+          status: task.status
         }
       })
       setTodayBooks(books)
@@ -81,7 +64,7 @@ export default function TasksPage() {
 
     if (timer === 1) {
       setTodayBooks(prev => prev.map(b =>
-        b.taskKey === readingBook.taskKey? {...b, status: 'read' } : b
+        b.taskId === readingBook.taskId? {...b, status: 'read' } : b
       ))
       setShowPopup(true)
       setReadingBook(null)
@@ -96,54 +79,51 @@ export default function TasksPage() {
     setShowPopup(false)
 
     setTodayBooks(prev => prev.map(b =>
-      b.taskKey === book.taskKey? {...b, status: 'reading' } : b
+      b.taskId === book.taskId? {...b, status: 'reading' } : b
     ))
   }
 
-  const handlePopupOk = async () => {
+  const handlePopupOk = () => {
     setShowPopup(false)
     setTimer(10)
+  }
 
-    if (!readingBook ||!user) return
+  const handleSubmit = async (book) => {
+    if (submittingId || book.status!== 'read') return
 
-    // Submit this single book immediately
-    setLoading(true)
+    setSubmittingId(book.taskId)
     try {
-      const res = await fetch('/api/tasks/submit', {
+      const res = await fetch('/api/tasks/submit-one', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: user.phone,
-          taskIncome: readingBook.reward
+          taskId: book.taskId
         })
       })
 
       const data = await res.json()
 
       if (data.success) {
-        const newBalance = Number(user.balance) + readingBook.reward
+        const newBalance = Number(user.balance) + Number(data.reward)
         const updatedUser = {...user, balance: newBalance }
         setUser(updatedUser)
         localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
         setTodayBooks(prev => prev.map(b =>
-          b.taskKey === readingBook.taskKey? {...b, status: 'submitted' } : b
+          b.taskId === book.taskId? {...b, status: 'submitted' } : b
         ))
 
-        alert(`+${readingBook.reward.toLocaleString()}shs added!`)
+        alert(`+${Number(data.reward).toLocaleString()}shs added!`)
         localStorage.setItem('palamedes_refresh_my', 'true')
       } else {
         alert(data.message || 'Failed to submit')
-        // revert status back to pending if failed
-        setTodayBooks(prev => prev.map(b =>
-          b.taskKey === readingBook.taskKey? {...b, status: 'pending' } : b
-        ))
       }
     } catch (err) {
       console.error(err)
       alert('Network error')
     } finally {
-      setLoading(false)
+      setSubmittingId(null)
     }
   }
 
@@ -171,13 +151,11 @@ export default function TasksPage() {
           }}>
             <div style={{ background: "#FFFFFF", padding: 30, borderRadius: 16, textAlign: "center", border: `2px solid ${SKYBLUE}` }}>
               <h3 style={{ color: "#000", margin: "0 0 10px 0", fontSize: 24, fontWeight: "400" }}>Time Complete ⌛</h3>
-              <p style={{ color: "#666", fontSize: 14, marginBottom: 15 }}>+{readingBook.reward.toLocaleString()}shs will be added</p>
-              <button onClick={handlePopupOk} disabled={loading} style={{
+              <button onClick={handlePopupOk} style={{
                 padding: "12px 24px", background: SKYBLUE, border: "none",
-                borderRadius: 8, fontWeight: "400", cursor: loading? "not-allowed" : "pointer",
-                fontSize: 16, color: "#000", opacity: loading? 0.6 : 1
+                borderRadius: 8, fontWeight: "400", cursor: "pointer", fontSize: 16, color: "#000"
               }}>
-                {loading? 'Adding...' : 'OK'}
+                OK
               </button>
             </div>
           </div>
@@ -186,27 +164,27 @@ export default function TasksPage() {
     )
   }
 
-  const pendingBooks = todayBooks.filter(b => b.status === 'pending' || b.status === 'reading' || b.status === 'read')
-  const submittedBooks = todayBooks.filter(b => b.status === 'submitted')
+  const pendingCount = todayBooks.filter(b => b.status!== 'submitted').length
+  const doneCount = todayBooks.filter(b => b.status === 'submitted').length
 
   return (
     <div style={{ padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000" }}>
       <h2 style={{ marginBottom: 20, fontWeight: "400", color: "#000" }}>
-        Today's Tasks - VIP{user.vip}
-        {user.vipLocked === 'true' && <span style={{ color: SKYBLUE, fontSize: 14 }}> [Locked]</span>}
+        Today's Tasks - VIP{user.vip} {doneCount}/4 Done
       </h2>
 
-      {pendingBooks.length === 0 && submittedBooks.length === 0? (
+      {todayBooks.length === 0? (
         <p style={{ textAlign: "center", marginTop: 100, color: "#666" }}>
-          {user.vipLocked === 'true'? "Tasks locked. Wait for next weekday." : "No tasks available"}
+          No tasks available
         </p>
       ) : (
-        pendingBooks.map((book) => {
-          const isRead = book.status === 'read' || book.status === 'submitted'
+        todayBooks.map((book) => {
+          const isRead = book.status === 'read'
           const isReading = book.status === 'reading'
+          const isSubmitted = book.status === 'submitted'
 
           return (
-            <div key={book.taskKey} style={{
+            <div key={book.taskId} style={{
               padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
               borderBottom: "1px solid #E0E0E0"
             }}>
@@ -214,52 +192,54 @@ export default function TasksPage() {
                 width: 70, height: 100, objectFit: "cover", borderRadius: 8
               }} />
               <div style={{ flex: 1 }}>
-                <h4 style={{ margin: "0 0 5px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
+                <h4 style={{ margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
                   {book.title}
                 </h4>
-                <p style={{ margin: "0 0 10px 0", fontSize: 14, color: SKYBLUE }}>
-                  +{book.reward.toLocaleString()}shs
-                </p>
-                <button
-                  onClick={() => handleRead(book)}
-                  disabled={isRead || isReading}
-                  style={{
-                    padding: "8px 16px",
-                    background: isRead? "#E0E0E0" : isReading? "#B0B0B0" : SKYBLUE,
-                    border: "none",
-                    borderRadius: 6,
-                    fontWeight: "400",
-                    cursor: (isRead || isReading)? "not-allowed" : "pointer",
-                    color: "#000",
-                    opacity: (isRead || isReading)? 0.6 : 1
-                  }}
-                >
-                  {isRead? "Read ✓" : isReading? "Reading..." : "Read"}
-                </button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => handleRead(book)}
+                    disabled={isRead || isReading || isSubmitted}
+                    style={{
+                      padding: "8px 16px",
+                      background: isRead || isSubmitted? "#E0E0E0" : isReading? "#B0B0B0" : SKYBLUE,
+                      border: "none",
+                      borderRadius: 6,
+                      fontWeight: "400",
+                      cursor: (isRead || isReading || isSubmitted)? "not-allowed" : "pointer",
+                      color: "#000",
+                      opacity: (isRead || isReading || isSubmitted)? 0.6 : 1
+                    }}
+                  >
+                    {isSubmitted? "Done" : isRead? "Read ✓" : isReading? "Reading..." : "Read"}
+                  </button>
+
+                  <button
+                    onClick={() => handleSubmit(book)}
+                    disabled={!isRead || submittingId === book.taskId}
+                    style={{
+                      padding: "8px 16px",
+                      background: isRead? "#4CAF50" : "#E0E0E0",
+                      border: "none",
+                      borderRadius: 6,
+                      fontWeight: "400",
+                      cursor:!isRead || submittingId === book.taskId? "not-allowed" : "pointer",
+                      color: "#000",
+                      opacity:!isRead || submittingId === book.taskId? 0.6 : 1
+                    }}
+                  >
+                    {submittingId === book.taskId? "Submitting..." : "Submit"}
+                  </button>
+                </div>
               </div>
             </div>
           )
         })
       )}
 
-      <h2 style={{ marginTop: 40, marginBottom: 20, fontWeight: "400", color: "#000" }}>
-        Completed Tasks ({submittedBooks.length}/{todayBooks.length})
-      </h2>
-      {submittedBooks.length === 0? (
-        <p style={{ color: "#666" }}>No completed tasks yet</p>
-      ) : (
-        submittedBooks.map(book => (
-          <div key={book.taskKey} style={{
-            padding: 12, marginBottom: 10, display: "flex", gap: 12, alignItems: "center",
-            borderBottom: "1px solid #E0E0E0"
-          }}>
-            <img src={book.cover} style={{ width: 50, height: 75, objectFit: "cover", borderRadius: 6 }} />
-            <div>
-              <p style={{ margin: 0, fontWeight: "400", color: "#000" }}>{book.title}</p>
-              <p style={{ margin: 0, fontSize: 13, color: SKYBLUE }}>+{book.reward.toLocaleString()}shs</p>
-            </div>
-          </div>
-        ))
+      {doneCount === 4 && (
+        <p style={{ textAlign: "center", marginTop: 40, fontSize: 18, color: "#4CAF50", fontWeight: "600" }}>
+          Tasks done for today 4/4
+        </p>
       )}
     </div>
   )
