@@ -6,6 +6,7 @@ const TZ = 'Africa/Kampala'
 
 export default function MyPage() {
   const [userData, setUserData] = useState(null)
+  const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -39,12 +40,34 @@ export default function MyPage() {
 
       if (data.success) {
         setUserData(data.user)
+        setVipPurchaseDate(data.vipPurchaseDate || null)
       }
     } catch (err) {
       console.error('[MyPage] Load dashboard error:', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    if (isNaN(date)) return ''
+    return new Intl.DateTimeFormat('en-UG', {
+      timeZone: TZ,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).format(date)
+  }
+
+  const getVipPeriod = () => {
+    if (!vipPurchaseDate || (userData?.vip || 0) < 1) return null
+    const start = new Date(vipPurchaseDate)
+    if (isNaN(start)) return null
+    const end = new Date(start)
+    end.setFullYear(end.getFullYear() + 1)
+    return `Effective date: ${formatDate(start)} ~ ${formatDate(end)}`
   }
 
   const boxStyle = {
@@ -57,13 +80,21 @@ export default function MyPage() {
   }
   const boxTitle = { fontSize: '14px', fontWeight: '300', color: 'black', marginBottom: '4px' }
   const boxAmount = { fontSize: '24px', fontWeight: 'bold', color: 'black' }
+  const periodText = { 
+    fontSize: '14px', 
+    color: '#6b7280', 
+    textAlign: 'center', 
+    margin: '8px 0',
+    fontWeight: '500'
+  }
 
   if (loading) {
     return <div style={{minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0'}}>Loading...</div>
   }
 
   const balance = Number(userData?.balance) || 0
-  const jobSecurity = userData?.jobSecurity? 'Active' : 'Inactive'
+  const jobSecurity = userData?.jobSecurity ? 'Active' : 'Inactive'
+  const vipPeriod = getVipPeriod()
 
   return (
     <div style={{backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
@@ -85,6 +116,9 @@ export default function MyPage() {
             <p style={boxTitle}>Available Balance</p>
             <p style={boxAmount}>{balance.toLocaleString()}shs</p>
           </div>
+
+          {/* VIP Effective Period - shows between boxes */}
+          {vipPeriod && <p style={periodText}>{vipPeriod}</p>}
 
           {/* Box 2: Job Security */}
           <div style={boxStyle}>
