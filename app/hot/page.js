@@ -36,7 +36,6 @@ const getUGNow = () => {
 
 const parseKampalaDate = (dateStr) => {
   if (!dateStr) return null
-  // Parse "dd/mm/yyyy, hh:mm:ss" format from backend
   const [datePart, timePart] = dateStr.split(', ')
   const [day, month, year] = datePart.split('/')
   return new Date(`${year}-${month}-${day}T${timePart}`)
@@ -45,7 +44,6 @@ const parseKampalaDate = (dateStr) => {
 const getDaysLeft = (endDateStr) => {
   const end = parseKampalaDate(endDateStr)
   if (!end || isNaN(end)) return 0
-  
   const now = getUGNow()
   const diff = end - now
   if (diff <= 0) return 0
@@ -75,12 +73,11 @@ export default function HotPage() {
     if (!userPhone) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/user?action=getShares&phone=${userPhone}`)
+      const res = await fetch(`/api/hot?phone=${userPhone}`)
       const data = await res.json()
       if (data.success) {
-        const allShares = data.shares || []
-        setOngoing(allShares.filter(s => s.status === 'ongoing'))
-        setExpired(allShares.filter(s => s.status === 'expired'))
+        setOngoing(data.shares || [])
+        setExpired(data.expired || [])
       }
     } catch (err) {
       console.error('Load shares error:', err)
@@ -98,7 +95,7 @@ export default function HotPage() {
     const totalCost = SHARE_PRICE * quantity
     
     try {
-      const res = await fetch('/api/user', {
+      const res = await fetch('/api/hot', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -132,7 +129,7 @@ export default function HotPage() {
 
   const handleCollect = async (shareId) => {
     try {
-      const res = await fetch('/api/user', {
+      const res = await fetch('/api/hot', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({

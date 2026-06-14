@@ -50,19 +50,17 @@ export default function AdminPage() {
     if (cleanPhone!== cleanAdmin) return router.push('/dashboard')
 
     setUser({...saved, phone: cleanPhone })
-    loadPendingTransactions() // no param needed now
+    loadPendingTransactions()
   }, [router])
 
   const loadPendingTransactions = async () => {
     try {
-      // Always use ADMIN_PHONE for the pending call
-      const res = await fetch(`/api/user?action=pending&phone=${ADMIN_PHONE}`)
+      const res = await fetch(`/api/admin?action=pending&phone=${ADMIN_PHONE}`)
       const data = await res.json()
       if (data.success) {
         setPendingDeposits(data.deposits || [])
         setPendingWithdraws(data.withdraws || [])
       } else {
-        console.error('Failed to load pending:', data.message)
         alert('Failed to load pending: ' + data.message)
       }
     } catch (err) {
@@ -75,7 +73,7 @@ export default function AdminPage() {
     if (!user) return alert('Not logged in')
 
     const cleanPhone = searchPhone.replace(/\D/g, '')
-    const res = await fetch(`/api/user?action=getUser&phone=${ADMIN_PHONE}&targetPhone=${cleanPhone}`)
+    const res = await fetch(`/api/admin?action=getUser&phone=${ADMIN_PHONE}&targetPhone=${cleanPhone}`)
     const data = await res.json()
 
     if (data.success) {
@@ -90,7 +88,7 @@ export default function AdminPage() {
     if (!newPass) return alert('Enter new password')
     if (!searchedUser) return alert('Search for a user first')
 
-    const res = await fetch('/api/user', {
+    const res = await fetch('/api/admin', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -106,7 +104,7 @@ export default function AdminPage() {
   }
 
   const handleTransaction = async (txId, action, type, targetPhone) => {
-    const res = await fetch('/api/user', {
+    const res = await fetch('/api/admin', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -128,7 +126,6 @@ export default function AdminPage() {
     <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
       <h1 style={{fontSize: '22px', fontWeight: 'bold', marginBottom: '16px'}}>Admin Panel</h1>
 
-      {/* Section 1: Reset User Password */}
       <div style={cardStyle}>
         <h2 style={{fontSize: '16px', fontWeight: 'bold', marginBottom: '12px'}}>Reset User Password</h2>
 
@@ -158,7 +155,6 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Section 2: Pending Deposits */}
       <div style={cardStyle}>
         <h2 style={{fontSize: '16px', fontWeight: 'bold', marginBottom: '12px'}}>Pending Deposits</h2>
         {pendingDeposits.length === 0? (
@@ -179,7 +175,6 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Section 3: Pending Withdraws */}
       <div style={cardStyle}>
         <h2 style={{fontSize: '16px', fontWeight: 'bold', marginBottom: '12px'}}>Pending Withdraws</h2>
         {pendingWithdraws.length === 0? (

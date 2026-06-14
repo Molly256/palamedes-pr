@@ -1,7 +1,6 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
 
-const ADMIN_PHONES = ['0753520252']
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
@@ -14,12 +13,6 @@ const VIP_CONFIG = {
  8: { price: 4600000, books: 5, perBook: 32000 },
  9: { price: 5000000, books: 5, perBook: 40000 },
  10: { price: 8000000, books: 5, perBook: 60000 },
-}
-
-const SHARE_CONFIG = {
-  pride: { name: 'PRIDE AND PREJUDICE', price: 50000, daily: 0.01, cycle: 30 },
-  hegel: { name: 'Hegel lectures', price: 50000, daily: 0.03, cycle: 120 },
-  whale: { name: 'The whale', price: 50000, daily: 0.05, cycle: 180 }
 }
 
 function safeParse(val) {
@@ -49,18 +42,6 @@ function normalizePhone(phone) {
   return phone
 }
 
-function getKampalaTime(date = new Date()) {
-  return new Date(date.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
-}
-
-function formatKampalaDate(date) {
-  return new Date(date).toLocaleString('en-GB', {
-    timeZone: 'Africa/Kampala',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-  })
-}
-
 function getISOTimestamp() {
   return new Date().toISOString()
 }
@@ -73,20 +54,6 @@ function isWeekdayKampala() {
 function getTodayKey(phone) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
   return `task:${phone}:${today}`
-}
-
-function getUGDateObj() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
-}
-
-function parseKampalaDate(str) {
-  if (!str) return null
-  if (str.includes('/')) {
-    const [datePart, timePart] = str.split(', ')
-    const [day, month, year] = datePart.split('/')
-    return new Date(`${year}-${month}-${day}T${timePart}`)
-  }
-  return new Date(str)
 }
 
 async function getUserData(phone) {
@@ -108,10 +75,6 @@ async function getTransactions(phone) {
 
 async function pushTransaction(phone, tx) {
   await kv.lpush(`transactions:${phone}`, JSON.stringify(tx))
-}
-
-async function verifyAdmin(phone) {
-  return ADMIN_PHONES.includes(phone)
 }
 
 async function buildTeams(phone) {
@@ -144,76 +107,8 @@ export async function GET(request) {
 
     phone = normalizePhone(phone)
 
-    if (!phone && action!== 'pending' && action!== 'getTeam' && action!== 'register') {
+    if (!phone && action!== 'register') {
       return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
-    }
-
-     ]   if (action === 'pending') {
-      if (!await verifyAdmin(phone)) {
-        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
-      }
-
-      const keys = await kv.keys('user:*')
-      let deposits = []
-      let withdraws = []
-
-      for (let key of keys) {
-        if ((await kv.type(key))!== 'hash') continue
-        const userPhone = key.split(':')[1]
-        const txList = await getTransactions(userPhone)
-        txList.forEach(tx => {
-          if (tx && tx.status === 'pending') {
-            tx.phone = userPhone
-            if (tx.type === 'deposit') deposits.push(tx)
-            if (tx.type === 'withdraw') withdraws.push(tx)
-          }
-        })
-      }
-
-      deposits.sort((a, b) => new Date(b.date) - new Date(a.date))
-      withdraws.sort((a, b) => new Date(b.date) - new Date(a.date))
-
-      return NextResponse.json({ success: true, deposits, withdraws })
-    }
-
-    if (action === 'getTeam') {
-      const { teamA, teamB, teamC } = await buildTeams(phone)
-
-      return NextResponse.json({
-        success: true,
-        teamA: teamA.map(u => ({
-          phone: u.phone,
-          username: u.username || '',
-          nickname: u.nickname || '',
-          vip: Number(u.vip) || 0,
-          balance: Number(u.balance) || 0,
-          createdAt: u.createdAt || ''
-        })),
-        teamB: teamB.map(u => ({
-          phone: u.phone,
-          username: u.username || '',
-          nickname: u.nickname || '',
-          vip: Number(u.vip) || 0,
-          balance: Number(u.balance) || 0
-        })),
-        teamC: teamC.map(u => ({
-          phone: u.phone,
-          username: u.username || '',
-          nickname: u.nickname || '',
-          vip: Number(u.vip) || 0,
-          balance: Number(u.balance) || 0
-        })),
-        totalMembers: teamA.length + teamB.length + teamC.length
-      })
-    }
-
-    if (action === 'getUser') {
-      if (!await verifyAdmin(phone)) {
-        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
-      }
-      const { user } = await getUserData(phone)
-      if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-      return NextResponse.json({ success: true, user })
     }
 
     if (action === 'register') {
@@ -261,30 +156,6 @@ export async function GET(request) {
     const { user, userKey } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
-    if (action === 'getShares') {
-  const sharesKey = `share:palamedes:${phone}`
-  if ((await kv.type(sharesKey)) === 'hash') {
-    const sharesHash = await kv.hgetall(sharesKey)
-    let shares = Object.values(sharesHash || {}).map(s => safeParse(s)).filter(Boolean)
-
-    const now = getUGDateObj()
-
-    shares = shares.map(s => {
-      const endDate = parseKampalaDate(s.endDate)
-      if (endDate && !isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
-        s.status = 'expired'
-      }
-      return s
-    })
-
-    const ongoing = shares.filter(s => s.status === 'ongoing')
-    const expired = shares.filter(s => s.status === 'expired')
-
-    return NextResponse.json({ success: true, shares: ongoing, expired })
-  }
-  return NextResponse.json({ success: true, shares: [], expired: [] })
-}
-
     if (action === 'getTransactions') {
       const transactions = await getTransactions(phone)
       return NextResponse.json({ success: true, transactions })
@@ -299,8 +170,8 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-  .filter(t => t.type === 'referral_reward' && t.status === 'success')
-  .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+ .filter(t => t.type === 'referral_reward' && t.status === 'success')
+ .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
@@ -394,17 +265,15 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    let { action, phone, bookNumber, vipLevel: rawVipLevel, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, field, value, oldPass, newPass, number, method, names, txId, type, amount, newPassword, targetPhone } = body
+    let { action, phone, bookNumber, vipLevel: rawVipLevel, field, value, oldPass, newPass, number, method, names, amount } = body
 
     phone = normalizePhone(phone)
-    targetPhone = normalizePhone(targetPhone)
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
 
     const { user, userKey } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
-    const sharesKey = `share:palamedes:${phone}`
     const vipLevel = Number(rawVipLevel)
 
     if (action === 'deposit') {
@@ -698,106 +567,6 @@ export async function POST(request) {
       })
     }
 
-    if (action === 'buyShare') {
-      const config = SHARE_CONFIG[shareId]
-      if (!config) return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
-
-      const qty = Number(quantity) || 1
-      const cost = Number(totalCost) || config.price * qty
-      const balance = Number(user.balance) || 0
-
-      if (balance < cost) {
-        return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
-      }
-
-      const newBalance = balance - cost
-      await kv.hset(userKey, { balance: String(newBalance) })
-
-      const buyDate = getUGDateObj()
-      const endDate = new Date(buyDate)
-      endDate.setDate(endDate.getDate() + Number(cycleDays || config.cycle))
-
-      const shareIdUnique = `${shareId}_${Date.now()}`
-      const shareData = {
-        id: shareIdUnique,
-        shareId: shareId,
-        shareName: shareName || config.name,
-        quantity: qty,
-        pricePerShare: config.price,
-        dailyProfit: Number(dailyProfit || config.daily * 100),
-        cycleDays: Number(cycleDays || config.cycle),
-        buyDate: formatKampalaDate(buyDate),
-        endDate: formatKampalaDate(endDate),
-        status: 'ongoing',
-        collectedAt: null,
-        profitReceived: 0
-      }
-
-      await kv.hset(sharesKey, shareIdUnique, JSON.stringify(shareData))
-
-      await pushTransaction(phone, {
-        id: Date.now(),
-        type: 'share_purchase',
-        amount: -cost,
-        shareName: shareData.shareName,
-        quantity: qty,
-        date: getISOTimestamp(),
-        status: 'success',
-        desc: `Bought ${qty} x ${shareData.shareName}`,
-        phone: phone
-      })
-
-      return NextResponse.json({ success: true, balance: newBalance, message: `Bought ${qty} share(s) of ${shareData.shareName}!` })
-    }
-
-    if (action === 'collectShare') {
-      const shareIdUnique = body.shareId
-      if (!shareIdUnique) return NextResponse.json({ success: false, message: 'Share ID required' }, { status: 400 })
-
-      if ((await kv.type(sharesKey))!== 'hash') {
-        return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
-      }
-
-      const shareStr = await kv.hget(sharesKey, shareIdUnique)
-      if (!shareStr) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
-
-      const share = safeParse(shareStr)
-      if (!share) return NextResponse.json({ success: false, message: 'Invalid share data' }, { status: 400 })
-      if (share.status!== 'ongoing') {
-        return NextResponse.json({ success: false, message: 'Share already collected' }, { status: 400 })
-      }
-
-      const now = getUGDateObj()
-      const endDate = parseKampalaDate(share.endDate)
-      if (!endDate || isNaN(endDate) || now < endDate) {
-        return NextResponse.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
-      }
-
-      const profit = Math.round(share.pricePerShare * share.quantity * (share.dailyProfit / 100) * share.cycleDays)
-      const newBalance = Number(user.balance) + profit
-
-      share.status = 'expired'
-      share.collectedAt = formatKampalaDate(now)
-      share.profitReceived = profit
-
-      await kv.hset(sharesKey, shareIdUnique, JSON.stringify(share))
-      await kv.hset(userKey, { balance: String(newBalance) })
-
-      await pushTransaction(phone, {
-        id: Date.now(),
-        type: 'share_profit',
-        amount: profit,
-        shareName: share.shareName,
-        quantity: share.quantity,
-        date: getISOTimestamp(),
-        status: 'success',
-        desc: `Profit from ${share.shareName} x${share.quantity}`,
-        phone: phone
-      })
-
-      return NextResponse.json({ success: true, balance: newBalance, profit, message: 'Profits collected successfully' })
-    }
-
     if (action === 'updateProfile') {
       if (field === 'nickname') {
         if (value.length > 6) return NextResponse.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
@@ -829,58 +598,9 @@ export async function POST(request) {
       return NextResponse.json({ success: true, message: 'Password changed' })
     }
 
-    if (action === 'resetPassword') {
-      if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
-      if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
-
-      const { userKey: targetKey } = await getUserData(targetPhone)
-      if (!targetKey) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
-
-      await kv.hset(targetKey, { password: newPassword })
-      return NextResponse.json({ success: true, message: 'Password reset successfully' })
-    }
-
-    if (action === 'approve' || action === 'reject') {
-      if (!await verifyAdmin(phone)) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
-      if (!targetPhone) return NextResponse.json({ success: false, message: 'Target phone required' }, { status: 400 })
-
-      const rawList = await kv.lrange(`transactions:${targetPhone}`, 0, 99)
-      const txList = rawList.map(t => safeParse(t)).filter(Boolean)
-      const txIndex = txList.findIndex(t => t.id == txId)
-
-      if (txIndex === -1) return NextResponse.json({ success: false, message: 'Transaction not found' })
-
-      const tx = txList[txIndex]
-      tx.status = action === 'approve'? 'success' : 'rejected'
-
-      if (action === 'approve' && type === 'deposit') {
-        const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
-        if (targetKey) {
-          const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
-          await kv.hset(targetKey, { balance: String(newBalance) })
-        }
-      }
-
-      if (action === 'approve' && type === 'withdraw') {
-        const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
-        if (targetKey) {
-          const newBalance = Number(targetUser.balance || 0) - Math.abs(Number(tx.amount))
-          await kv.hset(targetKey, { balance: String(newBalance) })
-        }
-      }
-
-      rawList[txIndex] = JSON.stringify(tx)
-      await kv.del(`transactions:${targetPhone}`)
-      if (rawList.length > 0) {
-        await kv.lpush(`transactions:${targetPhone}`,...rawList)
-      }
-
-      return NextResponse.json({ success: true, message: `Transaction ${action}d` })
-    }
-
     return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
   } catch (err){
     console.error('POST /api/user error:', err)
     return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
-}        
+}

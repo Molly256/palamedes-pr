@@ -4,14 +4,6 @@ import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 const TZ = 'Africa/Kampala'
 
-const VIP_LEVELS = {
- 0: 0,
- 1: 80000,
- 2: 200000,
- 3: 500000,
- 4: 1000000
-}
-
 export default function MyPage() {
   const [userData, setUserData] = useState(null)
   const [vipPurchaseDate, setVipPurchaseDate] = useState(null)
@@ -60,8 +52,8 @@ export default function MyPage() {
     if (!userData) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
       total: 0, inviteA: 0, inviteB: 0, inviteC: 0,
-      deposit: VIP_LEVELS[userData?.vip || 0] || 0,
-      balance: userData?.balance || 0
+      deposit: 0,
+      balance: 0
     }
 
     const todayUG = getUGDate()
@@ -113,7 +105,7 @@ export default function MyPage() {
       inviteA,
       inviteB,
       inviteC,
-      deposit: VIP_LEVELS[userData.vip || 0] || 0,
+      deposit: Number(userData.vipPricePaid) || 0, // FIXED: use actual paid amount from DB
       balance: userData.balance || 0
     }
   }
@@ -146,7 +138,7 @@ export default function MyPage() {
     }
 
     try {
-      const res = await fetch(`/api/user?action=getDashboard&phone=${user.phone}`)
+      const res = await fetch(`/api/my?phone=${user.phone}`)
       const data = await res.json()
 
       if (data.success) {

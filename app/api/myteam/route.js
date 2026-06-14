@@ -1,148 +1,114 @@
 import { kv } from '@vercel/kv'
+import { NextResponse } from 'next/server'
+
+function normalizePhone(phone) {
+  if (!phone) return phone
+  phone = String(phone).replace(/\D/g, '')
+  if (phone.length === 9 &&!phone.startsWith('0')) phone = '0' + phone
+  return phone
+}
+
+// Full reward table matching your VIP_CONFIG
+function getRewardForVip(vipLevel, teamLevel) {
+  const rewards = {
+    1: { 1: 4000, 2: 1600, 3: 800 },
+    2: { 1: 12500, 2: 5000, 3: 2500 },
+    3: { 1: 39500, 2: 15800, 3: 7900 },
+    4: { 1: 50000, 2: 20000, 3: 10000 },
+    5: { 1: 75000, 2: 30000, 3: 15000 },
+    6: { 1: 105000, 2: 42000, 3: 21000 },
+    7: { 1: 200000, 2: 80000, 3: 40000 },
+    8: { 1: 230000, 2: 92000, 3: 46000 },
+    9: { 1: 250000, 2: 100000, 3: 50000 },
+    10: { 1: 400000, 2: 160000, 3: 80000 }
+  }
+  return rewards[vipLevel]?.[teamLevel] || 0
+}
 
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)
-    const phone = searchParams.get('phone')?.replace(/\s+/g, '')
+    const phone = normalizePhone(searchParams.get('phone'))
 
     if (!phone) {
-      return Response.json({ success: false, message: 'Phone required' })
+      return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
     }
 
-    let totalCommission = 0
-    const teamA = []
-    const teamB = []
-    const teamC = []
-
-    // 1. Get downline phones from sets
     const [downline1, downline2, downline3] = await Promise.all([
       kv.smembers(`user:${phone}:downline1`),
       kv.smembers(`user:${phone}:downline2`),
       kv.smembers(`user:${phone}:downline3`)
     ])
 
-    // 2. Process Team A - Level 1
+    const teamA = []
+    const teamB = []
+    const teamC = []
+
+    // Build teams - NO commission logic here
     for (const memberPhone of downline1) {
       const user = await kv.hgetall(`user:${memberPhone}`)
-      if (!user || !user.phone) continue
-
-      const vip = Number(user.vip) || 0
-      const commissionPaid = user.vip_commission_paid === 'true'
-
-      if (vip > 0) {
+      if (!user ||!user.phone) continue
+      if (Number(user.vip) > 0) {
         teamA.push({
           username: user.username,
           phone: user.phone,
-          vip: vip,
+          vip: Number(user.vip),
           vipPaidAt: user.vip_paid_at
         })
-
-        // Pay commission only on first VIP buy
-        if (!commissionPaid) {
-          const reward = getRewardForVip(vip, 1)
-          if (reward > 0) {
-            totalCommission += reward
-
-            // Mark as paid and record transaction
-            await kv.hset(`user:${memberPhone}`, 'vip_commission_paid', 'true')
-            await kv.lpush(`transactions:${phone}`, JSON.stringify({
-              type: 'referral_reward',
-              amount: reward,
-              from: memberPhone,
-              level: 1,
-              timestamp: Date.now()
-            }))
-          }
-        }
       }
     }
 
-    // 3. Process Team B - Level 2
     for (const memberPhone of downline2) {
       const user = await kv.hgetall(`user:${memberPhone}`)
-      if (!user || !user.phone) continue
-
-      const vip = Number(user.vip) || 0
-      const commissionPaid = user.vip_commission_paid === 'true'
-
-      if (vip > 0) {
+      if (!user ||!user.phone) continue
+      if (Number(user.vip) > 0) {
         teamB.push({
           username: user.username,
           phone: user.phone,
-          vip: vip,
+          vip: Number(user.vip),
           vipPaidAt: user.vip_paid_at
         })
-
-        if (!commissionPaid) {
-          const reward = getRewardForVip(vip, 2)
-          if (reward > 0) {
-            totalCommission += reward
-            await kv.hset(`user:${memberPhone}`, 'vip_commission_paid', 'true')
-            await kv.lpush(`transactions:${phone}`, JSON.stringify({
-              type: 'referral_reward',
-              amount: reward,
-              from: memberPhone,
-              level: 2,
-              timestamp: Date.now()
-            }))
-          }
-        }
       }
     }
 
-    // 4. Process Team C - Level 3
     for (const memberPhone of downline3) {
       const user = await kv.hgetall(`user:${memberPhone}`)
-      if (!user || !user.phone) continue
-
-      const vip = Number(user.vip) || 0
-      const commissionPaid = user.vip_commission_paid === 'true'
-
-      if (vip > 0) {
+      if (!user ||!user.phone) continue
+      if (Number(user.vip) > 0) {
         teamC.push({
           username: user.username,
           phone: user.phone,
-          vip: vip,
+          vip: Number(user.vip),
           vipPaidAt: user.vip_paid_at
         })
-
-        if (!commissionPaid) {
-          const reward = getRewardForVip(vip, 3)
-          if (reward > 0) {
-            totalCommission += reward
-            await kv.hset(`user:${memberPhone}`, 'vip_commission_paid', 'true')
-            await kv.lpush(`transactions:${phone}`, JSON.stringify({
-              type: 'referral_reward',
-              amount: reward,
-              from: memberPhone,
-              level: 3,
-              timestamp: Date.now()
-            }))
-          }
-        }
       }
     }
 
-    return Response.json({
+    // Get total commission from transactions instead of calculating it
+    const transactions = await kv.lrange(`transactions:${phone}`, 0, 99)
+    const totalCommission = transactions
+     .map(t => {
+        try { return JSON.parse(t) } catch { return null }
+      })
+     .filter(t => t?.type === 'referral_reward')
+     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+
+    return NextResponse.json({
       success: true,
       totalCommission,
       teamA,
       teamB,
-      teamC
+      teamC,
+      teamCounts: {
+        a: teamA.length,
+        b: teamB.length,
+        c: teamC.length,
+        total: teamA.length + teamB.length + teamC.length
+      }
     })
 
   } catch (err) {
     console.error('GET /api/myteam error:', err)
-    return Response.json({ success: false, message: err.message }, { status: 500 })
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
-}
-
-// Set your reward amounts here
-function getRewardForVip(vipLevel, teamLevel) {
-  const rewards = {
-    1: { 1: 500, 2: 200, 3: 100 },
-    2: { 1: 1000, 2: 400, 3: 200 },
-    3: { 1: 2000, 2: 800, 3: 400 }
-  }
-  return rewards[vipLevel]?.[teamLevel] || 0
 }

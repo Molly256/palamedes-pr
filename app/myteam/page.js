@@ -29,25 +29,15 @@ export default function Myteam() {
     setLoading(true)
     setError(null)
     try {
-      // Call the correct endpoint
-      const res = await fetch(`/api/user?action=getTeam&phone=${phone}`)
+      // Call the new endpoint
+      const res = await fetch(`/api/myteam?phone=${phone}`)
       const data = await res.json()
       
       if (data.success) {
         setTeamA(data.teamA || [])
         setTeamB(data.teamB || [])
         setTeamC(data.teamC || [])
-        
-        // Get total commission from transactions
-        const txRes = await fetch(`/api/user?action=getTransactions&phone=${phone}`)
-        const txData = await txRes.json()
-        
-        if (txData.success) {
-          const commission = txData.transactions
-            .filter(tx => tx.type === 'referral_reward' && tx.status === 'success')
-            .reduce((sum, tx) => sum + Number(tx.amount || 0), 0)
-          setTotalCommission(commission)
-        }
+        setTotalCommission(data.totalCommission || 0) // comes directly from API
       } else {
         setError(data.message || 'Failed to load team')
         setTeamA([])
