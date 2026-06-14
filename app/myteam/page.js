@@ -29,7 +29,6 @@ export default function Myteam() {
     setLoading(true)
     setError(null)
     try {
-      // Call the new endpoint
       const res = await fetch(`/api/myteam?phone=${phone}`)
       const data = await res.json()
       
@@ -37,7 +36,7 @@ export default function Myteam() {
         setTeamA(data.teamA || [])
         setTeamB(data.teamB || [])
         setTeamC(data.teamC || [])
-        setTotalCommission(data.totalCommission || 0) // comes directly from API
+        setTotalCommission(data.totalCommission || 0)
       } else {
         setError(data.message || 'Failed to load team')
         setTeamA([])
@@ -100,9 +99,9 @@ export default function Myteam() {
                   margin: 0, 
                   fontSize: '12px', 
                   fontWeight: '800',
-                  color: m.vip > 0 ? '#00BFFF' : '#999'
+                  color: m.vipBought ? '#00BFFF' : '#999'
                 }}>
-                  {m.vip > 0 ? 'Commission Paid' : 'Pending VIP'}
+                  {m.vipBought ? 'Bought VIP Successful' : 'Pending VIP'}
                 </p>
               </div>
             </div>

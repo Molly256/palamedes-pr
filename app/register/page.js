@@ -20,7 +20,7 @@ export default function Register() {
   useEffect(() => {
     const savedReferrer = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
     if (savedReferrer) {
-      setForm(prev => ({...prev, referral: savedReferrer.trim().toUpperCase()}))
+      setForm(prev => ({...prev, referral: savedReferrer}))
       setReferralLocked(true)
     }
   }, [])
@@ -33,6 +33,16 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    
+    if(form.username.length < 6) {
+      setError('Username must be 6+ characters')
+      return
+    }
+    
+    if(form.phone.length !== 10) {
+      setError('Phone must be 10 digits starting with 0')
+      return
+    }
     
     if(form.password !== form.confirmPassword) {
       setError('Passwords do not match')
@@ -50,10 +60,10 @@ export default function Register() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           action: 'register',
-          username: form.username.trim(),
-          phone: form.phone.trim(),
+          username: form.username,
+          phone: form.phone,
           password: form.password,
-          referral: form.referral.trim().toUpperCase()
+          referral: form.referral
         })
       })
       const data = await res.json()
@@ -115,6 +125,10 @@ export default function Register() {
             value={form.phone}
             onChange={handleChange}
             required
+            minLength={10}
+            maxLength={10}
+            pattern="0[0-9]{9}"
+            placeholder="07xxxxxxxx"
             style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
           />
         </div>
@@ -163,6 +177,7 @@ export default function Register() {
             value={form.referral}
             onChange={handleChange}
             readOnly={referralLocked}
+            placeholder="PM20252"
             style={{
               width: '100%', 
               padding: '12px', 

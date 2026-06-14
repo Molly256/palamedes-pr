@@ -35,8 +35,10 @@ const getUGNow = () => {
 }
 
 const parseKampalaDate = (dateStr) => {
-  if (!dateStr) return null
-  const [datePart, timePart] = dateStr.split(', ')
+  if (!dateStr || typeof dateStr !== 'string') return null
+  const parts = dateStr.split(', ')
+  if (parts.length !== 2) return null
+  const [datePart, timePart] = parts
   const [day, month, year] = datePart.split('/')
   return new Date(`${year}-${month}-${day}T${timePart}`)
 }
@@ -207,7 +209,7 @@ export default function HotPage() {
     const daysLeft = getDaysLeft(share.endDate)
     const product = dividends.find(d => d.id === share.shareId)
     const totalCost = SHARE_PRICE * share.quantity
-    const totalProfit = Math.round(SHARE_PRICE * share.quantity * (share.dailyProfit / 100) * share.cycleDays)
+    const totalProfit = Number(share.expectedProfit) || 0
 
     return (
       <div key={share.id} style={cardStyle}>
@@ -223,7 +225,8 @@ export default function HotPage() {
             
             {isOngoing ? (
               <>
-                <p style={labelStyle}>Expires in: {daysLeft} day(s)</p>
+                <p style={labelStyle}>Expires: {share.endDate}</p>
+                <p style={labelStyle}>Days left: {daysLeft}</p>
                 <button 
                   style={{ 
                     ...btnStyle, 
@@ -241,7 +244,7 @@ export default function HotPage() {
               <>
                 <p style={{ ...labelStyle, color: '#22c55e' }}>Expired</p>
                 <p style={labelStyle}>Collected: {share.collectedAt}</p>
-                <p style={labelStyle}>Profit received: {share.profitReceived?.toLocaleString()}shs</p>
+                <p style={labelStyle}>Profit received: {Number(share.profitReceived || 0).toLocaleString()}shs</p>
               </>
             )}
           </div>

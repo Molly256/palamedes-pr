@@ -1,9 +1,8 @@
 import { kv } from '@vercel/kv'
 
 function getUserInviteCode(phone) {
-  const clean = phone.replace(/\D/g, '')
-  const last6 = clean.slice(-6)
-  return `PM${last6}`
+  // phone is already 10 digits like 0753520252, take last 6
+  return `PM${phone.slice(-6)}`
 }
 
 function isValidInviteCode(code) {
@@ -14,97 +13,85 @@ export async function POST(request) {
   try {
     const body = await request.json()
     let { action, username, password, phone, referral } = body
-    
-    const cleanPhone = phone?.replace(/\s+/g, '')
-
-    // Normalize username to lowercase for keys and uniqueness
-    username = username?.trim().toLowerCase()
-    if (username && !/^[a-z0-9_]{3,20}$/.test(username)) {
-      return Response.json({ success: false, message: 'Username must be 3-20 lowercase letters, numbers, or _' })
-    }
-
-    const userKey = `user:${cleanPhone}`
-    const usernameKey = `username:${username}`
 
     // REGISTER
     if (action === 'register') {
-      if (!username || !password || !cleanPhone) {
+      if (!username || !password || !phone) {
         return Response.json({ success: false, message: 'All fields required' })
+      }
+
+      // Validate 10 digits starting with 0
+      if (!/^0\d{9}$/.test(phone)) {
+        return Response.json({ success: false, message: 'Phone must be 10 digits starting with 0' })
       }
 
       if (password.length < 6) {
         return Response.json({ success: false, message: 'Password must be at least 6 characters' })
       }
 
-      referral = referral ? referral.trim().toUpperCase() : ''
-
-      if (referral && !isValidInviteCode(referral)) {
-        return Response.json({ success: false, message: 'Invalid referral code format' })
+      // Validate username
+      if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+        return Response.json({ success: false, message: 'Username must be 3-20 lowercase letters, numbers, or _' })
       }
 
-      const myInviteCode = getUserInviteCode(cleanPhone)
-      if (referral === myInviteCode) {
-        return Response.json({ success: false, message: 'Cannot use your own referral code' })
-      }
-
-      let upline1 = '', upline2 = '', upline3 = ''
-      
-      if (referral) {
-        const upline1Phone = await kv.get(`referral:${referral}`)
-        if (!upline1Phone) {
-          return Response.json({ success: false, message: 'Referral code not found' })
-        }
-        upline1 = upline1Phone
-
-        const upline1Key = `user:${upline1Phone}`
-        if ((await kv.type(upline1Key)) === 'hash') {
-          const upline1Data = await kv.hgetall(upline1Key)
-          if (upline1Data?.referralCode) {
-            const upline2Phone = await kv.get(`referral:${upline1Data.referralCode}`)
-            if (upline2Phone) upline2 = upline2Phone
-          }
-        }
-
-        if (upline2) {
-          const upline2Key = `user:${upline2}`
-          if ((await kv.type(upline2Key)) === 'hash') {
-            const upline2Data = await kv.hgetall(upline2Key)
-            if (upline2Data?.referralCode) {
-              const upline3Phone = await kv.get(`referral:${upline2Data.referralCode}`)
-              if (upline3Phone) upline3 = upline3Phone
-            }
-          }
-        }
-      }
+      const userKey = `user:${phone}`
+      const usernameKey = `username:${username}`
 
       // Check if phone exists
       if ((await kv.type(userKey)) === 'hash') {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
 
-      // Clean ALL case variants of username key to prevent WRONGTYPE
-      const variants = [
-        `username:${username}`,
-        `username:${username.toLowerCase()}`,
-        `username:${username.toUpperCase()}`,
-        `username:${username.charAt(0).toUpperCase() + username.slice(1)}`
-      ]
-      const uniqueVariants = [...new Set(variants)]
-      
-      for (const key of uniqueVariants) {
-        const t = await kv.type(key)
-        if (t === 'string') await kv.del(key)
-        if (t === 'hash') {
-          return Response.json({ success: false, message: 'Username taken' })
-        }
+      // Check username taken
+      if ((await kv.type(usernameKey)) === 'hash') {
+        return Response.json({ success: false, message: 'Username taken' })
       }
 
-      const inviteCode = getUserInviteCode(cleanPhone)
+      // Handle referral
+      let upline1 = '', upline2 = '', upline3 = ''
+      
+      if (referral) {
+        if (!isValidInviteCode(referral)) {
+          return Response.json({ success: false, message: 'Invalid referral code format' })
+        }
+
+        const upline1Phone = await kv.get(`referral:${referral}`)
+        if (!upline1Phone) {
+          return Response.json({ success: false, message: 'Referral code not found' })
+        }
+        
+        if (upline1Phone === phone) {
+          return Response.json({ success: false, message: 'Cannot use your own referral code' })
+        }
+        
+        upline1 = upline1Phone
+
+        // Get upline2
+        const upline1Data = await kv.hgetall(`user:${upline1Phone}`)
+        if (upline1Data?.upline1) {
+          upline2 = upline1Data.upline1
+        }
+
+        // Get upline3
+        if (upline2) {
+          const upline2Data = await kv.hgetall(`user:${upline2}`)
+          if (upline2Data?.upline1) {
+            upline3 = upline2Data.upline1
+          }
+        }
+
+        // Add to downline sets for MyTeam
+        await kv.sadd(`user:${upline1}:downline1`, phone)
+        if (upline2) await kv.sadd(`user:${upline2}:downline2`, phone)
+        if (upline3) await kv.sadd(`user:${upline3}:downline3`, phone)
+      }
+
+      const inviteCode = getUserInviteCode(phone)
       
       await kv.hset(userKey, {
         username,
-        displayName: body.username?.trim(),
-        phone: cleanPhone,
+        displayName: body.username,
+        phone,
         password,
         balance: '0',
         vip: '0',
@@ -120,8 +107,8 @@ export async function POST(request) {
         hasBoughtVIP: 'false'
       })
       
-      await kv.hset(usernameKey, { phone: cleanPhone })
-      await kv.set(`referral:${inviteCode}`, cleanPhone)
+      await kv.hset(usernameKey, { phone })
+      await kv.set(`referral:${inviteCode}`, phone)
 
       return Response.json({ 
         success: true, 
@@ -132,11 +119,11 @@ export async function POST(request) {
 
     // LOGIN
     if (action === 'login') {
-      if (!cleanPhone || !password) {
+      if (!phone || !password) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      const user = await kv.hgetall(userKey)
+      const user = await kv.hgetall(`user:${phone}`)
       
       if (!user || Object.keys(user).length === 0) {
         return Response.json({ success: false, message: 'User not found' })
