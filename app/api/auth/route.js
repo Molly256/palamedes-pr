@@ -16,7 +16,7 @@ export async function POST(request) {
 
     // REGISTER
     if (action === 'register') {
-      if (!username || !password || !phone) {
+      if (!username ||!password ||!phone) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
@@ -49,7 +49,7 @@ export async function POST(request) {
 
       // Handle referral
       let upline1 = '', upline2 = '', upline3 = ''
-      
+
       if (referral) {
         if (!isValidInviteCode(referral)) {
           return Response.json({ success: false, message: 'Invalid referral code format' })
@@ -59,11 +59,11 @@ export async function POST(request) {
         if (!upline1Phone) {
           return Response.json({ success: false, message: 'Referral code not found' })
         }
-        
+
         if (upline1Phone === phone) {
           return Response.json({ success: false, message: 'Cannot use your own referral code' })
         }
-        
+
         upline1 = upline1Phone
 
         // Get upline2
@@ -87,7 +87,8 @@ export async function POST(request) {
       }
 
       const inviteCode = getUserInviteCode(phone)
-      
+      const regDate = new Date().toISOString().split('T')[0]
+
       await kv.hset(userKey, {
         username,
         displayName: body.username,
@@ -104,32 +105,49 @@ export async function POST(request) {
         upline3,
         referralPaid: 'false',
         role: 'user',
-        hasBoughtVIP: 'false'
+        hasBoughtVIP: 'false',
+        regDate
       })
-      
+
       await kv.hset(usernameKey, { phone })
       await kv.set(`referral:${inviteCode}`, phone)
 
-      return Response.json({ 
-        success: true, 
+      // Auto-create 4 VIP0 tasks for registration day only
+      const tasks = []
+      for (let i = 1; i <= 4; i++) {
+        const taskId = `vip0_${phone}_${regDate}_${i}`
+        await kv.hset(taskId, {
+          userPhone: phone,
+          vipLevel: '0',
+          bookId: i,
+          reward: '625',
+          status: 'pending',
+          date: regDate
+        })
+        tasks.push(taskId)
+      }
+      await kv.sadd(`tasks:${phone}:${regDate}`,...tasks)
+
+      return Response.json({
+        success: true,
         message: 'Registered successfully',
-        inviteCode 
+        inviteCode
       })
     }
 
     // LOGIN
     if (action === 'login') {
-      if (!phone || !password) {
+      if (!phone ||!password) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
       const user = await kv.hgetall(`user:${phone}`)
-      
+
       if (!user || Object.keys(user).length === 0) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (String(user.password) !== String(password)) {
+      if (String(user.password)!== String(password)) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
@@ -149,7 +167,8 @@ export async function POST(request) {
           upline3: user.upline3 || '',
           referralPaid: user.referralPaid || 'false',
           role: user.role || 'user',
-          hasBoughtVIP: user.hasBoughtVIP === 'true'
+          hasBoughtVIP: user.hasBoughtVIP === 'true',
+          regDate: user.regDate || ''
         }
       })
     }
