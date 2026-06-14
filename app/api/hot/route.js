@@ -30,6 +30,13 @@ function parseKampalaDate(str) {
   return new Date(str)
 }
 
+function normalizePhone(phone) {
+  let clean = phone.replace('+', '')
+  if (clean.startsWith('256')) clean = '0' + clean.slice(3)
+  if (!/^0\d{9}$/.test(clean)) return null
+  return clean
+}
+
 async function getUserData(phone) {
   const userKey = `user:${phone}`
   if ((await kv.type(userKey)) === 'hash') {
@@ -47,10 +54,12 @@ async function pushTransaction(phone, tx) {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
-    const phone = searchParams.get('phone')
+    let phone = searchParams.get('phone')
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
-    if (!/^0\d{9}$/.test(phone)) return NextResponse.json({ success: false, message: 'Invalid phone' }, { status: 400 })
+    
+    phone = normalizePhone(phone)
+    if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
     const sharesKey = `share:palamedes:${phone}`
 
@@ -59,21 +68,34 @@ export async function GET(request) {
     }
 
     const sharesHash = await kv.hgetall(sharesKey)
-    let shares = Object.values(sharesHash || {}).map(s => JSON.parse(s))
+    
+    // Safe parse - skip corrupted entries
+    let shares = []
+    if (sharesHash) {
+      for (const [id, val] of Object.entries(sharesHash)) {
+        try {
+          shares.push(JSON.parse(val))
+        } catch (e) {
+          console.error('Bad share data for id:', id, val)
+          await kv.hdel(sharesKey, id) // delete corrupted entry
+        }
+      }
+    }
 
     const now = getUGNow()
 
-    shares = shares.map(s => {
+    // Auto-expire shares
+    const updatedShares = await Promise.all(shares.map(async (s) => {
       const endDate = parseKampalaDate(s.endDate)
       if (endDate &&!isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
         s.status = 'expired'
-        kv.hset(sharesKey, s.id, JSON.stringify(s))
+        await kv.hset(sharesKey, s.id, JSON.stringify(s))
       }
       return s
-    })
+    }))
 
-    const ongoing = shares.filter(s => s.status === 'ongoing')
-    const expired = shares.filter(s => s.status === 'expired')
+    const ongoing = updatedShares.filter(s => s.status === 'ongoing')
+    const expired = updatedShares.filter(s => s.status === 'expired')
 
     return NextResponse.json({ success: true, shares: ongoing, expired })
   } catch (err) {
@@ -89,7 +111,9 @@ export async function POST(request) {
     let { action, phone, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, shareId: collectShareId } = body
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
-    if (!/^0\d{9}$/.test(phone)) return NextResponse.json({ success: false, message: 'Phone must be 10 digits starting with 0' }, { status: 400 })
+    
+    phone = normalizePhone(phone)
+    if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
     const { user, userKey } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
