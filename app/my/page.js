@@ -41,13 +41,6 @@ export default function MyPage() {
     }).format(new Date(dateStr))
   }
 
-  const isWeekend = (date) => {
-    const day = new Intl.DateTimeFormat('en-UG', {
-      timeZone: TZ, weekday: 'short'
-    }).format(date)
-    return day === 'Sat' || day === 'Sun'
-  }
-
   const calculateEarnings = () => {
     if (!userData) return {
       yesterday: 0, today: 0, thisWeek: 0, thisMonth: 0,
@@ -76,25 +69,23 @@ export default function MyPage() {
       if (isNaN(txDate)) return
       const txDateUG = getUGDate(txDate)
 
-      if (isWeekend(txDateUG)) return
+      // REMOVED: isWeekend check - now counts all days
+      const amt = Math.abs(Number(tx.amount) || 0)
 
       if (txDateUG >= vipStart && tx.type === 'task_reward') {
-        totalAmt += tx.amount
-        if (txDateUG.getTime() === todayUG.getTime()) todayAmt += tx.amount
-        if (txDateUG.getTime() === yesterdayUG.getTime()) yesterdayAmt += tx.amount
-        if (txDateUG >= weekStartUG) weekAmt += tx.amount
-        if (txDateUG >= monthStartUG) monthAmt += tx.amount
+        totalAmt += amt
+        if (txDateUG.getTime() === todayUG.getTime()) todayAmt += amt
+        if (txDateUG.getTime() === yesterdayUG.getTime()) yesterdayAmt += amt
+        if (txDateUG >= weekStartUG) weekAmt += amt
+        if (txDateUG >= monthStartUG) monthAmt += amt
       }
 
       if (tx.type === 'referral_reward') {
-        if (tx.desc?.includes('Team A')) inviteA += tx.amount
-        else if (tx.desc?.includes('Team B')) inviteB += tx.amount
-        else if (tx.desc?.includes('Team C')) inviteC += tx.amount
+        if (tx.desc?.includes('Team A')) inviteA += amt
+        else if (tx.desc?.includes('Team B')) inviteB += amt
+        else if (tx.desc?.includes('Team C')) inviteC += amt
       }
     })
-
-    if (isWeekend(yesterdayUG)) yesterdayAmt = 0
-    if (isWeekend(todayUG)) todayAmt = 0
 
     return {
       yesterday: yesterdayAmt,
@@ -105,7 +96,7 @@ export default function MyPage() {
       inviteA,
       inviteB,
       inviteC,
-      deposit: Number(userData.vipPricePaid) || 0, // FIXED: use actual paid amount from DB
+      deposit: Number(userData.vipPricePaid) || 0,
       balance: userData.balance || 0
     }
   }
@@ -138,6 +129,7 @@ export default function MyPage() {
     }
 
     try {
+      // Keep using /api/my since you have it
       const res = await fetch(`/api/my?phone=${user.phone}`)
       const data = await res.json()
 
@@ -173,9 +165,6 @@ export default function MyPage() {
     </div>
   )
 
-  const todayUG = getUGDate()
-  const isTodayWeekend = isWeekend(todayUG)
-
   if (loading) {
     return <div style={{minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 0'}}>Loading...</div>
   }
@@ -205,11 +194,7 @@ export default function MyPage() {
           </p>
         )}
 
-        {isTodayWeekend && (
-          <p style={{textAlign: 'center', fontSize: '12px', color: '#ef4444', marginBottom: '12px'}}>
-            No tasks available on weekends
-          </p>
-        )}
+        {/* REMOVED: Red weekend text is gone */}
 
         <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'}}>
           <Box title="Yesterday's income" amount={earnings.yesterday} />
