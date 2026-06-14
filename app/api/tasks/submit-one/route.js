@@ -40,25 +40,31 @@ export async function POST(request) {
     const today = getUGDateStr()
 
     const user = await kv.hgetall(`user:${normalizedPhone}`)
-    if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+    if (!user || Object.keys(user).length === 0) {
+      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+    }
 
     const vipLevel = Number(user.vip) || 0
     const reward = VIP_CONFIG[vipLevel]?.perBook || 625
     const maxBooks = VIP_CONFIG[vipLevel]?.books || 4
     const taskKey = `task:${normalizedPhone}:${today}`
 
-    // Use pipeline to make it atomic
+    // Get current tasks and user data atomically
     const pipe = kv.pipeline()
     pipe.hgetall(taskKey)
     pipe.hgetall(`user:${normalizedPhone}`)
     const [taskData, userData] = await pipe.exec()
 
-    if (!taskData) return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
-    if (taskData[taskId] === 'submitted') {
+    const safeTaskData = taskData || {}
+    if (Object.keys(safeTaskData).length === 0) {
+      return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
+    }
+
+    if (safeTaskData[taskId] === 'submitted') {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    // Mark submitted + add reward + log transaction in one go
+    // Mark submitted + add reward + log transaction
     const pipe2 = kv.pipeline()
     pipe2.hset(taskKey, { [taskId]: 'submitted' })
     pipe2.hincrby(`user:${normalizedPhone}`, 'balance', reward)
@@ -70,8 +76,8 @@ export async function POST(request) {
       desc: `Task ${taskId} completed`
     }))
 
-    // Check if all done
-    const updatedTaskData = {...taskData, [taskId]: 'submitted' }
+    // Check if all books are done
+    const updatedTaskData = {...safeTaskData, [taskId]: 'submitted' }
     let allDone = true
     for (let i = 1; i <= maxBooks; i++) {
       if (updatedTaskData[`book${i}`]!== 'submitted') {
@@ -79,6 +85,7 @@ export async function POST(request) {
         break
       }
     }
+
     if (allDone) {
       pipe2.hset(`user:${normalizedPhone}`, {
         tasksCompleted: maxBooks,
