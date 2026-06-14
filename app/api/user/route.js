@@ -46,10 +46,11 @@ function getISOTimestamp() {
   return new Date().toISOString()
 }
 
-function isWeekdayKampala() {
-  const weekday = new Date().toLocaleDateString('en-US', { timeZone: 'Africa/Kampala', weekday: 'short' })
-  return!['Sat', 'Sun'].includes(weekday)
-}
+// REMOVED: Weekend restriction
+// function isWeekdayKampala() {
+// const weekday = new Date().toLocaleDateString('en-US', { timeZone: 'Africa/Kampala', weekday: 'short' })
+// return!['Sat', 'Sun'].includes(weekday)
+// }
 
 function getTodayKey(phone) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -170,8 +171,8 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
- .filter(t => t.type === 'referral_reward' && t.status === 'success')
- .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+.filter(t => t.type === 'referral_reward' && t.status === 'success')
+.reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
@@ -211,7 +212,8 @@ export async function GET(request) {
     const vipLevel = Number(user.vip) || 0
     const todayKey = getTodayKey(phone)
 
-    if (isWeekdayKampala() && user.vipLocked!== 'true') {
+    // REMOVED: isWeekdayKampala() check - tasks now work every day
+    if (user.vipLocked!== 'true') {
       if ((await kv.type(todayKey)) === 'hash') {
         tasks = await kv.hgetall(todayKey)
       }
@@ -254,7 +256,7 @@ export async function GET(request) {
         createdAt: user.createdAt || ''
       },
       tasks,
-      isWeekday: isWeekdayKampala()
+      isWeekday: true // Always true now
     })
   } catch (err) {
     console.error('GET /api/user error:', err)
@@ -342,9 +344,10 @@ export async function POST(request) {
     }
 
     if (action === 'submitTask') {
-      if (!isWeekdayKampala()) {
-        return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
-      }
+      // REMOVED: Weekend check
+      // if (!isWeekdayKampala()) {
+      // return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
+      // }
 
       const currentVipLevel = Number(user.vip) || 0
       const config = VIP_CONFIG[currentVipLevel]
@@ -440,7 +443,8 @@ export async function POST(request) {
 
       await kv.del(todayKey)
 
-      if (isWeekdayKampala() &&!alreadyFinishedToday) {
+      // REMOVED: isWeekdayKampala() check - create tasks every day
+      if (!alreadyFinishedToday) {
         const taskObj = {}
         for (let i = 1; i <= config.books; i++) taskObj[`book${i}`] = 'pending'
         taskObj.income = String(config.books * config.perBook)
