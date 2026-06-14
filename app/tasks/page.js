@@ -40,7 +40,6 @@ export default function TasksPage() {
       const data = await res.json()
 
       if (!data.success) {
-        console.error(data.message)
         setTodayBooks([])
         return
       }
@@ -65,7 +64,8 @@ export default function TasksPage() {
           title: booksData[bookNum - 1]?.title || `Book ${bookNum}`,
           cover: booksData[bookNum - 1]?.cover || booksData[0]?.cover,
           preview: booksData[bookNum - 1]?.preview || "",
-          status: task.status
+          status: task.status,
+          reward: task.reward
         }
       })
       setTodayBooks(books)
@@ -100,58 +100,44 @@ export default function TasksPage() {
     ))
   }
 
-  const handlePopupOk = () => {
+  const handlePopupOk = async () => {
     setShowPopup(false)
     setTimer(10)
-  }
 
-  const handleSubmit = async () => {
-    if (!user || loading || user.vipLocked === 'true') return
+    if (!readingBook ||!user) return
 
-    const config = VIP_CONFIG[user.vip] || { books: 4, incomePerBook: 625 }
-    const maxBooks = config.books
-    const incomePerBook = config.incomePerBook
-
-    const allRead = todayBooks.slice(0, maxBooks).every(b => b.status === 'read')
-    if (!allRead) {
-      alert('Read all books first')
-      return
-    }
-
-    const totalIncome = maxBooks * incomePerBook
+    // Submit this single book immediately
     setLoading(true)
-
     try {
       const res = await fetch('/api/tasks/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: user.phone,
-          taskIncome: totalIncome
+          taskIncome: readingBook.reward
         })
       })
 
       const data = await res.json()
 
       if (data.success) {
-        const oldBalance = Number(user.balance) || 0
-        const newBalance = oldBalance + totalIncome
-
-        const updatedUser = {
-        ...user,
-          balance: newBalance,
-          tasksCompleted: maxBooks,
-          vipLocked: 'true'
-        }
-
+        const newBalance = Number(user.balance) + readingBook.reward
+        const updatedUser = {...user, balance: newBalance }
         setUser(updatedUser)
         localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
-        setTodayBooks(prev => prev.map(b => ({...b, status: 'submitted' })))
-        alert(`+${totalIncome.toLocaleString()}shs added!`)
+        setTodayBooks(prev => prev.map(b =>
+          b.taskKey === readingBook.taskKey? {...b, status: 'submitted' } : b
+        ))
+
+        alert(`+${readingBook.reward.toLocaleString()}shs added!`)
         localStorage.setItem('palamedes_refresh_my', 'true')
       } else {
-        alert(data.message || 'Failed to submit task')
+        alert(data.message || 'Failed to submit')
+        // revert status back to pending if failed
+        setTodayBooks(prev => prev.map(b =>
+          b.taskKey === readingBook.taskKey? {...b, status: 'pending' } : b
+        ))
       }
     } catch (err) {
       console.error(err)
@@ -185,12 +171,13 @@ export default function TasksPage() {
           }}>
             <div style={{ background: "#FFFFFF", padding: 30, borderRadius: 16, textAlign: "center", border: `2px solid ${SKYBLUE}` }}>
               <h3 style={{ color: "#000", margin: "0 0 10px 0", fontSize: 24, fontWeight: "400" }}>Time Complete ⌛</h3>
-              <p style={{ color: "#666", fontSize: 14, marginBottom: 15 }}>Tap Submit on tasks page to claim</p>
-              <button onClick={handlePopupOk} style={{
+              <p style={{ color: "#666", fontSize: 14, marginBottom: 15 }}>+{readingBook.reward.toLocaleString()}shs will be added</p>
+              <button onClick={handlePopupOk} disabled={loading} style={{
                 padding: "12px 24px", background: SKYBLUE, border: "none",
-                borderRadius: 8, fontWeight: "400", cursor: "pointer", fontSize: 16, color: "#000"
+                borderRadius: 8, fontWeight: "400", cursor: loading? "not-allowed" : "pointer",
+                fontSize: 16, color: "#000", opacity: loading? 0.6 : 1
               }}>
-                OK
+                {loading? 'Adding...' : 'OK'}
               </button>
             </div>
           </div>
@@ -199,9 +186,8 @@ export default function TasksPage() {
     )
   }
 
-  const pendingBooks = todayBooks.filter(b => b.status === 'pending' || b.status === 'read' || b.status === 'reading')
+  const pendingBooks = todayBooks.filter(b => b.status === 'pending' || b.status === 'reading' || b.status === 'read')
   const submittedBooks = todayBooks.filter(b => b.status === 'submitted')
-  const allRead = pendingBooks.length > 0 && pendingBooks.every(b => b.status === 'read')
 
   return (
     <div style={{ padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000" }}>
@@ -215,66 +201,45 @@ export default function TasksPage() {
           {user.vipLocked === 'true'? "Tasks locked. Wait for next weekday." : "No tasks available"}
         </p>
       ) : (
-        <>
-          {pendingBooks.map((book) => {
-            const isRead = book.status === 'read' || book.status === 'submitted'
-            const isReading = book.status === 'reading'
+        pendingBooks.map((book) => {
+          const isRead = book.status === 'read' || book.status === 'submitted'
+          const isReading = book.status === 'reading'
 
-            return (
-              <div key={book.taskKey} style={{
-                padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
-                borderBottom: "1px solid #E0E0E0"
-              }}>
-                <img src={book.cover} alt={book.title} style={{
-                  width: 70, height: 100, objectFit: "cover", borderRadius: 8
-                }} />
-                <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
-                    {book.title}
-                  </h4>
-                  <button
-                    onClick={() => handleRead(book)}
-                    disabled={isRead || isReading}
-                    style={{
-                      padding: "8px 16px",
-                      background: isRead? "#E0E0E0" : isReading? "#B0B0B0" : SKYBLUE,
-                      border: "none",
-                      borderRadius: 6,
-                      fontWeight: "400",
-                      cursor: (isRead || isReading)? "not-allowed" : "pointer",
-                      color: "#000",
-                      opacity: (isRead || isReading)? 0.6 : 1
-                    }}
-                  >
-                    {isRead? "Read ✓" : isReading? "Reading..." : "Read"}
-                  </button>
-                </div>
+          return (
+            <div key={book.taskKey} style={{
+              padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
+              borderBottom: "1px solid #E0E0E0"
+            }}>
+              <img src={book.cover} alt={book.title} style={{
+                width: 70, height: 100, objectFit: "cover", borderRadius: 8
+              }} />
+              <div style={{ flex: 1 }}>
+                <h4 style={{ margin: "0 0 5px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
+                  {book.title}
+                </h4>
+                <p style={{ margin: "0 0 10px 0", fontSize: 14, color: SKYBLUE }}>
+                  +{book.reward.toLocaleString()}shs
+                </p>
+                <button
+                  onClick={() => handleRead(book)}
+                  disabled={isRead || isReading}
+                  style={{
+                    padding: "8px 16px",
+                    background: isRead? "#E0E0E0" : isReading? "#B0B0B0" : SKYBLUE,
+                    border: "none",
+                    borderRadius: 6,
+                    fontWeight: "400",
+                    cursor: (isRead || isReading)? "not-allowed" : "pointer",
+                    color: "#000",
+                    opacity: (isRead || isReading)? 0.6 : 1
+                  }}
+                >
+                  {isRead? "Read ✓" : isReading? "Reading..." : "Read"}
+                </button>
               </div>
-            )
-          })}
-
-          {allRead && (
-            <button
-              onClick={handleSubmit}
-              disabled={loading || user.vipLocked === 'true'}
-              style={{
-                width: '100%',
-                padding: "14px",
-                background: SKYBLUE,
-                border: "none",
-                borderRadius: 8,
-                color: "#000",
-                fontWeight: "600",
-                fontSize: 16,
-                cursor: loading || user.vipLocked === 'true'? "not-allowed" : "pointer",
-                opacity: loading || user.vipLocked === 'true'? 0.6 : 1,
-                marginTop: 20
-              }}
-            >
-              {loading? 'Submitting...' : `Submit All Tasks (+${(VIP_CONFIG[user.vip]?.books * VIP_CONFIG[user.vip]?.incomePerBook).toLocaleString()}shs)`}
-            </button>
-          )}
-        </>
+            </div>
+          )
+        })
       )}
 
       <h2 style={{ marginTop: 40, marginBottom: 20, fontWeight: "400", color: "#000" }}>
@@ -289,7 +254,10 @@ export default function TasksPage() {
             borderBottom: "1px solid #E0E0E0"
           }}>
             <img src={book.cover} style={{ width: 50, height: 75, objectFit: "cover", borderRadius: 6 }} />
-            <p style={{ margin: 0, fontWeight: "400", color: "#000" }}>{book.title}</p>
+            <div>
+              <p style={{ margin: 0, fontWeight: "400", color: "#000" }}>{book.title}</p>
+              <p style={{ margin: 0, fontSize: 13, color: SKYBLUE }}>+{book.reward.toLocaleString()}shs</p>
+            </div>
           </div>
         ))
       )}
