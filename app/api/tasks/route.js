@@ -46,29 +46,52 @@ export async function GET(request) {
     const vip = Number(user.vip) || 0
     const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
 
-    let taskIds = await kv.smembers(`tasks:${phone}:${today}`)
+    const taskKey = `task:${phone}:${today}`
+    const oldSetKey = `tasks:${phone}:${today}`
 
-    if (!taskIds || taskIds.length === 0) {
-      const tasks = []
-      for (let i = 1; i <= config.books; i++) {
-        const taskId = `book${i}`
-        await kv.hset(`task:${phone}:${today}`, { [taskId]: 'pending' })
-        tasks.push({ taskId, bookId: i, status: 'pending', reward: config.perBook })
+    // Get existing task data
+    let taskData = await kv.hgetall(taskKey) || {}
+
+    // If no tasks, check for old format and migrate
+    if (Object.keys(taskData).length === 0) {
+      const oldTaskIds = await kv.smembers(oldSetKey)
+
+      if (oldTaskIds && oldTaskIds.length > 0) {
+        // Migrate from old format to new format
+        for (let i = 0; i < oldTaskIds.length; i++) {
+          taskData[`book${i + 1}`] = 'pending'
+        }
+        await kv.hset(taskKey, taskData)
+        // Delete old set to avoid confusion
+        await kv.del(oldSetKey)
+      } else {
+        // Create fresh tasks for today
+        taskData = {}
+        for (let i = 1; i <= config.books; i++) {
+          taskData[`book${i}`] = 'pending'
+        }
+        await kv.hset(taskKey, taskData)
       }
-      await kv.sadd(`tasks:${phone}:${today}`,...tasks.map(t => t.taskId))
-      return NextResponse.json({ success: true, tasks, completed: 0, total: config.books })
     }
 
-    const taskData = await kv.hgetall(`task:${phone}:${today}`) || {}
-    const tasks = Object.keys(taskData).map(k => ({
-      taskId: k,
-      bookId: Number(k.replace('book', '')),
-      status: taskData[k],
-      reward: config.perBook
-    }))
+    // Build response
+    const tasks = Object.keys(taskData)
+     .sort((a, b) => Number(a.replace('book', '')) - Number(b.replace('book', '')))
+     .map(k => ({
+        taskId: k,
+        bookId: Number(k.replace('book', '')),
+        status: taskData[k],
+        reward: config.perBook
+      }))
 
     const completed = tasks.filter(t => t.status === 'submitted').length
-    return NextResponse.json({ success: true, tasks, completed, total: config.books })
+
+    return NextResponse.json({
+      success: true,
+      tasks,
+      completed,
+      total: config.books
+    })
 
   } catch (err) {
     console.error('Tasks GET error:', err)
