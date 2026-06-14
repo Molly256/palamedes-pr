@@ -26,6 +26,7 @@ export default function TasksPage() {
   const [timer, setTimer] = useState(10)
   const [showPopup, setShowPopup] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [submittingBook, setSubmittingBook] = useState(null)
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
@@ -44,16 +45,18 @@ export default function TasksPage() {
       if (data.tasks) {
         const maxBooks = VIP_CONFIG[data.user.vip]?.books || 0
         const bookKeys = Object.keys(data.tasks)
-       .filter(k => k.startsWith('book'))
-       .slice(0, maxBooks)
+      .filter(k => k.startsWith('book') &&!k.includes('_'))
+      .slice(0, maxBooks)
 
-        const books = bookKeys.map((key, idx) => {
-          const bookNum = idx + 1
+        const books = bookKeys.map((key) => {
+          const bookNum = parseInt(key.replace('book', ''))
           return {
-          ...booksData[idx % booksData.length],
             bookNum,
-            status: data.tasks[key],
-            taskKey: key
+            taskKey: key,
+            title: booksData[bookNum - 1]?.title || `Book ${bookNum}`,
+            cover: booksData[bookNum - 1]?.cover || booksData[0]?.cover,
+            preview: booksData[bookNum - 1]?.preview || "",
+            status: data.tasks[key]
           }
         })
 
@@ -78,7 +81,7 @@ export default function TasksPage() {
         b.taskKey === readingBook.taskKey? {...b, status: 'read' } : b
       ))
       setShowPopup(true)
-      setReadingBook(null) // stop re-triggering
+      setReadingBook(null)
     }
     return () => clearTimeout(t)
   }, [timer, readingBook])
@@ -89,7 +92,6 @@ export default function TasksPage() {
     setTimer(10)
     setShowPopup(false)
 
-    // Optimistically lock the button instantly
     setTodayBooks(prev => prev.map(b =>
       b.taskKey === book.taskKey? {...b, status: 'reading' } : b
     ))
@@ -101,7 +103,7 @@ export default function TasksPage() {
   }
 
   const handleSubmit = async (bookNum) => {
-    if (!user || loading) return
+    if (!user || loading || submittingBook) return
     if (user.vipLocked === 'true') {
       alert('Daily tasks completed. Wait for next weekday.')
       return
@@ -110,31 +112,20 @@ export default function TasksPage() {
     const maxBooks = VIP_CONFIG[user.vip]?.books || 0
     if (bookNum > maxBooks) {
       alert(`Invalid book for VIP${user.vip}`)
-      await fetchTasks(user.phone)
-      return
-    }
-
-    const fresh = await fetch(`/api/user?phone=${user.phone}`)
-    const freshData = await fresh.json()
-    if (!freshData.success) {
-      alert('Failed to refresh tasks')
       return
     }
 
     const bookKey = `book${bookNum}`
-    if (!freshData.tasks[bookKey]) {
-      alert('Invalid book for your VIP level')
-      await fetchTasks(user.phone)
-      return
-    }
+    const currentBook = todayBooks.find(b => b.bookNum === bookNum)
 
-    if (freshData.tasks[bookKey] === 'submitted') {
-      await fetchTasks(user.phone)
+    if (!currentBook || currentBook.status === 'submitted') {
       alert('Already submitted')
       return
     }
 
+    setSubmittingBook(bookNum)
     setLoading(true)
+
     try {
       const res = await fetch('/api/user', {
         method: 'POST',
@@ -146,25 +137,25 @@ export default function TasksPage() {
         })
       })
 
-      const text = await res.text()
-      let data
-      try {
-        data = JSON.parse(text)
-      } catch (e) {
-        alert('Server error: ' + text.slice(0, 150))
-        return
-      }
+      const data = await res.json()
 
       if (data.success) {
         const oldBalance = user.balance
+        const newBalance = data.balance
+
         setUser(prev => {
-          const updated = {...prev, balance: data.balance }
+          const updated = {...prev, balance: newBalance }
           localStorage.setItem('palamedes_user', JSON.stringify(updated))
           return updated
         })
 
-        await fetchTasks(user.phone)
-        alert(`+${data.balance - oldBalance}shs added!`)
+        // Only update the 1 book that was submitted
+        setTodayBooks(prev => prev.map(b =>
+          b.bookNum === bookNum? {...b, status: 'submitted' } : b
+        ))
+        setTasks(prev => ({...prev, [bookKey]: 'submitted' }))
+
+        alert(`+${newBalance - oldBalance}shs added!`)
       } else {
         alert(data.message || 'Failed to submit task')
       }
@@ -173,6 +164,7 @@ export default function TasksPage() {
       alert('Network error')
     } finally {
       setLoading(false)
+      setSubmittingBook(null)
     }
   }
 
@@ -229,10 +221,11 @@ export default function TasksPage() {
           {user.vipLocked === 'true'? "Tasks locked. Wait for next weekday." : "No tasks available"}
         </p>
       ) : (
-        pendingBooks.map((book, idx) => {
+        pendingBooks.map((book) => {
           const isRead = book.status === 'read' || book.status === 'submitted'
           const isReading = book.status === 'reading'
           const canSubmit = book.status === 'read'
+          const isSubmitting = submittingBook === book.bookNum
 
           return (
             <div key={book.taskKey} style={{
@@ -277,7 +270,7 @@ export default function TasksPage() {
                       opacity: loading ||!canSubmit || user.vipLocked === 'true'? 0.6 : 1
                     }}
                   >
-                    {loading? 'Submitting...' : 'Submit'}
+                    {isSubmitting? 'Submitting...' : 'Submit'}
                   </button>
                 </div>
               </div>
