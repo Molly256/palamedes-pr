@@ -31,7 +31,7 @@ function parseKampalaDate(str) {
 }
 
 function normalizePhone(phone) {
-  let clean = phone.replace('+', '')
+  let clean = String(phone).replace('+', '').trim()
   if (clean.startsWith('256')) clean = '0' + clean.slice(3)
   if (!/^0\d{9}$/.test(clean)) return null
   return clean
@@ -63,21 +63,20 @@ export async function GET(request) {
 
     const sharesKey = `share:palamedes:${phone}`
 
-    if ((await kv.type(sharesKey))!== 'hash') {
+    if ((await kv.type(sharesKey)) !== 'hash') {
       return NextResponse.json({ success: true, shares: [], expired: [] })
     }
 
     const sharesHash = await kv.hgetall(sharesKey)
     
-    // Safe parse - skip corrupted entries
     let shares = []
     if (sharesHash) {
       for (const [id, val] of Object.entries(sharesHash)) {
         try {
           shares.push(JSON.parse(val))
         } catch (e) {
-          console.error('Bad share data for id:', id, val)
-          await kv.hdel(sharesKey, id) // delete corrupted entry
+          console.error('Deleting corrupted share:', id, val)
+          await kv.hdel(sharesKey, id)
         }
       }
     }
@@ -87,7 +86,7 @@ export async function GET(request) {
     // Auto-expire shares
     const updatedShares = await Promise.all(shares.map(async (s) => {
       const endDate = parseKampalaDate(s.endDate)
-      if (endDate &&!isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
+      if (endDate && !isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
         s.status = 'expired'
         await kv.hset(sharesKey, s.id, JSON.stringify(s))
       }
@@ -110,6 +109,7 @@ export async function POST(request) {
     const body = await request.json()
     let { action, phone, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, shareId: collectShareId } = body
 
+    if (!action) return NextResponse.json({ success: false, message: 'Action required' }, { status: 400 })
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
     
     phone = normalizePhone(phone)
@@ -187,7 +187,7 @@ export async function POST(request) {
       if (!shareStr) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
 
       const share = JSON.parse(shareStr)
-      if (share.status!== 'ongoing') {
+      if (share.status !== 'ongoing') {
         return NextResponse.json({ success: false, message: 'Share already collected' }, { status: 400 })
       }
 
