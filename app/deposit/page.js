@@ -19,7 +19,7 @@ export default function Deposit() {
   }, [router])
 
   const methods = [
-    { name: 'MTN Mobile money', number: '0769306151', account: 'BETTY ANYAITI' },
+    { name: 'MTN Mobile money', number: '0743946046', account: 'ALLEN NAWANGI' },
     { name: 'Airtel mobile money', number: '0748575505', account: 'ANTHONY OTIBOK' }
   ]
 
