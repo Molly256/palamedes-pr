@@ -227,8 +227,8 @@ export default function InvitePage() {
                 <tbody>
                   {vipLevels.map((v, i) => {
                     const daily = v.books * v.rate
-                    const monthly = daily * 30
-                    const yearly = daily * 365
+                    const monthly = i === 0 ? 0 : daily * 30
+                    const yearly = i === 0 ? 0 : daily * 365
                     return (
                       <tr key={i}>
                         <td style={{border: '1px solid black', padding: '8px 12px', fontWeight: '600', color: '#111', whiteSpace: 'nowrap'}}>{v.level}</td>
