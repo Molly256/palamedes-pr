@@ -7,7 +7,7 @@ import AvatarWithBadge from '../../components/AvatarWithBadge'
  * @typedef {Object} User
  * @property {string} username
  * @property {string} phone
- * @property {number} balance
+ * @property {number} available_balance
  * @property {number} vip
  * @property {number} vipPricePaid
  * @property {boolean} vipLocked
@@ -71,6 +71,7 @@ export default function VipTask() {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!userData.phone) return
     userData.vip = Number(userData.vip || 0)
+    userData.available_balance = Number(userData.available_balance || 0) // fix here
     if (!userData.tasks_read_today) userData.tasks_read_today = 0
     localStorage.setItem('palamedes_user', JSON.stringify(userData))
     setUser(userData)
@@ -94,7 +95,7 @@ export default function VipTask() {
 
     const newPrice = selectedVip.price
 
-    if ((user.balance || 0) < newPrice) {
+    if ((user.available_balance || 0) < newPrice) { // fix here
       alert('Insufficient balance. Need full amount to upgrade')
       return
     }
@@ -148,11 +149,11 @@ export default function VipTask() {
             username={user.username}
             vipLevel={currentVipLevel}
             size={60}
-            key={currentVipLevel + '-' + user.balance}
+            key={currentVipLevel + '-' + user.available_balance}
           />
           <div style={{ marginTop: '8px', textAlign: 'left' }}>
             <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>
-              Balance: {user.balance?.toLocaleString() || 0} shs
+              Balance: {user.available_balance?.toLocaleString() || 0} shs
             </p>
             <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
               {vips[currentVipLevel]?.name || 'VIP 0.Internship'}
