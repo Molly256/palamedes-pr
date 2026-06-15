@@ -17,12 +17,13 @@ export default function Withdraw() {
 
   useEffect(() => {
     const userData = localStorage.getItem('palamedes_user')
-    if (userData) {
-      setUser(JSON.parse(userData))
-    } else {
+    if (!userData) {
       router.push('/login')
       return
     }
+
+    const localUser = JSON.parse(userData)
+    loadUser(localUser.phone)
 
     const bankInfo = JSON.parse(localStorage.getItem('palamedes_bank_info') || 'null')
     if (bankInfo && bankInfo.number && bankInfo.names) {
@@ -33,16 +34,28 @@ export default function Withdraw() {
     checkWithdrawWindow()
   }, [router])
 
+  const loadUser = async (phone) => {
+    try {
+      const res = await fetch(`/api/user?action=getDashboard&phone=${phone}&t=${Date.now()}`)
+      const data = await res.json()
+      if (data.success && data.user) {
+        setUser(data.user)
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      }
+    } catch (e) {
+      console.log('Failed to fetch user:', e)
+    }
+  }
+
   const checkWithdrawWindow = () => {
     const now = new Date()
-    // Get Uganda time: Africa/Kampala UTC+3
     const ugandaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
 
-    const day = ugandaTime.getDay() // 0 = Sunday, 1 = Monday,..., 6 = Saturday
+    const day = ugandaTime.getDay()
     const hour = ugandaTime.getHours()
     const minute = ugandaTime.getMinutes()
 
-    const isWeekday = day >= 1 && day <= 5 // Monday to Friday
+    const isWeekday = day >= 1 && day <= 5
     const isOpenTime = (hour > 10 || (hour === 10 && minute >= 0)) && (hour < 17 || (hour === 17 && minute === 0))
 
     setIsWithdrawOpen(isWeekday && isOpenTime)
@@ -79,7 +92,7 @@ export default function Withdraw() {
       return
     }
 
-    if (withdrawAmount > user.balance) {
+    if (withdrawAmount > user.available_balance) {
       alert('Insufficient balance')
       return
     }
@@ -134,9 +147,9 @@ export default function Withdraw() {
         </button>
 
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '2px solid #87CEEB', marginBottom: '25px', textAlign: 'center' }}>
-          <p style={{ color: '#999', fontSize: '14px', marginBottom: '5px' }}>User account balance</p>
+          <p style={{ color: '#999', fontSize: '14px', marginBottom: '5px' }}>Available Balance</p>
           <h2 style={{ fontSize: '32px', color: '#87CEEB', fontWeight: '900' }}>
-            UGX {user.balance.toLocaleString()}
+            UGX {user.available_balance.toLocaleString()}
           </h2>
         </div>
 
