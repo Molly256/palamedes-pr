@@ -62,40 +62,38 @@ export async function GET(request) {
     if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
     const sharesKey = `share:palamedes:${phone}`
+    console.error('GET DEBUG: Looking for key', sharesKey)
 
     if ((await kv.type(sharesKey)) !== 'hash') {
+      console.error('GET DEBUG: Key not found or not hash')
       return NextResponse.json({ success: true, shares: [], expired: [] })
     }
 
     const sharesHash = await kv.hgetall(sharesKey)
+    console.error('GET DEBUG: Raw hash', sharesHash)
     
     let shares = []
     if (sharesHash) {
       for (const [id, val] of Object.entries(sharesHash)) {
         try {
-          // Only keep valid JSON share objects
           if (typeof val === 'string' && val.startsWith('{')) {
             const share = JSON.parse(val)
-            // Skip if it's missing required fields - this removes legacy entries
             if (share.id && share.endDate && share.status) {
               shares.push(share)
             } else {
-              // Delete legacy garbage entry
               await kv.hdel(sharesKey, id)
             }
           } else {
-            // Delete old number format entries like "pride": "7"
             await kv.hdel(sharesKey, id)
           }
         } catch (e) {
+          console.error('GET DEBUG: Error parsing share', id, e)
           await kv.hdel(sharesKey, id)
         }
       }
     }
 
     const now = getUGNow()
-
-    // Auto-expire shares
     const updatedShares = await Promise.all(shares.map(async (s) => {
       if (s.status === 'ongoing') {
         const endDate = parseKampalaDate(s.endDate)
@@ -110,6 +108,7 @@ export async function GET(request) {
     const ongoing = updatedShares.filter(s => s.status === 'ongoing')
     const expired = updatedShares.filter(s => s.status === 'expired')
 
+    console.error('GET DEBUG: Returning', ongoing.length, 'ongoing,', expired.length, 'expired')
     return NextResponse.json({ success: true, shares: ongoing, expired })
   } catch (err) {
     console.error('GET /api/hot error:', err)
@@ -119,8 +118,11 @@ export async function GET(request) {
 
 // POST - Buy or collect share
 export async function POST(request) {
+  console.error('=== POST /api/hot START ===')
   try {
     const body = await request.json()
+    console.error('POST DEBUG: Body received', JSON.stringify(body))
+    
     let { action, phone, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, shareId: collectShareId } = body
 
     if (!action) return NextResponse.json({ success: false, message: 'Action required' }, { status: 400 })
@@ -133,14 +135,23 @@ export async function POST(request) {
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     const sharesKey = `share:palamedes:${phone}`
+    console.error('POST DEBUG: Using sharesKey', sharesKey)
 
     if (action === 'buyShare') {
       const config = SHARE_CONFIG[shareId]
-      if (!config) return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
+      console.error('POST DEBUG: Config for shareId', shareId, config)
+      
+      if (!config) {
+        console.error('POST DEBUG: Invalid shareId')
+        return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
+      }
 
       const qty = Number(quantity) || 1
+      const cycle = Number(cycleDays) || Number(config.cycle) || 30
       const cost = Number(totalCost) || config.price * qty
       const balance = Number(user.balance) || 0
+
+      console.error('POST DEBUG: Balance', balance, 'Cost', cost, 'Cycle', cycle)
 
       if (balance < cost) {
         return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
@@ -148,12 +159,13 @@ export async function POST(request) {
 
       const newBalance = balance - cost
       await kv.hset(userKey, { balance: String(newBalance) })
+      console.error('POST DEBUG: Balance updated to', newBalance)
 
       const buyDate = getUGNow()
       const endDate = new Date(buyDate)
-      endDate.setDate(endDate.getDate() + Number(cycleDays || config.cycle))
+      endDate.setDate(endDate.getDate() + cycle)
 
-      const expectedProfit = Math.round(config.price * qty * config.daily * config.cycle)
+      const expectedProfit = Math.round(config.price * qty * config.daily * cycle)
       const shareIdUnique = `${shareId}_${Date.now()}`
 
       const shareData = {
@@ -164,7 +176,7 @@ export async function POST(request) {
         pricePerShare: config.price,
         totalInvested: cost,
         dailyProfit: config.daily * 100,
-        cycleDays: Number(cycleDays || config.cycle),
+        cycleDays: cycle,
         expectedProfit: expectedProfit,
         buyDate: formatKampalaDate(buyDate),
         endDate: formatKampalaDate(endDate),
@@ -173,7 +185,9 @@ export async function POST(request) {
         profitReceived: 0
       }
 
+      console.error('POST DEBUG: Saving share', shareIdUnique, shareData)
       await kv.hset(sharesKey, shareIdUnique, JSON.stringify(shareData))
+      console.error('POST DEBUG: Share saved successfully')
 
       await pushTransaction(phone, {
         id: Date.now(),
