@@ -22,12 +22,10 @@ function formatKampalaDate(date) {
 
 function parseKampalaDate(str) {
   if (!str) return null
-  if (str.includes('/')) {
-    const [datePart, timePart] = str.split(', ')
-    const [day, month, year] = datePart.split('/')
-    return new Date(`${year}-${month}-${day}T${timePart}`)
-  }
-  return new Date(str)
+  const match = str.match(/^(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})$/)
+  if (!match) return null
+  const [, day, month, year, hour, min, sec] = match
+  return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`)
 }
 
 function normalizePhone(phone) {
@@ -57,21 +55,21 @@ export async function GET(request) {
     let phone = searchParams.get('phone')
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
-    
+
     phone = normalizePhone(phone)
     if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
     const sharesKey = `share:palamedes:${phone}`
     console.error('GET DEBUG: Looking for key', sharesKey)
 
-    if ((await kv.type(sharesKey)) !== 'hash') {
+    if ((await kv.type(sharesKey))!== 'hash') {
       console.error('GET DEBUG: Key not found or not hash')
       return NextResponse.json({ success: true, shares: [], expired: [] })
     }
 
     const sharesHash = await kv.hgetall(sharesKey)
     console.error('GET DEBUG: Raw hash', sharesHash)
-    
+
     let shares = []
     if (sharesHash) {
       for (const [id, val] of Object.entries(sharesHash)) {
@@ -97,7 +95,7 @@ export async function GET(request) {
     const updatedShares = await Promise.all(shares.map(async (s) => {
       if (s.status === 'ongoing') {
         const endDate = parseKampalaDate(s.endDate)
-        if (endDate && !isNaN(endDate) && now >= endDate) {
+        if (endDate &&!isNaN(endDate) && now >= endDate) {
           s.status = 'expired'
           await kv.hset(sharesKey, s.id, JSON.stringify(s))
         }
@@ -122,25 +120,26 @@ export async function POST(request) {
   try {
     const body = await request.json()
     console.error('POST DEBUG: Body received', JSON.stringify(body))
-    
+
     let { action, phone, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, shareId: collectShareId } = body
 
     if (!action) return NextResponse.json({ success: false, message: 'Action required' }, { status: 400 })
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
-    
+
     phone = normalizePhone(phone)
+    console.error('POST DEBUG: Normalized phone:', phone)
     if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
     const { user, userKey } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     const sharesKey = `share:palamedes:${phone}`
-    console.error('POST DEBUG: Using sharesKey', sharesKey)
+    console.error('POST DEBUG: Using sharesKey:', sharesKey)
 
     if (action === 'buyShare') {
       const config = SHARE_CONFIG[shareId]
       console.error('POST DEBUG: Config for shareId', shareId, config)
-      
+
       if (!config) {
         console.error('POST DEBUG: Invalid shareId')
         return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
@@ -185,9 +184,16 @@ export async function POST(request) {
         profitReceived: 0
       }
 
-      console.error('POST DEBUG: Saving share', shareIdUnique, shareData)
-      await kv.hset(sharesKey, shareIdUnique, JSON.stringify(shareData))
-      console.error('POST DEBUG: Share saved successfully')
+      const value = JSON.stringify(shareData)
+      console.error('POST DEBUG: Saving share. Key:', sharesKey, 'Field:', shareIdUnique, 'Value length:', value.length)
+
+      try {
+        const res = await kv.hset(sharesKey, shareIdUnique, value)
+        console.error('POST DEBUG: hset result:', res)
+      } catch (err) {
+        console.error('POST DEBUG: hset FAILED:', err.message, err.stack)
+        return NextResponse.json({ success: false, message: err.message }, { status: 500 })
+      }
 
       await pushTransaction(phone, {
         id: Date.now(),
@@ -215,7 +221,7 @@ export async function POST(request) {
       if (!shareStr) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
 
       const share = JSON.parse(shareStr)
-      if (share.status !== 'ongoing') {
+      if (share.status!== 'ongoing') {
         return NextResponse.json({ success: false, message: 'Share already collected' }, { status: 400 })
       }
 
