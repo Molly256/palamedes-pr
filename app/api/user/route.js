@@ -101,7 +101,6 @@ export async function GET(request) {
         return NextResponse.json({ success: false, message: 'Username and password required' }, { status: 400 })
       }
 
-      phone = normalizePhone(phone)
       const { user: existingUser } = await getUserData(phone)
       if (existingUser) {
         return NextResponse.json({ success: false, message: 'User already exists' }, { status: 400 })
@@ -124,7 +123,7 @@ export async function GET(request) {
         upline3: '',
         referralPaid: 'false',
         vip: '0',
-        balance: '0',
+        available_balance: '0', // changed
         vipPricePaid: '0',
         tasksCompleted: '0',
         vipLocked: 'false',
@@ -139,8 +138,15 @@ export async function GET(request) {
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getTransactions') {
-      const transactions = await getTransactions(phone)
-      return NextResponse.json({ success: true, transactions })
+      const transactions = await getTransactions(phone) // per user only
+      const type = searchParams.get('type') || 'all'
+
+      let filtered = transactions
+      if (type!== 'all') {
+        filtered = transactions.filter(t => t.type === type)
+      }
+
+      return NextResponse.json({ success: true, transactions: filtered })
     }
 
     if (action === 'getDashboard') {
@@ -160,7 +166,7 @@ export async function GET(request) {
         user: {
           username: user.username || '',
           phone: user.phone || phone,
-          balance: Number(user.balance) || 0,
+          available_balance: Number(user.available_balance) || 0, // changed
           vip: Number(user.vip) || 0,
           avatar: user.avatar || '',
           nickname: user.nickname || '',
@@ -190,13 +196,13 @@ export async function GET(request) {
       })
     }
 
-    // Default: return user only. Tasks are handled by /api/tasks/submit
+    // Default: return user only
     return NextResponse.json({
       success: true,
       user: {
         username: user.username || '',
         phone: user.phone || phone,
-        balance: Number(user.balance) || 0,
+        available_balance: Number(user.available_balance) || 0, // changed
         vip: Number(user.vip) || 0,
         nickname: user.nickname || '',
         avatar: user.avatar || '',
@@ -256,7 +262,7 @@ export async function POST(request) {
 
     if (action === 'withdraw') {
       const amount = Number(value)
-      const balance = Number(user.balance) || 0
+      const balance = Number(user.available_balance) || 0 // changed
 
       if (!amount || amount <= 0) {
         return NextResponse.json({ success: false, message: 'Invalid withdraw amount' }, { status: 400 })
@@ -299,7 +305,7 @@ export async function POST(request) {
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
       const newPrice = Number(config.price)
-      const balance = Number(user.balance) || 0
+      const balance = Number(user.available_balance) || 0 // changed
 
       if (!vipLevel || vipLevel <= currentVip) {
         return NextResponse.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
@@ -312,7 +318,7 @@ export async function POST(request) {
       if (currentPricePaid > 0) newBalance += currentPricePaid
 
       await kv.hset(userKey, {
-        balance: String(newBalance),
+        available_balance: String(newBalance), // changed
         vip: String(vipLevel),
         vipPricePaid: String(newPrice),
         vipLocked: 'false',
@@ -344,7 +350,7 @@ export async function POST(request) {
         phone: phone
       })
 
-      // Referral rewards logic stays here
+      // Referral rewards
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
         const paidUplines = new Set()
@@ -354,7 +360,7 @@ export async function POST(request) {
           if (upline1) {
             const rewardA = Math.floor(paidPrice * 0.05)
             if (rewardA > 0) {
-              await kv.hset(upline1Key, { balance: String(Number(upline1.balance) + rewardA) })
+              await kv.hset(upline1Key, { available_balance: String(Number(upline1.available_balance || 0) + rewardA) }) // changed
               await pushTransaction(user.upline1, {
                 id: Date.now() + 2,
                 type: 'referral_reward',
@@ -374,7 +380,7 @@ export async function POST(request) {
           if (upline2) {
             const rewardB = Math.floor(paidPrice * 0.02)
             if (rewardB > 0) {
-              await kv.hset(upline2Key, { balance: String(Number(upline2.balance) + rewardB) })
+              await kv.hset(upline2Key, { available_balance: String(Number(upline2.available_balance || 0) + rewardB) }) // changed
               await pushTransaction(user.upline2, {
                 id: Date.now() + 3,
                 type: 'referral_reward',
@@ -394,7 +400,7 @@ export async function POST(request) {
           if (upline3) {
             const rewardC = Math.floor(paidPrice * 0.01)
             if (rewardC > 0) {
-              await kv.hset(upline3Key, { balance: String(Number(upline3.balance) + rewardC) })
+              await kv.hset(upline3Key, { available_balance: String(Number(upline3.available_balance || 0) + rewardC) }) // changed
               await pushTransaction(user.upline3, {
                 id: Date.now() + 4,
                 type: 'referral_reward',
@@ -419,7 +425,7 @@ export async function POST(request) {
         user: {
           username: freshUser?.username || '',
           phone: freshUser?.phone || phone,
-          balance: Number(freshUser?.balance) || 0,
+          available_balance: Number(freshUser?.available_balance) || 0, // changed
           vip: Number(freshUser?.vip) || 0,
           vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
           vipLocked: freshUser?.vipLocked === 'true',

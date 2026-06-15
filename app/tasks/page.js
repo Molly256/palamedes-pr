@@ -1,13 +1,12 @@
 "use client"
 import { useState, useEffect } from "react"
-import booksData from "../../data/books.json"
 
 const SKYBLUE = "#00BFFF"
 
 export default function TasksPage() {
   const [user, setUser] = useState(null)
   const [tasks, setTasks] = useState([])
-  const [todayBooks, setTodayBooks] = useState([])
+  const [availableBalance, setAvailableBalance] = useState(0)
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const [showPopup, setShowPopup] = useState(false)
@@ -26,34 +25,15 @@ export default function TasksPage() {
       const data = await res.json()
 
       if (!data.success) {
-        setTodayBooks([])
+        setTasks([])
         return
       }
 
-      const userRes = await fetch(`/api/user?phone=${phone}`)
-      const userData = await userRes.json()
-      if (userData.success) {
-        setUser(userData.user)
-        localStorage.setItem('palamedes_user', JSON.stringify(userData.user))
-      }
-
-      const taskList = data.tasks || []
-
-      const books = taskList.slice(0, 4).map((task) => {
-        const bookNum = Number(task.bookId)
-        return {
-          taskId: task.taskId,
-          bookNum,
-          title: booksData[bookNum - 1]?.title || `Book ${bookNum}`,
-          cover: booksData[bookNum - 1]?.cover || booksData[0]?.cover,
-          preview: booksData[bookNum - 1]?.preview || "",
-          status: task.status
-        }
-      })
-      setTodayBooks(books)
+      setTasks(data.tasks || [])
+      setAvailableBalance(data.available_balance || 0)
     } catch (err) {
       console.error('fetchTasks error:', err)
-      setTodayBooks([])
+      setTasks([])
     }
   }
 
@@ -62,8 +42,8 @@ export default function TasksPage() {
     const t = setTimeout(() => setTimer(timer - 1), 1000)
 
     if (timer === 1) {
-      setTodayBooks(prev => prev.map(b =>
-        b.taskId === readingBook.taskId ? {...b, status: 'read' } : b
+      setTasks(prev => prev.map(b =>
+        b.bookId === readingBook.bookId ? {...b, status: 'read' } : b
       ))
       setShowPopup(true)
       setReadingBook(null)
@@ -77,8 +57,8 @@ export default function TasksPage() {
     setTimer(10)
     setShowPopup(false)
 
-    setTodayBooks(prev => prev.map(b =>
-      b.taskId === book.taskId ? {...b, status: 'reading' } : b
+    setTasks(prev => prev.map(b =>
+      b.bookId === book.bookId ? {...b, status: 'reading' } : b
     ))
   }
 
@@ -104,16 +84,18 @@ export default function TasksPage() {
       const data = await res.json()
 
       if (data.success) {
-        const newBalance = Number(user.balance) + Number(data.reward)
-        const updatedUser = {...user, balance: newBalance }
-        setUser(updatedUser)
-        localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
-
-        setTodayBooks(prev => prev.map(b =>
-          b.taskId === book.taskId ? {...b, status: 'submitted' } : b
+        setAvailableBalance(data.available_balance)
+        setTasks(prev => prev.map(b =>
+          b.bookId === book.bookId ? {...b, status: 'submitted' } : b
         ))
 
         alert(`+${Number(data.reward).toLocaleString()}shs added!`)
+        
+        // Update localStorage user object
+        const updatedUser = {...user, available_balance: data.available_balance }
+        setUser(updatedUser)
+        localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
+        
         localStorage.setItem('palamedes_refresh_my', 'true')
       } else {
         alert(data.message || 'Failed to submit')
@@ -163,27 +145,41 @@ export default function TasksPage() {
     )
   }
 
-  const pendingCount = todayBooks.filter(b => b.status !== 'submitted').length
-  const doneCount = todayBooks.filter(b => b.status === 'submitted').length
+  const pendingCount = tasks.filter(b => b.status !== 'submitted').length
+  const doneCount = tasks.filter(b => b.status === 'submitted').length
 
   return (
     <div style={{ padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000" }}>
+      {/* Balance display */}
+      <div style={{ 
+        padding: 15, 
+        marginBottom: 20, 
+        background: "#E8F5E9", 
+        borderRadius: 8,
+        border: "1px solid #4CAF50"
+      }}>
+        <p style={{ margin: 0, fontSize: 14, color: "#666" }}>Available Balance</p>
+        <p style={{ margin: "5px 0 0 0", fontSize: 24, fontWeight: "600", color: "#4CAF50" }}>
+          UGX {availableBalance.toLocaleString()}
+        </p>
+      </div>
+
       <h2 style={{ marginBottom: 20, fontWeight: "400", color: "#000" }}>
-        Today's Tasks - VIP{user.vip} {doneCount}/4 Done
+        Today's Tasks - VIP{user.vip} {doneCount}/{tasks.length} Done
       </h2>
 
-      {todayBooks.length === 0 ? (
+      {tasks.length === 0 ? (
         <p style={{ textAlign: "center", marginTop: 100, color: "#666" }}>
           No tasks available
         </p>
       ) : (
-        todayBooks.map((book) => {
+        tasks.map((book) => {
           const isRead = book.status === 'read'
           const isReading = book.status === 'reading'
           const isSubmitted = book.status === 'submitted'
 
           return (
-            <div key={`${book.taskId}-${book.bookNum}`} style={{
+            <div key={book.bookId} style={{
               padding: 15, marginBottom: 18, display: "flex", gap: 15, alignItems: "center",
               borderBottom: "1px solid #E0E0E0"
             }}>
@@ -194,6 +190,9 @@ export default function TasksPage() {
                 <h4 style={{ margin: "0 0 10px 0", fontWeight: "400", color: "#000", fontSize: 16 }}>
                   {book.title}
                 </h4>
+                <p style={{ margin: "0 0 10px 0", fontSize: 14, color: "#4CAF50" }}>
+                  +UGX {book.reward}
+                </p>
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button
                     onClick={() => handleRead(book)}
@@ -235,9 +234,9 @@ export default function TasksPage() {
         })
       )}
 
-      {doneCount === 4 && (
+      {doneCount === tasks.length && tasks.length > 0 && (
         <p style={{ textAlign: "center", marginTop: 40, fontSize: 18, color: "#4CAF50", fontWeight: "600" }}>
-          Tasks done for today 4/4
+          Tasks done for today {doneCount}/{tasks.length}
         </p>
       )}
     </div>

@@ -7,6 +7,10 @@ function getUGDateStr(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
 }
 
+function getUGDayOfWeek(date = new Date()) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'long' }).format(date)
+}
+
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
@@ -38,6 +42,11 @@ export async function POST(request) {
 
     const normalizedPhone = normalizePhone(phone)
     const today = getUGDateStr()
+    const day = getUGDayOfWeek()
+
+    if (day === 'Saturday' || day === 'Sunday') {
+      return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
+    }
 
     const user = await kv.hgetall(`user:${normalizedPhone}`)
     if (!user || Object.keys(user).length === 0) {
@@ -49,24 +58,19 @@ export async function POST(request) {
     const maxBooks = VIP_CONFIG[vipLevel]?.books || 4
     const taskKey = `task:${normalizedPhone}:${today}`
 
-    const pipe = kv.pipeline()
-    pipe.hgetall(taskKey)
-    pipe.hgetall(`user:${normalizedPhone}`)
-    const [taskData, userData] = await pipe.exec()
-
-    const safeTaskData = taskData || {}
-    if (Object.keys(safeTaskData).length === 0) {
-      return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
+    const currentStatus = await kv.hget(taskKey, taskId)
+    if (!currentStatus) {
+      return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (safeTaskData[taskId] === 'submitted') {
+    if (currentStatus === 'submitted') {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    const pipe2 = kv.pipeline()
-    pipe2.hset(taskKey, { [taskId]: 'submitted' })
-    pipe2.hincrby(`user:${normalizedPhone}`, 'available_balance', reward)
-    pipe2.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
+    const pipe = kv.pipeline()
+    pipe.hset(taskKey, { [taskId]: 'submitted' })
+    pipe.hincrby(`user:${normalizedPhone}`, 'available_balance', reward)
+    pipe.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
       type: 'daily_income',
       amount: reward,
       date: new Date().toISOString(),
@@ -74,25 +78,31 @@ export async function POST(request) {
       desc: `Task ${taskId} completed`
     }))
 
-    const updatedTaskData = {...safeTaskData, [taskId]: 'submitted' }
-    let allDone = true
-    for (let i = 1; i <= maxBooks; i++) {
-      if (updatedTaskData[`book${i}`]!== 'submitted') {
-        allDone = false
-        break
+    const allTaskData = await kv.hgetall(taskKey)
+    const updatedTaskData = {...allTaskData, [taskId]: 'submitted' }
+
+    const dailyTasks = await kv.get(`tasks:daily:${today}`)
+    if (dailyTasks?.books) {
+      const todaysBookIds = dailyTasks.books.slice(0, maxBooks).map(b => b.id)
+      const allDone = todaysBookIds.every(id => updatedTaskData[id] === 'submitted')
+
+      if (allDone) {
+        pipe.hset(`user:${normalizedPhone}`, {
+          tasksCompleted: maxBooks,
+          vipLocked: 'true'
+        })
       }
     }
 
-    if (allDone) {
-      pipe2.hset(`user:${normalizedPhone}`, {
-        tasksCompleted: maxBooks,
-        vipLocked: 'true'
-      })
-    }
+    await pipe.exec()
 
-    await pipe2.exec()
+    const newBalance = (Number(user.available_balance) || 0) + reward
 
-    return NextResponse.json({ success: true, reward })
+    return NextResponse.json({
+      success: true,
+      reward,
+      available_balance: newBalance
+    })
 
   } catch (err) {
     console.error('Submit-one error:', err)

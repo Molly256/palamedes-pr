@@ -7,6 +7,10 @@ function getUGDateStr(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
 }
 
+function getUGDayOfWeek(date = new Date()) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'long' }).format(date)
+}
+
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
@@ -43,46 +47,31 @@ export async function GET(request) {
     }
 
     const today = getUGDateStr()
+    const day = getUGDayOfWeek()
     const vip = Number(user.vip) || 0
     const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
 
-    const taskKey = `task:${phone}:${today}`
-    const oldSetKey = `tasks:${phone}:${today}`
-
-    // Get existing task data
-    let taskData = await kv.hgetall(taskKey) || {}
-
-    // If no tasks, check for old format and migrate
-    if (Object.keys(taskData).length === 0) {
-      const oldTaskIds = await kv.smembers(oldSetKey)
-
-      if (oldTaskIds && oldTaskIds.length > 0) {
-        // Migrate from old format to new format
-        for (let i = 0; i < oldTaskIds.length; i++) {
-          taskData[`book${i + 1}`] = 'pending'
-        }
-        await kv.hset(taskKey, taskData)
-        // Delete old set to avoid confusion
-        await kv.del(oldSetKey)
-      } else {
-        // Create fresh tasks for today
-        taskData = {}
-        for (let i = 1; i <= config.books; i++) {
-          taskData[`book${i}`] = 'pending'
-        }
-        await kv.hset(taskKey, taskData)
-      }
+    if (day === 'Saturday' || day === 'Sunday') {
+      return NextResponse.json({ success: false, message: 'No tasks available' })
     }
 
-    // Build response
-    const tasks = Object.keys(taskData)
-     .sort((a, b) => Number(a.replace('book', '')) - Number(b.replace('book', '')))
-     .map(k => ({
-        taskId: k,
-        bookId: Number(k.replace('book', '')),
-        status: taskData[k],
-        reward: config.perBook
-      }))
+    const dailyTasks = await kv.get(`tasks:daily:${today}`)
+    if (!dailyTasks ||!dailyTasks.books) {
+      return NextResponse.json({ success: false, message: 'No tasks available' })
+    }
+
+    const taskKey = `task:${phone}:${today}`
+    const userStatus = await kv.hgetall(taskKey) || {}
+
+    const tasks = dailyTasks.books.slice(0, config.books).map(book => ({
+      taskId: book.id,
+      bookId: book.id,
+      title: book.title,
+      cover: book.cover,
+      preview: book.preview,
+      status: userStatus[book.id] || 'pending',
+      reward: config.perBook
+    }))
 
     const completed = tasks.filter(t => t.status === 'submitted').length
 
@@ -90,11 +79,65 @@ export async function GET(request) {
       success: true,
       tasks,
       completed,
-      total: config.books
+      total: tasks.length,
+      available_balance: Number(user.available_balance) || 0 // return this to UI
     })
 
   } catch (err) {
     console.error('Tasks GET error:', err)
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
+  }
+}
+
+export async function POST(request) {
+  try {
+    const body = await request.json()
+    const { phone, taskId } = body
+
+    if (!phone ||!taskId) {
+      return NextResponse.json({ success: false, message: 'Phone and taskId required' }, { status: 400 })
+    }
+
+    const normalizedPhone = normalizePhone(phone)
+    const today = getUGDateStr()
+    const day = getUGDayOfWeek()
+
+    if (day === 'Saturday' || day === 'Sunday') {
+      return NextResponse.json({ success: false, message: 'No tasks available on weekends' }, { status: 400 })
+    }
+
+    const user = await kv.hgetall(`user:${normalizedPhone}`)
+    if (!user || Object.keys(user).length === 0) {
+      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+    }
+
+    const vip = Number(user.vip) || 0
+    const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
+    const taskKey = `task:${normalizedPhone}:${today}`
+
+    const currentStatus = await kv.hget(taskKey, taskId)
+    if (!currentStatus) {
+      return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
+    }
+
+    if (currentStatus === 'submitted') {
+      return NextResponse.json({ success: false, message: 'Task already submitted' }, { status: 400 })
+    }
+
+    await kv.hset(taskKey, { [taskId]: 'submitted' })
+
+    const newBalance = (Number(user.available_balance) || 0) + config.perBook
+    await kv.hset(`user:${normalizedPhone}`, { available_balance: newBalance })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Task submitted successfully',
+      reward: config.perBook,
+      available_balance: newBalance
+    })
+
+  } catch (err) {
+    console.error('Tasks POST error:', err)
     return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
 }
