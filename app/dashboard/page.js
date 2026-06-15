@@ -30,7 +30,7 @@ export default function Dashboard() {
      if (data.success && data.user) {
        const userData = {
          ...data.user,
-         balance: Number(data.user.balance) || 0,
+         balance: Number(data.user.available_balance) || 0,
          vip: Number(data.user.vip) || 0
        }
        localStorage.setItem('palamedes_user', JSON.stringify(userData))

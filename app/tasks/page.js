@@ -6,7 +6,6 @@ const SKYBLUE = "#00BFFF"
 export default function TasksPage() {
   const [user, setUser] = useState(null)
   const [tasks, setTasks] = useState([])
-  const [availableBalance, setAvailableBalance] = useState(0)
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const [showPopup, setShowPopup] = useState(false)
@@ -30,7 +29,6 @@ export default function TasksPage() {
       }
 
       setTasks(data.tasks || [])
-      setAvailableBalance(data.available_balance || 0)
     } catch (err) {
       console.error('fetchTasks error:', err)
       setTasks([])
@@ -84,7 +82,6 @@ export default function TasksPage() {
       const data = await res.json()
 
       if (data.success) {
-        setAvailableBalance(data.available_balance)
         setTasks(prev => prev.map(b =>
           b.bookId === book.bookId ? {...b, status: 'submitted' } : b
         ))
@@ -150,20 +147,6 @@ export default function TasksPage() {
 
   return (
     <div style={{ padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000" }}>
-      {/* Balance display */}
-      <div style={{ 
-        padding: 15, 
-        marginBottom: 20, 
-        background: "#E8F5E9", 
-        borderRadius: 8,
-        border: "1px solid #4CAF50"
-      }}>
-        <p style={{ margin: 0, fontSize: 14, color: "#666" }}>Available Balance</p>
-        <p style={{ margin: "5px 0 0 0", fontSize: 24, fontWeight: "600", color: "#4CAF50" }}>
-          UGX {availableBalance.toLocaleString()}
-        </p>
-      </div>
-
       <h2 style={{ marginBottom: 20, fontWeight: "400", color: "#000" }}>
         Today's Tasks - VIP{user.vip} {doneCount}/{tasks.length} Done
       </h2>
