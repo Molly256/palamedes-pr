@@ -169,7 +169,7 @@ export default function Transactions() {
 
               return (
                 <div
-                  key={t.id}
+                  key={t.id || t.date}
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
