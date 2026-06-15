@@ -12,7 +12,6 @@ function normalizePhone(phone) {
 async function buildTeams(phone) {
   const phoneNorm = normalizePhone(phone)
   
-  // Get downline sets directly - this is faster and more accurate than scanning all users
   const [downline1, downline2, downline3] = await Promise.all([
     kv.smembers(`user:${phoneNorm}:downline1`),
     kv.smembers(`user:${phoneNorm}:downline2`),
@@ -23,7 +22,6 @@ async function buildTeams(phone) {
   const teamB = []
   const teamC = []
 
-  // Process Team A
   for (const memberPhone of downline1) {
     const user = await kv.hgetall(`user:${memberPhone}`)
     if (!user || !user.phone) continue
@@ -37,7 +35,6 @@ async function buildTeams(phone) {
     })
   }
 
-  // Process Team B
   for (const memberPhone of downline2) {
     const user = await kv.hgetall(`user:${memberPhone}`)
     if (!user || !user.phone) continue
@@ -51,7 +48,6 @@ async function buildTeams(phone) {
     })
   }
 
-  // Process Team C
   for (const memberPhone of downline3) {
     const user = await kv.hgetall(`user:${memberPhone}`)
     if (!user || !user.phone) continue
@@ -69,13 +65,35 @@ async function buildTeams(phone) {
 }
 
 async function getTotalCommission(phone) {
-  const transactions = await kv.lrange(`transactions:${phone}`, 0, 99)
-  return transactions
-    .map(t => {
-      try { return JSON.parse(t) } catch { return null }
-    })
-    .filter(t => t?.type === 'referral_reward' && t?.status !== 'rejected')
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+  const phoneNorm = normalizePhone(phone)
+  
+  // Get all 3 levels
+  const [downline1, downline2, downline3] = await Promise.all([
+    kv.smembers(`user:${phoneNorm}:downline1`),
+    kv.smembers(`user:${phoneNorm}:downline2`),
+    kv.smembers(`user:${phoneNorm}:downline3`)
+  ])
+
+  const allDownline = [...downline1, ...downline2, ...downline3]
+  let total = 0
+
+  // Loop through each downline member and sum commissions paid TO you
+  for (const memberPhone of allDownline) {
+    const txList = await kv.lrange(`transactions:${memberPhone}`, 0, 99)
+    if (!txList) continue
+
+    for (const txStr of txList) {
+      try {
+        const tx = JSON.parse(txStr)
+        // Only sum successful referral rewards paid to you
+        if (tx.type === 'referral_reward' && tx.to === phoneNorm && tx.status !== 'rejected') {
+          total += Number(tx.amount || 0)
+        }
+      } catch {}
+    }
+  }
+
+  return total
 }
 
 export async function GET(request) {
@@ -89,6 +107,8 @@ export async function GET(request) {
 
     const { teamA, teamB, teamC } = await buildTeams(phone)
     const totalCommission = await getTotalCommission(phone)
+
+    console.error(`MYTEAM: Phone ${phone} total commission = ${totalCommission}`)
 
     return NextResponse.json({
       success: true,
