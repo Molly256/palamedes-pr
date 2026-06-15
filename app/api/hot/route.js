@@ -73,33 +73,21 @@ export async function GET(request) {
     if (sharesHash) {
       for (const [id, val] of Object.entries(sharesHash)) {
         try {
-          // If it starts with { it's JSON, else it's the old number format
+          // Only keep valid JSON share objects
           if (typeof val === 'string' && val.startsWith('{')) {
-            shares.push(JSON.parse(val))
-          } else {
-            // Convert old number format to share object
-            const qty = Number(val) || 0
-            if (qty > 0) {
-              shares.push({
-                id: id,
-                shareId: 'unknown',
-                shareName: 'Legacy Share',
-                quantity: qty,
-                pricePerShare: 50000,
-                totalInvested: qty * 50000,
-                dailyProfit: 0,
-                cycleDays: 0,
-                expectedProfit: 0,
-                buyDate: '',
-                endDate: '',
-                status: 'ongoing',
-                collectedAt: null,
-                profitReceived: 0
-              })
+            const share = JSON.parse(val)
+            // Skip if it's missing required fields - this removes legacy entries
+            if (share.id && share.endDate && share.status) {
+              shares.push(share)
+            } else {
+              // Delete legacy garbage entry
+              await kv.hdel(sharesKey, id)
             }
+          } else {
+            // Delete old number format entries like "pride": "7"
+            await kv.hdel(sharesKey, id)
           }
         } catch (e) {
-          console.error('Deleting bad share:', id, val)
           await kv.hdel(sharesKey, id)
         }
       }
@@ -107,13 +95,14 @@ export async function GET(request) {
 
     const now = getUGNow()
 
-    // Auto-expire shares that have JSON data
+    // Auto-expire shares
     const updatedShares = await Promise.all(shares.map(async (s) => {
-      if (!s.endDate) return s
-      const endDate = parseKampalaDate(s.endDate)
-      if (endDate && !isNaN(endDate) && s.status === 'ongoing' && now >= endDate) {
-        s.status = 'expired'
-        await kv.hset(sharesKey, s.id, JSON.stringify(s))
+      if (s.status === 'ongoing') {
+        const endDate = parseKampalaDate(s.endDate)
+        if (endDate && !isNaN(endDate) && now >= endDate) {
+          s.status = 'expired'
+          await kv.hset(sharesKey, s.id, JSON.stringify(s))
+        }
       }
       return s
     }))
