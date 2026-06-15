@@ -93,7 +93,7 @@ export default function Transactions() {
     { key: 'all', label: 'All' },
     { key: 'deposit', label: 'Deposit' },
     { key: 'withdraw', label: 'Withdraw' },
-    { key: 'task_reward', label: 'Daily income' },
+    { key: 'daily_income', label: 'Daily income' },
     { key: 'viptask_purchase', label: 'VIP Purchase' },
     { key: 'referral_reward', label: 'Referral Reward' },
     { key: 'share_purchase', label: 'Share Purchase' },
@@ -105,7 +105,7 @@ export default function Transactions() {
     const names = {
       deposit: 'Deposit',
       withdraw: 'Withdraw',
-      task_reward: 'Daily Income',
+      daily_income: 'Daily income',
       viptask_purchase: 'VIP Purchase',
       referral_reward: 'Referral Reward',
       share_purchase: 'Share Purchase',
