@@ -8,7 +8,6 @@ function normalizePhone(phone) {
   return phone
 }
 
-// Build full downline recursively from user sets
 async function buildTeams(phone) {
   const phoneNorm = normalizePhone(phone)
   
@@ -67,7 +66,6 @@ async function buildTeams(phone) {
 async function getTotalCommission(phone) {
   const phoneNorm = normalizePhone(phone)
   
-  // Get all 3 levels
   const [downline1, downline2, downline3] = await Promise.all([
     kv.smembers(`user:${phoneNorm}:downline1`),
     kv.smembers(`user:${phoneNorm}:downline2`),
@@ -77,22 +75,26 @@ async function getTotalCommission(phone) {
   const allDownline = [...downline1, ...downline2, ...downline3]
   let total = 0
 
-  // Loop through each downline member and sum their referral_reward transactions
   for (const memberPhone of allDownline) {
     const txList = await kv.lrange(`transactions:${memberPhone}`, 0, 99)
     if (!txList) continue
 
-    for (const txStr of txList) {
+    for (const tx of txList) {
       try {
-        const tx = JSON.parse(txStr)
-        // Only sum successful referral rewards
-        if (tx.type === 'referral_reward' && tx.status !== 'rejected') {
-          total += Number(tx.amount || 0)
+        // Handle both string and object from KV
+        const txObj = typeof tx === 'string' ? JSON.parse(tx) : tx
+        
+        if (txObj.type === 'referral_reward' && txObj.status !== 'rejected') {
+          total += Number(txObj.amount || 0)
+          console.error(`MYTEAM: +${txObj.amount} from ${memberPhone}`)
         }
-      } catch {}
+      } catch (e) {
+        console.error(`MYTEAM: Parse error for ${memberPhone}:`, e)
+      }
     }
   }
 
+  console.error(`MYTEAM: Phone ${phoneNorm} total commission = ${total}`)
   return total
 }
 
@@ -107,8 +109,6 @@ export async function GET(request) {
 
     const { teamA, teamB, teamC } = await buildTeams(phone)
     const totalCommission = await getTotalCommission(phone)
-
-    console.error(`MYTEAM: Phone ${phone} total commission = ${totalCommission}`)
 
     return NextResponse.json({
       success: true,
