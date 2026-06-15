@@ -1,6 +1,7 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
-import booksData from '../../../data/books.json'
+import booksData from '../../../../data/books.json'
+export const dynamic = 'force-dynamic';
 
 const TZ = 'Africa/Kampala'
 
