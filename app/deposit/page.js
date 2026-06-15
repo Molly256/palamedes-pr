@@ -64,11 +64,15 @@ export default function Deposit() {
         return
       }
 
+      // Update localStorage and state with fresh user from API
+      if (data.user) {
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+        setUser(data.user)
+      }
+
       alert(`Deposit request submitted! ${depositAmount.toLocaleString()}shs pending approval.`)
 
-      // Trigger refresh on transactions page
       window.dispatchEvent(new Event('refreshTransactions'))
-
       router.push('/transactions')
 
     } catch (err) {
@@ -92,7 +96,7 @@ export default function Deposit() {
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '2px solid #87CEEB', marginBottom: '25px', textAlign: 'center' }}>
           <p style={{ color: '#999', fontSize: '14px', marginBottom: '5px' }}>Available Balance</p>
           <h2 style={{ fontSize: '32px', color: '#87CEEB', fontWeight: '900' }}>
-            shs {user.balance.toLocaleString()}
+            shs {Number(user?.available_balance || 0).toLocaleString()}
           </h2>
         </div>
 

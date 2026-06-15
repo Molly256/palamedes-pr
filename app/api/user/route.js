@@ -103,7 +103,6 @@ export async function GET(request) {
     let phone = searchParams.get('phone')
     const action = searchParams.get('action')
 
-    // Fallback: try to get phone from Authorization header or cookie if not in query
     if (!phone) {
       const authHeader = request.headers.get('authorization')
       if (authHeader?.startsWith('Bearer ')) {
@@ -181,8 +180,8 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-    .filter(t => t.type === 'referral_reward' && t.status === 'success')
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+   .filter(t => t.type === 'referral_reward' && t.status === 'success')
+   .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
@@ -262,24 +261,55 @@ export async function POST(request) {
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'deposit') {
-      const amount = Number(value)
-      if (!amount || amount <= 0) {
+      const depositAmount = Number(value)
+      if (!depositAmount || depositAmount <= 0) {
         return NextResponse.json({ success: false, message: 'Invalid deposit amount' }, { status: 400 })
       }
+
+      const newBalance = (Number(user.available_balance) || 0) + depositAmount
 
       const tx = {
         id: Date.now(),
         type: 'deposit',
-        amount: amount,
+        amount: depositAmount,
         method: method || '',
         date: getISOTimestamp(),
-        status: 'pending',
+        status: 'success',
         desc: `Deposit via ${method || 'Mobile Money'}`,
         phone: phone
       }
 
       await pushTransaction(phone, tx)
-      return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending approval.' })
+      await kv.hset(userKey, { available_balance: String(newBalance) })
+
+      const updatedUser = await kv.hgetall(userKey)
+
+      return NextResponse.json({
+        success: true,
+        tx,
+        user: {
+          username: updatedUser.username || '',
+          phone: updatedUser.phone || phone,
+          available_balance: Number(updatedUser.available_balance) || 0,
+          vip: Number(updatedUser.vip) || 0,
+          avatar: updatedUser.avatar || '',
+          nickname: updatedUser.nickname || '',
+          vipLocked: updatedUser.vipLocked === 'true',
+          hasBoughtVIP: updatedUser.hasBoughtVIP === 'true',
+          tasksCompleted: Number(updatedUser.tasksCompleted) || 0,
+          vipPricePaid: Number(updatedUser.vipPricePaid) || 0,
+          bankMTN: safeParse(updatedUser.bankMTN),
+          bankAirtel: safeParse(updatedUser.bankAirtel),
+          password: updatedUser.password || '',
+          referralPaid: updatedUser.referralPaid || 'false',
+          vip_commission_paid: updatedUser.vip_commission_paid || 'false',
+          upline1: updatedUser.upline1 || '',
+          upline2: updatedUser.upline2 || '',
+          upline3: updatedUser.upline3 || '',
+          createdAt: updatedUser.createdAt || ''
+        },
+        message: 'Deposit successful'
+      })
     }
 
     if (action === 'withdraw') {
