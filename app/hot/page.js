@@ -36,16 +36,17 @@ const getUGNow = () => {
 
 const parseKampalaDate = (dateStr) => {
   if (!dateStr || typeof dateStr !== 'string') return null
-  const parts = dateStr.split(', ')
-  if (parts.length !== 2) return null
-  const [datePart, timePart] = parts
-  const [day, month, year] = datePart.split('/')
-  return new Date(`${year}-${month}-${day}T${timePart}`)
+  // Match "dd/mm/yyyy, hh:mm:ss"
+  const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})$/)
+  if (!match) return null
+  const [, day, month, year, hour, min, sec] = match
+  // Create date in ISO format - JS parses this as local time, but we're comparing to getUGNow()
+  return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`)
 }
 
 const getDaysLeft = (endDateStr) => {
   const end = parseKampalaDate(endDateStr)
-  if (!end || isNaN(end)) return 0
+  if (!end || isNaN(end)) return null // null means invalid date, don't show collect button
   const now = getUGNow()
   const diff = end - now
   if (diff <= 0) return 0
@@ -211,6 +212,9 @@ export default function HotPage() {
     const totalCost = SHARE_PRICE * share.quantity
     const totalProfit = Number(share.expectedProfit) || 0
 
+    // If date is invalid, don't show collect button at all
+    const canCollect = daysLeft === 0
+
     return (
       <div key={share.id} style={cardStyle}>
         <div style={{ display: 'flex', gap: '12px' }}>
@@ -226,18 +230,21 @@ export default function HotPage() {
             {isOngoing ? (
               <>
                 <p style={labelStyle}>Expires: {share.endDate}</p>
-                <p style={labelStyle}>Days left: {daysLeft}</p>
+                <p style={labelStyle}>
+                  {daysLeft === null ? 'Invalid date' : `Days left: ${daysLeft}`}
+                </p>
                 <button 
                   style={{ 
                     ...btnStyle, 
-                    backgroundColor: daysLeft === 0 ? '#22c55e' : '#9ca3af',
+                    backgroundColor: canCollect ? '#22c55e' : '#9ca3af',
                     marginTop: '8px',
-                    cursor: daysLeft === 0 ? 'pointer' : 'not-allowed'
+                    cursor: canCollect ? 'pointer' : 'not-allowed'
                   }}
-                  onClick={() => daysLeft === 0 && handleCollect(share.id)}
-                  disabled={daysLeft > 0}
+                  onClick={() => canCollect && handleCollect(share.id)}
+                  disabled={!canCollect}
                 >
-                  {daysLeft > 0 ? `Collect in ${daysLeft}d` : 'Collect Profits'}
+                  {daysLeft === null ? 'Invalid date' : 
+                   daysLeft > 0 ? `Collect in ${daysLeft}d` : 'Collect Profits'}
                 </button>
               </>
             ) : (
