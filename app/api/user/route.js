@@ -1,5 +1,6 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic';
 
 const VIP_CONFIG = {
  0: { price: 0, books: 4, perBook: 625 },
