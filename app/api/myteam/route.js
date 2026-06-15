@@ -77,7 +77,7 @@ async function getTotalCommission(phone) {
   const allDownline = [...downline1, ...downline2, ...downline3]
   let total = 0
 
-  // Loop through each downline member and sum commissions paid TO you
+  // Loop through each downline member and sum their referral_reward transactions
   for (const memberPhone of allDownline) {
     const txList = await kv.lrange(`transactions:${memberPhone}`, 0, 99)
     if (!txList) continue
@@ -85,8 +85,8 @@ async function getTotalCommission(phone) {
     for (const txStr of txList) {
       try {
         const tx = JSON.parse(txStr)
-        // Only sum successful referral rewards paid to you
-        if (tx.type === 'referral_reward' && tx.to === phoneNorm && tx.status !== 'rejected') {
+        // Only sum successful referral rewards
+        if (tx.type === 'referral_reward' && tx.status !== 'rejected') {
           total += Number(tx.amount || 0)
         }
       } catch {}
