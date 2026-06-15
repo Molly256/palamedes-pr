@@ -44,7 +44,7 @@ function isWithdrawOpen() {
   const now = new Date()
   const ugandaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
 
-  const day = ugandaTime.getDay() // 0=Sunday, 1=Monday...6=Saturday
+  const day = ugandaTime.getDay()
   const hour = ugandaTime.getHours()
   const minute = ugandaTime.getMinutes()
 
@@ -103,10 +103,18 @@ export async function GET(request) {
     let phone = searchParams.get('phone')
     const action = searchParams.get('action')
 
+    // Fallback: try to get phone from Authorization header or cookie if not in query
+    if (!phone) {
+      const authHeader = request.headers.get('authorization')
+      if (authHeader?.startsWith('Bearer ')) {
+        phone = authHeader.replace('Bearer ', '')
+      }
+    }
+
     phone = normalizePhone(phone)
 
     if (!phone && action!== 'register') {
-      return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
+      return NextResponse.json({ success: false, message: 'Phone required. Pass?phone=... or Authorization: Bearer <phone>' }, { status: 400 })
     }
 
     if (action === 'register') {
@@ -173,8 +181,8 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-     .filter(t => t.type === 'referral_reward' && t.status === 'success')
-     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+    .filter(t => t.type === 'referral_reward' && t.status === 'success')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
