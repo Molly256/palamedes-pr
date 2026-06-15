@@ -49,7 +49,6 @@ export async function POST(request) {
     const maxBooks = VIP_CONFIG[vipLevel]?.books || 4
     const taskKey = `task:${normalizedPhone}:${today}`
 
-    // Get current tasks and user data atomically
     const pipe = kv.pipeline()
     pipe.hgetall(taskKey)
     pipe.hgetall(`user:${normalizedPhone}`)
@@ -64,19 +63,17 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    // Mark submitted + add reward + log transaction
     const pipe2 = kv.pipeline()
     pipe2.hset(taskKey, { [taskId]: 'submitted' })
-    pipe2.hincrby(`user:${normalizedPhone}`, 'balance', reward)
+    pipe2.hincrby(`user:${normalizedPhone}`, 'available_balance', reward)
     pipe2.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
-      type: 'task_reward',
+      type: 'daily_income',
       amount: reward,
       date: new Date().toISOString(),
       status: 'success',
       desc: `Task ${taskId} completed`
     }))
 
-    // Check if all books are done
     const updatedTaskData = {...safeTaskData, [taskId]: 'submitted' }
     let allDone = true
     for (let i = 1; i <= maxBooks; i++) {
