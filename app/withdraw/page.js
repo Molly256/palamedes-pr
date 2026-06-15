@@ -9,6 +9,8 @@ export default function Withdraw() {
   const [withdrawNumber, setWithdrawNumber] = useState('')
   const [names, setNames] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
+  const [timeMessage, setTimeMessage] = useState('')
   const router = useRouter()
 
   const presetAmounts = [10000, 50000, 250000, 500000, 1000000, 2000000, 5000000, 10000000]
@@ -22,13 +24,35 @@ export default function Withdraw() {
       return
     }
 
-    // Load saved bank info if it exists, but don't block if it's missing
     const bankInfo = JSON.parse(localStorage.getItem('palamedes_bank_info') || 'null')
     if (bankInfo && bankInfo.number && bankInfo.names) {
       setWithdrawNumber(bankInfo.number)
       setNames(bankInfo.names)
     }
+
+    checkWithdrawWindow()
   }, [router])
+
+  const checkWithdrawWindow = () => {
+    const now = new Date()
+    // Get Uganda time: Africa/Kampala UTC+3
+    const ugandaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
+
+    const day = ugandaTime.getDay() // 0 = Sunday, 1 = Monday,..., 6 = Saturday
+    const hour = ugandaTime.getHours()
+    const minute = ugandaTime.getMinutes()
+
+    const isWeekday = day >= 1 && day <= 5 // Monday to Friday
+    const isOpenTime = (hour > 10 || (hour === 10 && minute >= 0)) && (hour < 17 || (hour === 17 && minute === 0))
+
+    setIsWithdrawOpen(isWeekday && isOpenTime)
+
+    if (!isWeekday) {
+      setTimeMessage('Withdrawals are only available Monday to Friday')
+    } else if (!isOpenTime) {
+      setTimeMessage('Withdrawals are available 10:00 AM - 5:00 PM EAT only')
+    }
+  }
 
   const methods = [
     { name: 'MTN Mobile money' },
@@ -36,6 +60,11 @@ export default function Withdraw() {
   ]
 
   const handleWithdraw = async () => {
+    if (!isWithdrawOpen) {
+      alert(timeMessage)
+      return
+    }
+
     const withdrawAmount = Number(amount)
     const fee = Math.floor(withdrawAmount * 0.1)
     const netAmount = withdrawAmount - fee
@@ -55,7 +84,6 @@ export default function Withdraw() {
       return
     }
 
-    // REMOVED bank info check - allow any number/names
     if (!withdrawNumber ||!names) {
       alert('Please enter phone number and names')
       return
@@ -112,6 +140,21 @@ export default function Withdraw() {
           </h2>
         </div>
 
+        {!isWithdrawOpen && (
+          <div style={{
+            background: '#fef3c7',
+            padding: '15px',
+            borderRadius: '12px',
+            border: '2px solid #f59e0b',
+            marginBottom: '20px',
+            textAlign: 'center',
+            color: '#92400e',
+            fontWeight: '600'
+          }}>
+            {timeMessage}
+          </div>
+        )}
+
         <h1 style={{ fontSize: '26px', color: '#000', marginBottom: '15px', fontWeight: '600' }}>
           Choose withdraw method
         </h1>
@@ -121,16 +164,18 @@ export default function Withdraw() {
             <button
               key={method.name}
               onClick={() => setSelectedMethod(method.name)}
+              disabled={!isWithdrawOpen}
               style={{
                 width: '100%',
                 padding: '18px',
-                background: selectedMethod === method.name? '#87CEEB' : '#E0F6FF',
+                background:!isWithdrawOpen? '#e5e7eb' : selectedMethod === method.name? '#87CEEB' : '#E0F6FF',
                 border: '2px solid #87CEEB',
                 borderRadius: '12px',
                 fontSize: '17px',
                 fontWeight: '500',
-                cursor: 'pointer',
+                cursor:!isWithdrawOpen? 'not-allowed' : 'pointer',
                 color: '#000',
+                opacity:!isWithdrawOpen? 0.6 : 1,
                 transition: 'all 0.2s'
               }}
             >
@@ -139,7 +184,7 @@ export default function Withdraw() {
           ))}
         </div>
 
-        {selectedMethod && (
+        {selectedMethod && isWithdrawOpen && (
           <>
             <input
               type="tel"
@@ -211,7 +256,7 @@ export default function Withdraw() {
             <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', border: '2px solid #87CEEB', marginBottom: '20px', fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
               <p>Note:</p>
               <p>Withdraw fee: 10%</p>
-              <p>Withdraws are available 24/7</p>
+              <p>Withdraws available: Mon-Fri 10:00 AM - 5:00 PM EAT</p>
             </div>
 
             <button

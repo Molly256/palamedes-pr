@@ -39,6 +39,20 @@ function getISOTimestamp() {
   return new Date().toISOString()
 }
 
+function isWithdrawOpen() {
+  const now = new Date()
+  const ugandaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
+
+  const day = ugandaTime.getDay() // 0=Sunday, 1=Monday...6=Saturday
+  const hour = ugandaTime.getHours()
+  const minute = ugandaTime.getMinutes()
+
+  const isWeekday = day >= 1 && day <= 5
+  const isOpenTime = (hour > 10 || (hour === 10 && minute >= 0)) && (hour < 17 || (hour === 17 && minute === 0))
+
+  return { open: isWeekday && isOpenTime, day, hour, minute }
+}
+
 async function getUserData(phone) {
   const userKey = `user:${phone}`
   if ((await kv.type(userKey)) === 'hash') {
@@ -123,7 +137,7 @@ export async function GET(request) {
         upline3: '',
         referralPaid: 'false',
         vip: '0',
-        available_balance: '0', // changed
+        available_balance: '0',
         vipPricePaid: '0',
         tasksCompleted: '0',
         vipLocked: 'false',
@@ -138,7 +152,7 @@ export async function GET(request) {
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (action === 'getTransactions') {
-      const transactions = await getTransactions(phone) // per user only
+      const transactions = await getTransactions(phone)
       const type = searchParams.get('type') || 'all'
 
       let filtered = transactions
@@ -158,15 +172,15 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-      .filter(t => t.type === 'referral_reward' && t.status === 'success')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+     .filter(t => t.type === 'referral_reward' && t.status === 'success')
+     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
       return NextResponse.json({
         success: true,
         user: {
           username: user.username || '',
           phone: user.phone || phone,
-          available_balance: Number(user.available_balance) || 0, // changed
+          available_balance: Number(user.available_balance) || 0,
           vip: Number(user.vip) || 0,
           avatar: user.avatar || '',
           nickname: user.nickname || '',
@@ -196,13 +210,12 @@ export async function GET(request) {
       })
     }
 
-    // Default: return user only
     return NextResponse.json({
       success: true,
       user: {
         username: user.username || '',
         phone: user.phone || phone,
-        available_balance: Number(user.available_balance) || 0, // changed
+        available_balance: Number(user.available_balance) || 0,
         vip: Number(user.vip) || 0,
         nickname: user.nickname || '',
         avatar: user.avatar || '',
@@ -261,8 +274,16 @@ export async function POST(request) {
     }
 
     if (action === 'withdraw') {
+      const { open } = isWithdrawOpen()
+      if (!open) {
+        return NextResponse.json({
+          success: false,
+          message: 'Withdrawals are only available Monday to Friday, 10:00 AM - 5:00 PM EAT'
+        }, { status: 403 })
+      }
+
       const amount = Number(value)
-      const balance = Number(user.available_balance) || 0 // changed
+      const balance = Number(user.available_balance) || 0
 
       if (!amount || amount <= 0) {
         return NextResponse.json({ success: false, message: 'Invalid withdraw amount' }, { status: 400 })
@@ -305,7 +326,7 @@ export async function POST(request) {
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
       const newPrice = Number(config.price)
-      const balance = Number(user.available_balance) || 0 // changed
+      const balance = Number(user.available_balance) || 0
 
       if (!vipLevel || vipLevel <= currentVip) {
         return NextResponse.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
@@ -318,7 +339,7 @@ export async function POST(request) {
       if (currentPricePaid > 0) newBalance += currentPricePaid
 
       await kv.hset(userKey, {
-        available_balance: String(newBalance), // changed
+        available_balance: String(newBalance),
         vip: String(vipLevel),
         vipPricePaid: String(newPrice),
         vipLocked: 'false',
@@ -350,7 +371,6 @@ export async function POST(request) {
         phone: phone
       })
 
-      // Referral rewards
       if (currentVip === 0 && user.referralPaid!== 'true') {
         const paidPrice = Number(config.price)
         const paidUplines = new Set()
@@ -360,7 +380,7 @@ export async function POST(request) {
           if (upline1) {
             const rewardA = Math.floor(paidPrice * 0.05)
             if (rewardA > 0) {
-              await kv.hset(upline1Key, { available_balance: String(Number(upline1.available_balance || 0) + rewardA) }) // changed
+              await kv.hset(upline1Key, { available_balance: String(Number(upline1.available_balance || 0) + rewardA) })
               await pushTransaction(user.upline1, {
                 id: Date.now() + 2,
                 type: 'referral_reward',
@@ -380,7 +400,7 @@ export async function POST(request) {
           if (upline2) {
             const rewardB = Math.floor(paidPrice * 0.02)
             if (rewardB > 0) {
-              await kv.hset(upline2Key, { available_balance: String(Number(upline2.available_balance || 0) + rewardB) }) // changed
+              await kv.hset(upline2Key, { available_balance: String(Number(upline2.available_balance || 0) + rewardB) })
               await pushTransaction(user.upline2, {
                 id: Date.now() + 3,
                 type: 'referral_reward',
@@ -400,7 +420,7 @@ export async function POST(request) {
           if (upline3) {
             const rewardC = Math.floor(paidPrice * 0.01)
             if (rewardC > 0) {
-              await kv.hset(upline3Key, { available_balance: String(Number(upline3.available_balance || 0) + rewardC) }) // changed
+              await kv.hset(upline3Key, { available_balance: String(Number(upline3.available_balance || 0) + rewardC) })
               await pushTransaction(user.upline3, {
                 id: Date.now() + 4,
                 type: 'referral_reward',
@@ -425,7 +445,7 @@ export async function POST(request) {
         user: {
           username: freshUser?.username || '',
           phone: freshUser?.phone || phone,
-          available_balance: Number(freshUser?.available_balance) || 0, // changed
+          available_balance: Number(freshUser?.available_balance) || 0,
           vip: Number(freshUser?.vip) || 0,
           vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
           vipLocked: freshUser?.vipLocked === 'true',
