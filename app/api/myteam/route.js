@@ -66,31 +66,21 @@ async function buildTeams(phone) {
 async function getTotalCommission(phone) {
   const phoneNorm = normalizePhone(phone)
   
-  const [downline1, downline2, downline3] = await Promise.all([
-    kv.smembers(`user:${phoneNorm}:downline1`),
-    kv.smembers(`user:${phoneNorm}:downline2`),
-    kv.smembers(`user:${phoneNorm}:downline3`)
-  ])
+  // Read only the user's own transaction list
+  const txList = await kv.lrange(`transactions:${phoneNorm}`, 0, 99)
+  if (!txList) return 0
 
-  const allDownline = [...downline1, ...downline2, ...downline3]
   let total = 0
 
-  for (const memberPhone of allDownline) {
-    const txList = await kv.lrange(`transactions:${memberPhone}`, 0, 99)
-    if (!txList) continue
-
-    for (const tx of txList) {
-      try {
-        // Handle both string and object from KV
-        const txObj = typeof tx === 'string' ? JSON.parse(tx) : tx
-        
-        if (txObj.type === 'referral_reward' && txObj.status !== 'rejected') {
-          total += Number(txObj.amount || 0)
-          console.error(`MYTEAM: +${txObj.amount} from ${memberPhone}`)
-        }
-      } catch (e) {
-        console.error(`MYTEAM: Parse error for ${memberPhone}:`, e)
+  for (const tx of txList) {
+    try {
+      const txObj = typeof tx === 'string' ? JSON.parse(tx) : tx
+      
+      if (txObj.type === 'referral_reward' && txObj.status !== 'rejected') {
+        total += Number(txObj.amount || 0)
       }
+    } catch (e) {
+      console.error(`MYTEAM: Parse error`, e)
     }
   }
 
