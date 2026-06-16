@@ -2,7 +2,7 @@ import { kv } from '@vercel/kv'
 
 function normalizePhone(phone) {
   if (!phone) return phone
-  phone = String(phone).replace(/\D/g, '') // strip +, spaces, dashes
+  phone = String(phone).replace(/\D/g, '') // remove +, spaces, dashes
 
   // Convert 256753520252 -> 0753520252
   if (phone.startsWith('256') && phone.length === 12) {
@@ -14,12 +14,10 @@ function normalizePhone(phone) {
     phone = '0' + phone
   }
 
-  // If it's already 0753520252, leave it as-is
   return phone
 }
 
 function getUserInviteCode(phone) {
-  // phone is already 10 digits like 0753520252, take last 6
   return `PM${phone.slice(-6)}`
 }
 
@@ -40,7 +38,6 @@ export async function POST(request) {
 
       phone = normalizePhone(phone)
 
-      // Validate final format is 10 digits starting with 0
       if (!/^0\d{9}$/.test(phone)) {
         return Response.json({ success: false, message: 'Phone must be 10 digits starting with 0' })
       }
@@ -56,17 +53,14 @@ export async function POST(request) {
       const userKey = `user:${phone}`
       const usernameKey = `username:${username}`
 
-      // Check if phone exists
       if ((await kv.type(userKey)) === 'hash') {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
 
-      // Check username taken
       if ((await kv.type(usernameKey)) === 'hash') {
         return Response.json({ success: false, message: 'Username taken' })
       }
 
-      // Handle referral
       let upline1 = '', upline2 = '', upline3 = ''
 
       if (referral) {
@@ -86,15 +80,11 @@ export async function POST(request) {
         upline1 = upline1Phone
 
         const upline1Data = await kv.hgetall(`user:${upline1Phone}`)
-        if (upline1Data?.upline1) {
-          upline2 = upline1Data.upline1
-        }
+        if (upline1Data?.upline1) upline2 = upline1Data.upline1
 
         if (upline2) {
           const upline2Data = await kv.hgetall(`user:${upline2}`)
-          if (upline2Data?.upline1) {
-            upline3 = upline2Data.upline1
-          }
+          if (upline2Data?.upline1) upline3 = upline2Data.upline1
         }
 
         await kv.sadd(`user:${upline1}:downline1`, phone)
@@ -110,7 +100,7 @@ export async function POST(request) {
         displayName: username,
         phone,
         password,
-        available_balance: '0',
+        balance: '0',
         vip: '0',
         vipPricePaid: '0',
         vipLocked: 'false',
@@ -128,7 +118,7 @@ export async function POST(request) {
       await kv.hset(usernameKey, { phone })
       await kv.set(`referral:${inviteCode}`, phone)
 
-      // Auto-create 4 VIP0 tasks for registration day only
+      // Auto-create 4 VIP0 tasks for registration day
       const tasks = []
       for (let i = 1; i <= 4; i++) {
         const taskId = `vip0_${phone}_${regDate}_${i}`
@@ -158,7 +148,6 @@ export async function POST(request) {
       }
 
       phone = normalizePhone(phone)
-
       const user = await kv.hgetall(`user:${phone}`)
 
       if (!user || Object.keys(user).length === 0) {
@@ -175,7 +164,7 @@ export async function POST(request) {
           username: user.username,
           displayName: user.displayName || user.username,
           phone: user.phone,
-          balance: Number(user.available_balance) || 0,
+          balance: Number(user.balance) || 0,
           vip: Number(user.vip) || 0,
           vipLocked: user.vipLocked === 'true',
           tasksCompleted: Number(user.tasksCompleted) || 0,
