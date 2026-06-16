@@ -9,6 +9,15 @@ export default function Deposit() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
+  const normalizePhone = (phone) => {
+    if (!phone) return ''
+    phone = String(phone).replace(/\D/g, '')
+    if (!/^07\d{8}$/.test(phone)) {
+      return ''
+    }
+    return phone
+  }
+
   useEffect(() => {
     const userData = localStorage.getItem('palamedes_user')
     if (userData) {
@@ -43,7 +52,13 @@ export default function Deposit() {
     setLoading(true)
 
     try {
-      const cleanPhone = user.phone.replace(/\D/g, '')
+      const cleanPhone = normalizePhone(user.phone)
+      if (!cleanPhone) {
+        alert('Invalid phone number. Please login again')
+        router.push('/login')
+        setLoading(false)
+        return
+      }
 
       const res = await fetch('/api/user', {
         method: 'POST',
@@ -58,7 +73,7 @@ export default function Deposit() {
 
       const data = await res.json()
 
-      if (!res.ok ||!data.success) {
+      if (!res.ok || !data.success) {
         alert(data.message || 'Deposit failed')
         setLoading(false)
         return
@@ -85,6 +100,8 @@ export default function Deposit() {
 
   if (!user) return <div style={{ textAlign: 'center', padding: '100px' }}>Loading...</div>
 
+  const displayBalance = Number(user?.available_balance ?? user?.balance ?? 0)
+
   return (
     <main style={{ minHeight: '100vh', background: '#f5f5f5', padding: '40px 20px' }}>
       <div style={{ maxWidth: '650px', margin: '0 auto' }}>
@@ -96,7 +113,7 @@ export default function Deposit() {
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '2px solid #87CEEB', marginBottom: '25px', textAlign: 'center' }}>
           <p style={{ color: '#999', fontSize: '14px', marginBottom: '5px' }}>Available Balance</p>
           <h2 style={{ fontSize: '32px', color: '#87CEEB', fontWeight: '900' }}>
-            shs {Number(user?.available_balance || 0).toLocaleString()}
+            shs {displayBalance.toLocaleString()}
           </h2>
         </div>
 
@@ -108,7 +125,7 @@ export default function Deposit() {
           {methods.map((method) => (
             <div key={method.name}>
               <button onClick={() => setSelectedMethod(method.name)} style={{
-                width: '100%', padding: '18px', background: selectedMethod === method.name? '#87CEEB' : '#E0F6FF',
+                width: '100%', padding: '18px', background: selectedMethod === method.name ? '#87CEEB' : '#E0F6FF',
                 border: '2px solid #87CEEB', borderRadius: '12px', fontSize: '17px', fontWeight: '500',
                 cursor: 'pointer', color: '#000', transition: 'all 0.2s'
               }}>
@@ -154,17 +171,17 @@ export default function Deposit() {
               style={{
                 width: '100%',
                 padding: '18px',
-                background: loading? '#666' : '#000',
+                background: loading ? '#666' : '#000',
                 border: 'none',
                 borderRadius: '12px',
                 fontSize: '17px',
                 fontWeight: '700',
                 color: '#87CEEB',
-                cursor: loading? 'not-allowed' : 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s'
               }}
             >
-              {loading? 'Processing...' : 'I HAVE PAID MONEY'}
+              {loading ? 'Processing...' : 'I HAVE PAID MONEY'}
             </button>
           </>
         )}

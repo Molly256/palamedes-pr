@@ -53,6 +53,12 @@ const getDaysLeft = (endDateStr) => {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
+const normalizePhone = (phone) => {
+  let clean = String(phone).replace(/\D/g, '').trim()
+  if (!/^07\d{8}$/.test(clean)) return null
+  return clean
+}
+
 export default function HotPage() {
   const [phone, setPhone] = useState('')
   const [ongoing, setOngoing] = useState([])
@@ -68,8 +74,17 @@ export default function HotPage() {
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    setPhone(userData.phone || '')
-    loadData(userData.phone)
+    const rawPhone = userData.phone || ''
+    const cleanPhone = normalizePhone(rawPhone)
+    
+    if (!cleanPhone) {
+      alert('Invalid phone format. Phone must be 07xxxxxxxx')
+      setLoading(false)
+      return
+    }
+    
+    setPhone(cleanPhone)
+    loadData(cleanPhone)
   }, [])
 
   const loadData = async (userPhone) => {
@@ -121,6 +136,7 @@ export default function HotPage() {
         
         const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
         user.balance = data.balance
+        user.available_balance = data.balance
         localStorage.setItem('palamedes_user', JSON.stringify(user))
       } else {
         alert(data.message)
@@ -146,6 +162,7 @@ export default function HotPage() {
         alert(`Collected ${data.profit.toLocaleString()}shs! New balance: ${data.balance.toLocaleString()}shs`)
         const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
         user.balance = data.balance
+        user.available_balance = data.balance
         localStorage.setItem('palamedes_user', JSON.stringify(user))
         await loadData(phone)
       } else {

@@ -29,10 +29,16 @@ function safeParse(val) {
   } catch { return null }
 }
 
-// Only allow 07XXXXXXXX format
+// Only allow 07XXXXXXXX format - 10 digits
 function normalizePhone(phone) {
   if (!phone) return ''
   phone = String(phone).replace(/\D/g, '')
+  
+  // Convert 256753520252 -> 0753520252
+  if (phone.startsWith('256') && phone.length === 12) {
+    phone = '0' + phone.slice(3)
+  }
+
   if (!/^07\d{8}$/.test(phone)) {
     return ''
   }
@@ -64,6 +70,15 @@ async function getUserData(phone) {
     return { user, userKey }
   }
   return { user: null, userKey: null }
+}
+
+async function syncBalanceFields(phone, amount) {
+  const userKey = `user:${phone}`
+  const amountStr = String(amount)
+  await kv.hset(userKey, {
+    balance: amountStr,
+    available_balance: amountStr
+  })
 }
 
 async function getTransactions(phone) {
@@ -149,6 +164,7 @@ export async function GET(request) {
         referralPaid: 'false',
         vip: '0',
         balance: '0',
+        available_balance: '0',
         vipPricePaid: '0',
         tasksCompleted: '0',
         vipLocked: 'false',
@@ -183,15 +199,18 @@ export async function GET(request) {
       const { teamA, teamB, teamC } = await buildTeams(phone)
 
       const totalEarnings = transactions
-  .filter(t => t.type === 'referral_reward' && t.status === 'success')
-  .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+        .filter(t => t.type === 'referral_reward' && t.status === 'success')
+        .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+
+      const balance = Number(user.balance || user.available_balance || 0)
 
       return NextResponse.json({
         success: true,
         user: {
           username: user.username || '',
           phone: user.phone || phone,
-          balance: Number(user.balance) || 0,
+          balance: balance,
+          available_balance: balance,
           vip: Number(user.vip) || 0,
           avatar: user.avatar || '',
           nickname: user.nickname || '',
@@ -221,12 +240,14 @@ export async function GET(request) {
       })
     }
 
+    const balance = Number(user.balance || user.available_balance || 0)
     return NextResponse.json({
       success: true,
       user: {
         username: user.username || '',
         phone: user.phone || phone,
-        balance: Number(user.balance) || 0,
+        balance: balance,
+        available_balance: balance,
         vip: Number(user.vip) || 0,
         nickname: user.nickname || '',
         avatar: user.avatar || '',
@@ -317,7 +338,7 @@ export async function POST(request) {
       }
 
       const newBalance = (Number(targetUser.balance) || 0) + Number(tx.amount)
-      await kv.hset(targetKey, { balance: String(newBalance) })
+      await syncBalanceFields(targetPhone, newBalance)
 
       const updatedTx = {...tx, status: 'success' }
 
@@ -346,7 +367,7 @@ export async function POST(request) {
       }
 
       const amount = Number(value)
-      const balance = Number(user.balance) || 0
+      const balance = Number(user.balance || user.available_balance || 0)
 
       if (!amount || amount <= 0) {
         return NextResponse.json({ success: false, message: 'Invalid withdraw amount' }, { status: 400 })
@@ -395,7 +416,7 @@ export async function POST(request) {
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
       const newPrice = Number(config.price)
-      const balance = Number(user.balance) || 0
+      const balance = Number(user.balance || user.available_balance || 0)
 
       if (!vipLevel || vipLevel <= currentVip) {
         return NextResponse.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
@@ -409,6 +430,7 @@ export async function POST(request) {
 
       await kv.hset(userKey, {
         balance: String(newBalance),
+        available_balance: String(newBalance),
         vip: String(vipLevel),
         vipPricePaid: String(newPrice),
         vipLocked: 'false',
@@ -449,7 +471,7 @@ export async function POST(request) {
           if (upline1) {
             const rewardA = Math.floor(paidPrice * 0.05)
             if (rewardA > 0) {
-              await kv.hset(upline1Key, { balance: String(Number(upline1.balance || 0) + rewardA) })
+              await syncBalanceFields(user.upline1, Number(upline1.balance || 0) + rewardA)
               await pushTransaction(user.upline1, {
                 id: Date.now() + 2,
                 type: 'referral_reward',
@@ -469,7 +491,7 @@ export async function POST(request) {
           if (upline2) {
             const rewardB = Math.floor(paidPrice * 0.02)
             if (rewardB > 0) {
-              await kv.hset(upline2Key, { balance: String(Number(upline2.balance || 0) + rewardB) })
+              await syncBalanceFields(user.upline2, Number(upline2.balance || 0) + rewardB)
               await pushTransaction(user.upline2, {
                 id: Date.now() + 3,
                 type: 'referral_reward',
@@ -489,7 +511,7 @@ export async function POST(request) {
           if (upline3) {
             const rewardC = Math.floor(paidPrice * 0.01)
             if (rewardC > 0) {
-              await kv.hset(upline3Key, { balance: String(Number(upline3.balance || 0) + rewardC) })
+              await syncBalanceFields(user.upline3, Number(upline3.balance || 0) + rewardC)
               await pushTransaction(user.upline3, {
                 id: Date.now() + 4,
                 type: 'referral_reward',
@@ -508,13 +530,15 @@ export async function POST(request) {
       }
 
       let freshUser = await kv.hgetall(userKey)
+      const finalBalance = Number(freshUser?.balance || freshUser?.available_balance || 0)
 
       return NextResponse.json({
         success: true,
         user: {
           username: freshUser?.username || '',
           phone: freshUser?.phone || phone,
-          balance: Number(freshUser?.balance) || 0,
+          balance: finalBalance,
+          available_balance: finalBalance,
           vip: Number(freshUser?.vip) || 0,
           vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
           vipLocked: freshUser?.vipLocked === 'true',

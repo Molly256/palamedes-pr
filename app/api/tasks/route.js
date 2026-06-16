@@ -12,7 +12,7 @@ function getUGDayOfWeek(date = new Date()) {
 }
 
 function normalizePhone(phone) {
-  if (!phone) return phone
+  if (!phone) return ''
   phone = String(phone).replace(/\D/g, '')
 
   // Convert 256753520252 -> 0753520252
@@ -20,9 +20,9 @@ function normalizePhone(phone) {
     phone = '0' + phone.slice(3)
   }
 
-  // Convert 753520252 -> 0753520252
-  if (phone.length === 9 &&!phone.startsWith('0')) {
-    phone = '0' + phone
+  // Must be 10 digits starting with 07
+  if (!/^07\d{8}$/.test(phone)) {
+    return ''
   }
 
   return phone
@@ -48,7 +48,7 @@ export async function GET(request) {
     const phone = normalizePhone(searchParams.get('phone'))
 
     if (!phone) {
-      return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
+      return NextResponse.json({ success: false, message: 'Phone must be 10 digits starting with 07' }, { status: 400 })
     }
 
     const user = await kv.hgetall(`user:${phone}`)
@@ -58,39 +58,40 @@ export async function GET(request) {
 
     const today = getUGDateStr()
     const day = getUGDayOfWeek()
-    const vip = Number(user.vip) || 0
+    const vip = Number(user.vip) || Number(user.vip_level) || 0
     const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
 
     if (day === 'Saturday' || day === 'Sunday') {
       return NextResponse.json({ success: false, message: 'No tasks available' })
     }
 
-    const dailyTasks = await kv.get(`tasks:daily:${today}`)
-    if (!dailyTasks ||!dailyTasks.books) {
+    const taskKey = `tasks:user:${phone}:${today}`
+    const taskData = await kv.get(taskKey)
+
+    if (!taskData ||!taskData.books) {
       return NextResponse.json({ success: false, message: 'No tasks available' })
     }
 
-    const taskKey = `task:${phone}:${today}`
-    const userStatus = await kv.hgetall(taskKey) || {}
-
-    const tasks = dailyTasks.books.slice(0, config.books).map(book => ({
+    const tasks = taskData.books.slice(0, config.books).map(book => ({
       taskId: book.id,
       bookId: book.id,
       title: book.title,
       cover: book.cover,
       preview: book.preview,
-      status: userStatus[book.id] || 'pending',
+      status: book.status || 'pending',
       reward: config.perBook
     }))
 
     const completed = tasks.filter(t => t.status === 'submitted').length
+    const balance = Number(user.balance || user.available_balance || 0)
 
     return NextResponse.json({
       success: true,
       tasks,
       completed,
       total: tasks.length,
-      balance: Number(user.balance) || 0 // fixed: use balance
+      balance,
+      available_balance: balance
     })
 
   } catch (err) {
@@ -109,6 +110,10 @@ export async function POST(request) {
     }
 
     const normalizedPhone = normalizePhone(phone)
+    if (!normalizedPhone) {
+      return NextResponse.json({ success: false, message: 'Phone must be 10 digits starting with 07' }, { status: 400 })
+    }
+
     const today = getUGDateStr()
     const day = getUGDayOfWeek()
 
@@ -122,22 +127,37 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
 
-    const vip = Number(user.vip) || 0
+    const vip = Number(user.vip) || Number(user.vip_level) || 0
     const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
-    const taskKey = `task:${normalizedPhone}:${today}`
+    const taskKey = `tasks:user:${normalizedPhone}:${today}`
 
-    const currentStatus = await kv.hget(taskKey, taskId)
-    if (!currentStatus) {
+    const taskData = await kv.get(taskKey)
+    if (!taskData ||!taskData.books) {
+      return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
+    }
+
+    const book = taskData.books.find(b => b.id === String(taskId))
+    if (!book) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (currentStatus === 'submitted') {
+    if (book.status === 'submitted') {
       return NextResponse.json({ success: false, message: 'Task already submitted' }, { status: 400 })
     }
 
+    // Mark only this book as submitted
+    book.status = 'submitted'
+    book.submittedAt = new Date().toISOString()
+
+    const currentBalance = Number(user.balance || user.available_balance || 0)
+    const newBalance = currentBalance + config.perBook
+
     const pipe = kv.pipeline()
-    pipe.hset(taskKey, { [taskId]: 'submitted' })
-    pipe.hincrby(userKey, 'balance', config.perBook) // fixed: use balance
+    pipe.set(taskKey, taskData)
+    pipe.hset(userKey, {
+      balance: String(newBalance),
+      available_balance: String(newBalance)
+    })
     pipe.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
       type: 'daily_income',
       amount: config.perBook,
@@ -146,31 +166,23 @@ export async function POST(request) {
       desc: `Task ${taskId} completed`
     }))
 
-    const allTaskData = await kv.hgetall(taskKey)
-    const updatedTaskData = {...allTaskData, [taskId]: 'submitted' }
-
-    const dailyTasks = await kv.get(`tasks:daily:${today}`)
-    if (dailyTasks?.books) {
-      const todaysBookIds = dailyTasks.books.slice(0, config.books).map(b => b.id)
-      const allDone = todaysBookIds.every(id => updatedTaskData[id] === 'submitted')
-
-      if (allDone) {
-        pipe.hset(userKey, {
-          tasksCompleted: config.books,
-          vipLocked: 'true'
-        })
-      }
+    // Check if all tasks done
+    const allDone = taskData.books.slice(0, config.books).every(b => b.status === 'submitted')
+    if (allDone) {
+      pipe.hset(userKey, {
+        tasksCompleted: String(config.books),
+        vipLocked: 'true'
+      })
     }
 
     await pipe.exec()
-
-    const newBalance = (Number(user.balance) || 0) + config.perBook
 
     return NextResponse.json({
       success: true,
       message: 'Task submitted successfully',
       reward: config.perBook,
-      balance: newBalance // fixed
+      balance: newBalance,
+      available_balance: newBalance
     })
 
   } catch (err) {

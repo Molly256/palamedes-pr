@@ -28,13 +28,24 @@ async function verifyAdmin(phone) {
   return ADMIN_PHONES.includes(normalizePhone(phone))
 }
 
-async function getUserData(phone) {
+// Raw data from KV - used for admin display
+async function getUserDataRaw(phone) {
   const userKey = `user:${phone}`
   if ((await kv.type(userKey)) === 'hash') {
     const user = await kv.hgetall(userKey)
     return { user, userKey }
   }
   return { user: null, userKey: null }
+}
+
+// Normalized for logic - treats available_balance as balance
+async function getUserData(phone) {
+  const { user, userKey } = await getUserDataRaw(phone)
+  if (!user) return { user: null, userKey: null }
+
+  const balance = Number(user.balance?? user.available_balance?? 0)
+  user.balance = balance
+  return { user, userKey }
 }
 
 async function getTransactions(phone) {
@@ -60,10 +71,18 @@ export async function GET(request) {
     for (let key of keys) {
       if ((await kv.type(key))!== 'hash') continue
       const userPhone = key.split(':')[1]
+
+      // Get RAW data so admin sees what's actually in DB
+      const { user } = await getUserDataRaw(userPhone)
+      if (!user) continue
+
       const txList = await getTransactions(userPhone)
       txList.forEach(tx => {
         if (tx?.status === 'pending') {
           tx.phone = userPhone
+          tx.user_balance = user.balance || 0
+          tx.user_available_balance = user.available_balance || 0
+
           if (tx.type === 'deposit') deposits.push(tx)
           if (tx.type === 'withdraw') withdraws.push(tx)
         }
@@ -78,7 +97,7 @@ export async function GET(request) {
 
   if (action === 'getUser') {
     const targetPhone = normalizePhone(searchParams.get('targetPhone'))
-    const { user } = await getUserData(targetPhone)
+    const { user } = await getUserDataRaw(targetPhone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     return NextResponse.json({ success: true, user })
   }
@@ -97,7 +116,7 @@ export async function POST(request) {
 
     if (action === 'resetPassword') {
       const targetPhoneNorm = normalizePhone(targetPhone)
-      const { userKey: targetKey } = await getUserData(targetPhoneNorm)
+      const { userKey: targetKey } = await getUserDataRaw(targetPhoneNorm)
       if (!targetKey) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
 
       await kv.hset(targetKey, { password: newPassword })

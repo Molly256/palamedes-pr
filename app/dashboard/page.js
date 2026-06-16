@@ -68,6 +68,9 @@ export default function Dashboard() {
     { icon: '🎧', label: 'Manager', href: '/manager' }
   ]
 
+  // Treat balance and available_balance as the same
+  const displayBalance = Number(user?.available_balance ?? user?.balance ?? 0)
+
   return (
     <Card>
       <main style={{
@@ -102,7 +105,7 @@ export default function Dashboard() {
               Available balance
             </p>
             <p style={{ margin: '0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
-              {loading ? '0' : (Number(user?.balance) || 0).toLocaleString()} shs
+              {loading ? '0' : displayBalance.toLocaleString()} shs
             </p>
           </div>
 

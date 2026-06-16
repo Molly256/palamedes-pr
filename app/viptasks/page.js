@@ -7,7 +7,7 @@ import AvatarWithBadge from '../../components/AvatarWithBadge'
  * @typedef {Object} User
  * @property {string} username
  * @property {string} phone
- * @property {number} available_balance
+ * @property {number} balance
  * @property {number} vip
  * @property {number} vipPricePaid
  * @property {boolean} vipLocked
@@ -71,7 +71,8 @@ export default function VipTask() {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!userData.phone) return
     userData.vip = Number(userData.vip || 0)
-    userData.available_balance = Number(userData.available_balance || 0) // fix here
+    userData.balance = Number(userData.balance || 0) // fixed: use balance not available_balance
+    userData.vipPricePaid = Number(userData.vipPricePaid || 0)
     if (!userData.tasks_read_today) userData.tasks_read_today = 0
     localStorage.setItem('palamedes_user', JSON.stringify(userData))
     setUser(userData)
@@ -94,9 +95,11 @@ export default function VipTask() {
     if (!user ||!selectedVip) return
 
     const newPrice = selectedVip.price
+    const currentPricePaid = Number(user.vipPricePaid || 0)
+    const upgradeCost = newPrice - currentPricePaid // only charge difference
 
-    if ((user.available_balance || 0) < newPrice) { // fix here
-      alert('Insufficient balance. Need full amount to upgrade')
+    if ((user.balance || 0) < upgradeCost) {
+      alert(`Insufficient balance. You need ${upgradeCost.toLocaleString()}shs more to upgrade`)
       return
     }
 
@@ -149,11 +152,11 @@ export default function VipTask() {
             username={user.username}
             vipLevel={currentVipLevel}
             size={60}
-            key={currentVipLevel + '-' + user.available_balance}
+            key={currentVipLevel + '-' + user.balance}
           />
           <div style={{ marginTop: '8px', textAlign: 'left' }}>
             <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>
-              Balance: {user.available_balance?.toLocaleString() || 0} shs
+              Balance: {user.balance?.toLocaleString() || 0} shs
             </p>
             <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
               {vips[currentVipLevel]?.name || 'VIP 0.Internship'}
@@ -217,8 +220,10 @@ export default function VipTask() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', padding: '30px', borderRadius: '16px', textAlign: 'center', maxWidth: '320px' }}>
             <h3 style={{ color: '#000', fontWeight: '900' }}>Upgrade to {selectedVip.name}?</h3>
-            <p style={{ color: '#000', fontWeight: '700' }}>Pay: {selectedVip.price.toLocaleString()} shs</p>
-            <p style={{ color: '#000', fontSize: '12px' }}>Valid for 1 year. Previous VIP refunded on upgrade.</p>
+            <p style={{ color: '#000', fontWeight: '700' }}>
+              Pay: {(selectedVip.price - (user.vipPricePaid || 0)).toLocaleString()} shs
+            </p>
+            <p style={{ color: '#000', fontSize: '12px' }}>Valid for 1 year. Only the difference is charged.</p>
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
               <button
                 onClick={() => setShowBuyPopup(false)}

@@ -15,27 +15,31 @@ function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
 
+  // If user entered 2567... convert to 07...
   if (phone.startsWith('256') && phone.length === 12) {
     phone = '0' + phone.slice(3)
   }
-  if (phone.length === 9 &&!phone.startsWith('0')) {
-    phone = '0' + phone
+
+  // Must be 10 digits starting with 07
+  if (!/^07\d{8}$/.test(phone)) {
+    return ''
   }
+
   return phone
 }
 
 const VIP_CONFIG = {
- 0: { books: 4, perBook: 625 },
- 1: { books: 4, perBook: 625 },
- 2: { books: 4, perBook: 2000 },
- 3: { books: 4, perBook: 6500 },
- 4: { books: 5, perBook: 7000 },
- 5: { books: 5, perBook: 10000 },
- 6: { books: 5, perBook: 14000 },
- 7: { books: 5, perBook: 28000 },
- 8: { books: 5, perBook: 32000 },
- 9: { books: 5, perBook: 40000 },
- 10: { books: 5, perBook: 60000 },
+ 0: { perBook: 625 },
+ 1: { perBook: 625 },
+ 2: { perBook: 2000 },
+ 3: { perBook: 6500 },
+ 4: { perBook: 7000 },
+ 5: { perBook: 10000 },
+ 6: { perBook: 14000 },
+ 7: { perBook: 28000 },
+ 8: { perBook: 32000 },
+ 9: { perBook: 40000 },
+ 10: { perBook: 60000 },
 }
 
 export async function POST(request) {
@@ -47,6 +51,10 @@ export async function POST(request) {
     }
 
     const normalizedPhone = normalizePhone(phone)
+    if (!normalizedPhone) {
+      return NextResponse.json({ success: false, message: 'Phone must be 10 digits starting with 07' }, { status: 400 })
+    }
+
     const today = getUGDateStr()
     const day = getUGDayOfWeek()
 
@@ -60,36 +68,40 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
 
-    const vipLevel = Number(user.vip) || 0
+    const vipLevel = Number(user.vip) || Number(user.vip_level) || 0
     const reward = VIP_CONFIG[vipLevel]?.perBook || 625
-    const maxBooks = VIP_CONFIG[vipLevel]?.books || 4
-    const taskKey = `task:${normalizedPhone}:${today}`
 
-    const exists = await kv.exists(taskKey)
-    if (!exists) {
-      const dailyTasks = await kv.get(`tasks:daily:${today}`)
-      if (!dailyTasks?.books) {
-        return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
-      }
-      const initialTasks = {}
-      dailyTasks.books.slice(0, maxBooks).forEach(b => {
-        initialTasks[b.id] = 'pending'
-      })
-      await kv.hset(taskKey, initialTasks)
+    // Get today's tasks for this user
+    const taskKey = `tasks:user:${normalizedPhone}:${today}`
+    const taskData = await kv.get(taskKey)
+
+    if (!taskData ||!taskData.books) {
+      return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
     }
 
-    const currentStatus = await kv.hget(taskKey, taskId)
-    if (!currentStatus) {
+    const book = taskData.books.find(b => b.id === String(taskId))
+    if (!book) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (currentStatus === 'submitted') {
+    if (book.status === 'submitted') {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
+    // Mark only this book as submitted
+    book.status = 'submitted'
+    book.submittedAt = new Date().toISOString()
+
+    // Update balance and available_balance together
+    const currentBalance = Number(user.balance || user.available_balance || 0)
+    const newBalance = currentBalance + reward
+
     const pipe = kv.pipeline()
-    pipe.hset(taskKey, { [taskId]: 'submitted' })
-    pipe.hincrby(userKey, 'balance', reward) // fixed: use balance
+    pipe.set(taskKey, taskData)
+    pipe.hset(userKey, {
+      balance: String(newBalance),
+      available_balance: String(newBalance)
+    })
     pipe.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
       type: 'daily_income',
       amount: reward,
@@ -97,31 +109,13 @@ export async function POST(request) {
       status: 'success',
       desc: `Task ${taskId} completed`
     }))
-
-    const allTaskData = await kv.hgetall(taskKey)
-    const updatedTaskData = {...allTaskData, [taskId]: 'submitted' }
-
-    const dailyTasks = await kv.get(`tasks:daily:${today}`)
-    if (dailyTasks?.books) {
-      const todaysBookIds = dailyTasks.books.slice(0, maxBooks).map(b => b.id)
-      const allDone = todaysBookIds.every(id => updatedTaskData[id] === 'submitted')
-
-      if (allDone) {
-        pipe.hset(userKey, {
-          tasksCompleted: maxBooks,
-          vipLocked: 'true'
-        })
-      }
-    }
-
     await pipe.exec()
-
-    const newBalance = (Number(user.balance) || 0) + reward
 
     return NextResponse.json({
       success: true,
       reward,
-      balance: newBalance // fixed: return balance
+      balance: newBalance,
+      available_balance: newBalance
     })
 
   } catch (err) {

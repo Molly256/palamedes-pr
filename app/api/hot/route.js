@@ -157,7 +157,10 @@ export async function POST(request) {
       }
 
       const newBalance = balance - cost
-      await kv.hset(userKey, { balance: String(newBalance) })
+      await kv.hset(userKey, {
+        balance: String(newBalance),
+        available_balance: String(newBalance)
+      })
       console.error('POST DEBUG: Balance updated to', newBalance)
 
       const buyDate = getUGNow()
@@ -239,7 +242,10 @@ export async function POST(request) {
       share.profitReceived = profit
 
       await kv.hset(sharesKey, collectShareId, JSON.stringify(share))
-      await kv.hset(userKey, { balance: String(newBalance) })
+      await kv.hset(userKey, {
+        balance: String(newBalance),
+        available_balance: String(newBalance)
+      })
 
       await pushTransaction(phone, {
         id: Date.now(),

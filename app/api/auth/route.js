@@ -1,10 +1,14 @@
 import { kv } from '@vercel/kv'
 
+const TZ = 'Africa/Kampala'
+
+function getUGDateStr(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
+}
+
 function normalizePhone(phone) {
   if (!phone) return ''
-  phone = String(phone).replace(/\D/g, '') // remove +, spaces, dashes
-
-  // Only accept 10 digits starting with 07
+  phone = String(phone).replace(/\D/g, '')
   if (!/^07\d{8}$/.test(phone)) {
     return ''
   }
@@ -19,6 +23,40 @@ function isValidInviteCode(code) {
   return /^PM\d{6}$/.test(code)
 }
 
+function normalizeUser(user) {
+  if (!user) return null
+
+  const balance = Number(user.balance ?? user.available_balance ?? 0)
+
+  return {
+    username: user.username,
+    displayName: user.displayName || user.username || '',
+    phone: user.phone,
+    balance: balance,
+    available_balance: balance,
+    vip: Number(user.vip) || 0,
+    vipLocked: user.vipLocked === 'true',
+    tasksCompleted: Number(user.tasksCompleted) || 0,
+    referralCode: user.referralCode || '',
+    upline1: user.upline1 || '',
+    upline2: user.upline2 || '',
+    upline3: user.upline3 || '',
+    referralPaid: user.referralPaid || 'false',
+    role: user.role || 'user',
+    hasBoughtVIP: user.hasBoughtVIP === 'true',
+    regDate: user.regDate || ''
+  }
+}
+
+async function syncBalanceFields(phone, amount) {
+  const userKey = `user:${phone}`
+  const amountStr = String(amount)
+  await kv.hset(userKey, {
+    balance: amountStr,
+    available_balance: amountStr
+  })
+}
+
 export async function POST(request) {
   try {
     const body = await request.json()
@@ -26,7 +64,7 @@ export async function POST(request) {
 
     // REGISTER
     if (action === 'register') {
-      if (!username ||!password ||!phone) {
+      if (!username || !password || !phone) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
@@ -86,7 +124,7 @@ export async function POST(request) {
       }
 
       const inviteCode = getUserInviteCode(phone)
-      const regDate = new Date().toISOString().split('T')[0]
+      const regDate = getUGDateStr()
 
       await kv.hset(userKey, {
         username,
@@ -94,6 +132,7 @@ export async function POST(request) {
         phone,
         password,
         balance: '0',
+        available_balance: '0',
         vip: '0',
         vipPricePaid: '0',
         vipLocked: 'false',
@@ -111,8 +150,10 @@ export async function POST(request) {
       await kv.hset(usernameKey, { phone })
       await kv.set(`referral:${inviteCode}`, phone)
 
-      // Auto-create 4 VIP0 tasks for registration day
+      // Create 4 books for VIP 0 - 625shs per book, expires in 24h
       const tasks = []
+      const expireAt = Math.floor(Date.now() / 1000) + 86400
+      
       for (let i = 1; i <= 4; i++) {
         const taskId = `vip0_${phone}_${regDate}_${i}`
         await kv.hset(taskId, {
@@ -121,11 +162,13 @@ export async function POST(request) {
           bookId: i,
           reward: '625',
           status: 'pending',
-          date: regDate
+          date: regDate,
+          expiresAt: String(expireAt)
         })
         tasks.push(taskId)
       }
-      await kv.sadd(`tasks:${phone}:${regDate}`,...tasks)
+      await kv.sadd(`tasks:${phone}:${regDate}`, ...tasks)
+      await kv.expire(`tasks:${phone}:${regDate}`, 86400)
 
       return Response.json({
         success: true,
@@ -136,7 +179,7 @@ export async function POST(request) {
 
     // LOGIN
     if (action === 'login') {
-      if (!phone ||!password) {
+      if (!phone || !password) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
@@ -151,29 +194,21 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (String(user.password)!== String(password)) {
+      if (String(user.password) !== String(password)) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
+      // Sync fields if they differ
+      const currentBalance = Number(user.balance ?? user.available_balance ?? 0)
+      if (String(user.balance) !== String(currentBalance) || String(user.available_balance) !== String(currentBalance)) {
+        await syncBalanceFields(phone, currentBalance)
+      }
+
+      const normalizedUser = normalizeUser(user)
+
       return Response.json({
         success: true,
-        user: {
-          username: user.username,
-          displayName: user.displayName || user.username,
-          phone: user.phone,
-          balance: Number(user.balance) || 0,
-          vip: Number(user.vip) || 0,
-          vipLocked: user.vipLocked === 'true',
-          tasksCompleted: Number(user.tasksCompleted) || 0,
-          referralCode: user.referralCode || '',
-          upline1: user.upline1 || '',
-          upline2: user.upline2 || '',
-          upline3: user.upline3 || '',
-          referralPaid: user.referralPaid || 'false',
-          role: user.role || 'user',
-          hasBoughtVIP: user.hasBoughtVIP === 'true',
-          regDate: user.regDate || ''
-        }
+        user: normalizedUser
       })
     }
 
