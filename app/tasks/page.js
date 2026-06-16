@@ -11,11 +11,22 @@ export default function TasksPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [submittingId, setSubmittingId] = useState(null)
 
+  const normalizePhone = (phone) => {
+    if (!phone) return ''
+    phone = String(phone).replace(/\D/g, '')
+    if (!/^07\d{8}$/.test(phone)) {
+      return ''
+    }
+    return phone
+  }
+
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    if (!userData.phone) return
-    setUser(userData)
-    fetchTasks(userData.phone)
+    const cleanPhone = normalizePhone(userData.phone)
+    if (!cleanPhone) return
+    
+    setUser({ ...userData, phone: cleanPhone })
+    fetchTasks(cleanPhone)
   }, [])
 
   const fetchTasks = async (phone) => {
@@ -41,7 +52,7 @@ export default function TasksPage() {
 
     if (timer === 1) {
       setTasks(prev => prev.map(b =>
-        b.bookId === readingBook.bookId ? {...b, status: 'read' } : b
+        b.bookId === readingBook.bookId ? { ...b, status: 'read' } : b
       ))
       setShowPopup(true)
       setReadingBook(null)
@@ -56,7 +67,7 @@ export default function TasksPage() {
     setShowPopup(false)
 
     setTasks(prev => prev.map(b =>
-      b.bookId === book.bookId ? {...b, status: 'reading' } : b
+      b.bookId === book.bookId ? { ...b, status: 'reading' } : b
     ))
   }
 
@@ -70,11 +81,12 @@ export default function TasksPage() {
 
     setSubmittingId(book.taskId)
     try {
+      const cleanPhone = normalizePhone(user.phone)
       const res = await fetch('/api/tasks/submit-one', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: user.phone,
+          phone: cleanPhone,
           taskId: book.taskId
         })
       })
@@ -83,17 +95,16 @@ export default function TasksPage() {
 
       if (data.success) {
         setTasks(prev => prev.map(b =>
-          b.bookId === book.bookId ? {...b, status: 'submitted' } : b
+          b.bookId === book.bookId ? { ...b, status: 'submitted' } : b
         ))
 
         alert(`+${Number(data.reward).toLocaleString()}shs added!`)
         
-        // Update localStorage user object
-        const updatedUser = {...user, available_balance: data.available_balance }
-        setUser(updatedUser)
-        localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
-        
+        // Trigger dashboard and transactions to refresh from KV
         localStorage.setItem('palamedes_refresh_my', 'true')
+        window.dispatchEvent(new Event('refreshTransactions'))
+        window.dispatchEvent(new Event('focus'))
+        
       } else {
         alert(data.message || 'Failed to submit')
       }
@@ -142,7 +153,6 @@ export default function TasksPage() {
     )
   }
 
-  const pendingCount = tasks.filter(b => b.status !== 'submitted').length
   const doneCount = tasks.filter(b => b.status === 'submitted').length
 
   return (
