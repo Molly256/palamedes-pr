@@ -1,19 +1,13 @@
 import { kv } from '@vercel/kv'
 
 function normalizePhone(phone) {
-  if (!phone) return phone
+  if (!phone) return ''
   phone = String(phone).replace(/\D/g, '') // remove +, spaces, dashes
 
-  // Convert 256753520252 -> 0753520252
-  if (phone.startsWith('256') && phone.length === 12) {
-    phone = '0' + phone.slice(3)
+  // Only accept 10 digits starting with 07
+  if (!/^07\d{8}$/.test(phone)) {
+    return ''
   }
-
-  // Convert 753520252 -> 0753520252
-  if (phone.length === 9 &&!phone.startsWith('0')) {
-    phone = '0' + phone
-  }
-
   return phone
 }
 
@@ -37,9 +31,8 @@ export async function POST(request) {
       }
 
       phone = normalizePhone(phone)
-
-      if (!/^0\d{9}$/.test(phone)) {
-        return Response.json({ success: false, message: 'Phone must be 10 digits starting with 0' })
+      if (!phone) {
+        return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
       }
 
       if (password.length < 6) {
@@ -148,6 +141,10 @@ export async function POST(request) {
       }
 
       phone = normalizePhone(phone)
+      if (!phone) {
+        return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
+      }
+
       const user = await kv.hgetall(`user:${phone}`)
 
       if (!user || Object.keys(user).length === 0) {

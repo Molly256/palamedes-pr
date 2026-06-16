@@ -12,9 +12,22 @@ export default function Dashboard() {
 
   const ADMIN_PHONE = '0753520252'
 
+  const normalizePhone = (phone) => {
+    if (!phone) return ''
+    phone = String(phone).replace(/\D/g, '')
+    
+    if (phone.startsWith('256') && phone.length === 12) {
+      phone = '0' + phone.slice(3)
+    }
+    if (phone.length === 9 && !phone.startsWith('0')) {
+      phone = '0' + phone
+    }
+    return phone
+  }
+
   const loadUser = async () => {
     const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    const cleanPhone = localUser.phone ? localUser.phone.replace(/\D/g, '') : ''
+    const cleanPhone = normalizePhone(localUser.phone)
     
     if (!cleanPhone) {
       setUser(localUser)
@@ -91,7 +104,7 @@ export default function Dashboard() {
               Available balance
             </p>
             <p style={{ margin: '0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
-              {loading ? '0' : (Number(user?.available_balance) || 0).toLocaleString()} shs
+              {loading ? '0' : (Number(user?.balance) || 0).toLocaleString()} shs
             </p>
           </div>
 
@@ -131,7 +144,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {user?.phone === ADMIN_PHONE && (
+        {normalizePhone(user?.phone) === ADMIN_PHONE && (
           <div 
             onClick={() => router.push('/admin')}
             style={{ 

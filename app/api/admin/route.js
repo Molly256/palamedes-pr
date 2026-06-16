@@ -6,7 +6,16 @@ const ADMIN_PHONES = ['0753520252']
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
-  if (phone.length === 9 &&!phone.startsWith('0')) phone = '0' + phone
+
+  // Convert 256753520252 -> 0753520252
+  if (phone.startsWith('256') && phone.length === 12) {
+    phone = '0' + phone.slice(3)
+  }
+
+  // Convert 753520252 -> 0753520252
+  if (phone.length === 9 &&!phone.startsWith('0')) {
+    phone = '0' + phone
+  }
   return phone
 }
 
@@ -110,14 +119,16 @@ export async function POST(request) {
         const { user: targetUser, userKey: targetKey } = await getUserData(targetPhoneNorm)
         if (!targetKey) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
+        const currentBalance = Number(targetUser.balance) || 0
+
         if (type === 'deposit') {
-          const newBalance = Number(targetUser.available_balance || 0) + Number(tx.amount)
-          await kv.hset(targetKey, { available_balance: String(newBalance) })
+          const newBalance = currentBalance + Number(tx.amount)
+          await kv.hset(targetKey, { balance: String(newBalance) })
         }
 
         if (type === 'withdraw') {
-          const newBalance = Number(targetUser.available_balance || 0) - Math.abs(Number(tx.amount))
-          await kv.hset(targetKey, { available_balance: String(newBalance) })
+          const newBalance = currentBalance - Math.abs(Number(tx.amount))
+          await kv.hset(targetKey, { balance: String(newBalance) })
         }
       }
 
