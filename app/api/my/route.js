@@ -4,9 +4,13 @@ import { NextResponse } from 'next/server'
 const TZ = 'Africa/Kampala'
 
 function normalizePhone(phone) {
-  if (!phone) return phone
+  if (!phone) return ''
   phone = String(phone).replace(/\D/g, '')
-  if (phone.length === 9 && !phone.startsWith('0')) phone = '0' + phone
+  
+  // Only accept 07XXXXXXXX
+  if (!/^07\d{8}$/.test(phone)) {
+    return ''
+  }
   return phone
 }
 
@@ -43,36 +47,38 @@ async function getVipPurchaseInfo(phone) {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
-    let phone = normalizePhone(searchParams.get('phone'))
+    const phone = normalizePhone(searchParams.get('phone'))
+    
     if (!phone) {
-      return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Phone must be 10 digits starting with 07' 
+      }, { status: 400 })
     }
 
     const { user } = await getUserData(phone)
     if (!user) {
-      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+      return NextResponse.json({ 
+        success: false, 
+        message: 'User not found' 
+      }, { status: 404 })
     }
 
-    const availableBalance = Number(user.balance) || 0
     const { date: vipPurchaseDate, amount: vipPurchaseAmount } = await getVipPurchaseInfo(phone)
     
-    // Force jobSecurity true for now
-    const jobSecurity = true
-
     return NextResponse.json({
       success: true,
       user: {
         username: user.username || '',
         phone: user.phone || phone,
-        balance: availableBalance,
+        balance: Number(user.balance) || 0, // direct from KV
         vip: Number(user.vip) || 0,
         avatar: user.avatar || '',
         createdAt: user.createdAt || ''
       },
-      availableBalance,
-      jobSecurity,
+      jobSecurity: true,
       vipPurchaseDate,
-      vipPurchaseAmount  // amount user paid for current VIP
+      vipPurchaseAmount
     })
   } catch (err) {
     console.error('GET /api/my error:', err)

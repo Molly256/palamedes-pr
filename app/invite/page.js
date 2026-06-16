@@ -8,26 +8,45 @@ export default function InvitePage() {
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  const normalizePhone = (phone) => {
+    if (!phone) return ''
+    phone = String(phone).replace(/\D/g, '')
+
+    // Only accept 07XXXXXXXX
+    if (!/^07\d{8}$/.test(phone)) {
+      return ''
+    }
+    return phone
+  }
+
   const getUserInviteCode = (phone) => {
-    const clean = phone.replace(/\D/g, '')
+    const clean = normalizePhone(phone)
+    if (!clean) return ''
     const last6 = clean.slice(-6)
     return `PM${last6}`
   }
 
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    
+
     if (!userData.phone) {
       router.push('/register')
       return
     }
 
     const code = getUserInviteCode(userData.phone)
+    if (!code) {
+      // Invalid phone format, force re-login
+      localStorage.removeItem('palamedes_user')
+      router.push('/login')
+      return
+    }
+
     setInviteCode(code)
     setLoading(false)
   }, [router])
 
-  const referralLink = inviteCode ? `https://www.palamedes-pr.co.uk/r/${inviteCode}` : ''
+  const referralLink = inviteCode? `https://www.palamedes-pr.co.uk/r/${inviteCode}` : ''
 
   const copyCode = async () => {
     if (!inviteCode) return
@@ -102,22 +121,22 @@ export default function InvitePage() {
   ]
 
   const salaryLevels = [
-    { 
-      people: "50 + 25 + 25", 
-      team: "Team A: 50, Team B: 25, Team C: 25", 
-      salary: "1,000,000shs", 
+    {
+      people: "50 + 25 + 25",
+      team: "Team A: 50, Team B: 25, Team C: 25",
+      salary: "1,000,000shs",
       position: "Team Leader"
     },
-    { 
-      people: "100 + 50 + 50", 
-      team: "Team A: 100, Team B: 50, Team C: 50", 
-      salary: "2,000,000shs", 
+    {
+      people: "100 + 50 + 50",
+      team: "Team A: 100, Team B: 50, Team C: 50",
+      salary: "2,000,000shs",
       position: "Regional Manager"
     },
-    { 
-      people: "200 + 100 + 100", 
-      team: "Team A: 200, Team B: 100, Team C: 100", 
-      salary: "4,000,000shs", 
+    {
+      people: "200 + 100 + 100",
+      team: "Team A: 200, Team B: 100, Team C: 100",
+      salary: "4,000,000shs",
       position: "Director"
     },
   ]
@@ -131,8 +150,8 @@ export default function InvitePage() {
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Invite & Earn</h1>
-          <button 
-            onClick={() => window.location.reload()} 
+          <button
+            onClick={() => window.location.reload()}
             className="text-sm text-[#00BFFF] underline"
           >
             Refresh
@@ -147,11 +166,11 @@ export default function InvitePage() {
               readOnly
               className="flex-1 p-3 border rounded-lg font-mono text-lg text-center bg-gray-100"
             />
-            <button 
-              onClick={copyCode} 
+            <button
+              onClick={copyCode}
               className="px-4 bg-blue-600 text-white rounded-lg font-semibold"
             >
-              {copied ? 'Copied!' : 'Copy'}
+              {copied? 'Copied!' : 'Copy'}
             </button>
           </div>
 
@@ -162,8 +181,8 @@ export default function InvitePage() {
               readOnly
               className="flex-1 p-3 border rounded-lg text-xs bg-gray-100"
             />
-            <button 
-              onClick={copyLink} 
+            <button
+              onClick={copyLink}
               className="px-4 bg-[#00BFFF] text-black rounded-lg font-semibold"
             >
               Copy Link
@@ -199,7 +218,7 @@ export default function InvitePage() {
                 <p className="text-sm text-gray-700"><b style={{color: '#00BFFF'}}>Team B</b> successful invites get you 2%</p>
                 <p className="text-sm text-gray-700"><b style={{color: '#00BFFF'}}>Team C</b> successful invites get you 1%</p>
               </div>
-              
+
               <button
                 onClick={shareWhatsApp}
                 className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold"
@@ -227,8 +246,8 @@ export default function InvitePage() {
                 <tbody>
                   {vipLevels.map((v, i) => {
                     const daily = v.books * v.rate
-                    const monthly = i === 0 ? 0 : daily * 30
-                    const yearly = i === 0 ? 0 : daily * 365
+                    const monthly = i === 0? 0 : daily * 30
+                    const yearly = i === 0? 0 : daily * 365
                     return (
                       <tr key={i}>
                         <td style={{border: '1px solid black', padding: '8px 12px', fontWeight: '600', color: '#111', whiteSpace: 'nowrap'}}>{v.level}</td>

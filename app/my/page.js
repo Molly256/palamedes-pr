@@ -10,6 +10,15 @@ export default function MyPage() {
   const [vipPurchaseAmount, setVipPurchaseAmount] = useState(0)
   const [loading, setLoading] = useState(true)
 
+  const normalizePhone = (phone) => {
+    if (!phone) return ''
+    phone = String(phone).replace(/\D/g, '')
+    if (!/^07\d{8}$/.test(phone)) {
+      return ''
+    }
+    return phone
+  }
+
   useEffect(() => {
     loadDashboard()
   }, [])
@@ -30,19 +39,28 @@ export default function MyPage() {
       return
     }
 
-    if (!user.phone) {
+    const cleanPhone = normalizePhone(user.phone)
+    if (!cleanPhone) {
+      localStorage.removeItem('palamedes_user')
       setLoading(false)
       return
     }
 
     try {
-      const res = await fetch(`/api/my?phone=${user.phone}&t=${Date.now()}`)
+      const res = await fetch(`/api/my?phone=${cleanPhone}&t=${Date.now()}`)
       const data = await res.json()
 
-      if (data.success) {
+      if (data.success && data.user) {
+        // Use DB as source of truth
         setUserData(data.user)
         setVipPurchaseDate(data.vipPurchaseDate || null)
         setVipPurchaseAmount(data.vipPurchaseAmount || 0)
+        
+        // Update localStorage with clean DB data
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      } else {
+        // Invalid phone or user not found
+        localStorage.removeItem('palamedes_user')
       }
     } catch (err) {
       console.error('[MyPage] Load dashboard error:', err)
