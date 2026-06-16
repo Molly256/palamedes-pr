@@ -1,5 +1,23 @@
 import { kv } from '@vercel/kv'
 
+function normalizePhone(phone) {
+  if (!phone) return phone
+  phone = String(phone).replace(/\D/g, '') // strip +, spaces, dashes
+
+  // Convert 256753520252 -> 0753520252
+  if (phone.startsWith('256') && phone.length === 12) {
+    phone = '0' + phone.slice(3)
+  }
+
+  // Convert 753520252 -> 0753520252
+  if (phone.length === 9 &&!phone.startsWith('0')) {
+    phone = '0' + phone
+  }
+
+  // If it's already 0753520252, leave it as-is
+  return phone
+}
+
 function getUserInviteCode(phone) {
   // phone is already 10 digits like 0753520252, take last 6
   return `PM${phone.slice(-6)}`
@@ -20,7 +38,9 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
-      // Validate 10 digits starting with 0
+      phone = normalizePhone(phone)
+
+      // Validate final format is 10 digits starting with 0
       if (!/^0\d{9}$/.test(phone)) {
         return Response.json({ success: false, message: 'Phone must be 10 digits starting with 0' })
       }
@@ -29,7 +49,6 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Password must be at least 6 characters' })
       }
 
-      // Validate username: 3-6 letters and digits only, any case
       if (!/^[a-zA-Z0-9]{3,6}$/.test(username)) {
         return Response.json({ success: false, message: 'Username must be 3-6 letters or digits only' })
       }
@@ -66,13 +85,11 @@ export async function POST(request) {
 
         upline1 = upline1Phone
 
-        // Get upline2
         const upline1Data = await kv.hgetall(`user:${upline1Phone}`)
         if (upline1Data?.upline1) {
           upline2 = upline1Data.upline1
         }
 
-        // Get upline3
         if (upline2) {
           const upline2Data = await kv.hgetall(`user:${upline2}`)
           if (upline2Data?.upline1) {
@@ -80,7 +97,6 @@ export async function POST(request) {
           }
         }
 
-        // Add to downline sets for MyTeam
         await kv.sadd(`user:${upline1}:downline1`, phone)
         if (upline2) await kv.sadd(`user:${upline2}:downline2`, phone)
         if (upline3) await kv.sadd(`user:${upline3}:downline3`, phone)
@@ -91,10 +107,10 @@ export async function POST(request) {
 
       await kv.hset(userKey, {
         username,
-        displayName: body.username,
+        displayName: username,
         phone,
         password,
-        balance: '0',
+        available_balance: '0',
         vip: '0',
         vipPricePaid: '0',
         vipLocked: 'false',
@@ -141,6 +157,8 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
+      phone = normalizePhone(phone)
+
       const user = await kv.hgetall(`user:${phone}`)
 
       if (!user || Object.keys(user).length === 0) {
@@ -157,7 +175,7 @@ export async function POST(request) {
           username: user.username,
           displayName: user.displayName || user.username,
           phone: user.phone,
-          balance: Number(user.balance) || 0,
+          balance: Number(user.available_balance) || 0,
           vip: Number(user.vip) || 0,
           vipLocked: user.vipLocked === 'true',
           tasksCompleted: Number(user.tasksCompleted) || 0,

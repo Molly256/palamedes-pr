@@ -35,7 +35,6 @@ async function getTransactions(phone) {
   return raw.map(t => safeParse(t)).filter(Boolean)
 }
 
-// GET: fetch pending deposits/withdraws
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const phone = searchParams.get('phone')
@@ -78,7 +77,6 @@ export async function GET(request) {
   return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
 }
 
-// POST: reset password, approve, reject
 export async function POST(request) {
   try {
     const body = await request.json()
@@ -108,19 +106,18 @@ export async function POST(request) {
       const tx = txList[txIndex]
       tx.status = action === 'approve'? 'success' : 'rejected'
 
-      if (action === 'approve' && type === 'deposit') {
+      if (action === 'approve') {
         const { user: targetUser, userKey: targetKey } = await getUserData(targetPhoneNorm)
-        if (targetKey) {
-          const newBalance = Number(targetUser.balance || 0) + Number(tx.amount)
-          await kv.hset(targetKey, { balance: String(newBalance) })
-        }
-      }
+        if (!targetKey) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
-      if (action === 'approve' && type === 'withdraw') {
-        const { user: targetUser, userKey: targetKey } = await getUserData(targetPhoneNorm)
-        if (targetKey) {
-          const newBalance = Number(targetUser.balance || 0) - Math.abs(Number(tx.amount))
-          await kv.hset(targetKey, { balance: String(newBalance) })
+        if (type === 'deposit') {
+          const newBalance = Number(targetUser.available_balance || 0) + Number(tx.amount)
+          await kv.hset(targetKey, { available_balance: String(newBalance) })
+        }
+
+        if (type === 'withdraw') {
+          const newBalance = Number(targetUser.available_balance || 0) - Math.abs(Number(tx.amount))
+          await kv.hset(targetKey, { available_balance: String(newBalance) })
         }
       }
 
