@@ -251,9 +251,10 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    let { action, phone, field, value, oldPass, newPass, number, method, names, amount } = body
+    let { action, phone, field, value, oldPass, newPass, number, method, names, amount, txId, adminPhone } = body
 
     phone = normalizePhone(phone)
+    adminPhone = normalizePhone(adminPhone)
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
 
@@ -266,50 +267,78 @@ export async function POST(request) {
         return NextResponse.json({ success: false, message: 'Invalid deposit amount' }, { status: 400 })
       }
 
-      const newBalance = (Number(user.available_balance) || 0) + depositAmount
-
+      const txId = `dep_${Date.now()}`
       const tx = {
-        id: Date.now(),
+        id: txId,
         type: 'deposit',
         amount: depositAmount,
         method: method || '',
         date: getISOTimestamp(),
-        status: 'success',
+        status: 'pending',
         desc: `Deposit via ${method || 'Mobile Money'}`,
-        phone: phone
+        phone: phone,
+        userPhone: phone
       }
 
+      // 1. Save to user's transaction history as pending
       await pushTransaction(phone, tx)
-      await kv.hset(userKey, { available_balance: String(newBalance) })
 
-      const updatedUser = await kv.hgetall(userKey)
+      // 2. Push to admin queue for 0753520252
+      await kv.lpush(`admin:deposits:pending:0753520252`, JSON.stringify(tx))
 
       return NextResponse.json({
         success: true,
         tx,
-        user: {
-          username: updatedUser.username || '',
-          phone: updatedUser.phone || phone,
-          available_balance: Number(updatedUser.available_balance) || 0,
-          vip: Number(updatedUser.vip) || 0,
-          avatar: updatedUser.avatar || '',
-          nickname: updatedUser.nickname || '',
-          vipLocked: updatedUser.vipLocked === 'true',
-          hasBoughtVIP: updatedUser.hasBoughtVIP === 'true',
-          tasksCompleted: Number(updatedUser.tasksCompleted) || 0,
-          vipPricePaid: Number(updatedUser.vipPricePaid) || 0,
-          bankMTN: safeParse(updatedUser.bankMTN),
-          bankAirtel: safeParse(updatedUser.bankAirtel),
-          password: updatedUser.password || '',
-          referralPaid: updatedUser.referralPaid || 'false',
-          vip_commission_paid: updatedUser.vip_commission_paid || 'false',
-          upline1: updatedUser.upline1 || '',
-          upline2: updatedUser.upline2 || '',
-          upline3: updatedUser.upline3 || '',
-          createdAt: updatedUser.createdAt || ''
-        },
-        message: 'Deposit successful'
+        message: 'Deposit request submitted. Pending admin approval.'
       })
+    }
+
+    if (action === 'confirmDeposit') {
+      // Only allow admin 0753520252 to confirm
+      if (adminPhone !== '0753520252') {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      }
+
+      if (!txId) {
+        return NextResponse.json({ success: false, message: 'Transaction ID required' }, { status: 400 })
+      }
+
+      const pendingKey = `admin:deposits:pending:0753520252`
+      const pendingDeposits = await kv.lrange(pendingKey, 0, -1)
+      const tx = pendingDeposits.map(t => safeParse(t)).find(t => t?.id === txId)
+
+      if (!tx) {
+        return NextResponse.json({ success: false, message: 'Deposit not found' }, { status: 404 })
+      }
+
+      // Update user balance
+      const targetPhone = tx.userPhone
+      const { user: targetUser, userKey: targetKey } = await getUserData(targetPhone)
+      if (!targetUser) {
+        return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+      }
+
+      const newBalance = (Number(targetUser.available_balance) || 0) + Number(tx.amount)
+      await kv.hset(targetKey, { available_balance: String(newBalance) })
+
+      // Update transaction status to success
+      const updatedTx = { ...tx, status: 'success' }
+      
+      // Remove from pending list and add to approved list
+      await kv.lrem(pendingKey, 0, JSON.stringify(tx))
+      await kv.lpush(`admin:deposits:approved:0753520252`, JSON.stringify(updatedTx))
+      
+      // Update user's transaction history
+      const userTxs = await kv.lrange(`transactions:${targetPhone}`, 0, -1)
+      const txIndex = userTxs.findIndex(t => {
+        const parsed = safeParse(t)
+        return parsed?.id === txId
+      })
+      if (txIndex >= 0) {
+        await kv.lset(`transactions:${targetPhone}`, txIndex, JSON.stringify(updatedTx))
+      }
+
+      return NextResponse.json({ success: true, message: 'Deposit confirmed', newBalance })
     }
 
     if (action === 'withdraw') {
