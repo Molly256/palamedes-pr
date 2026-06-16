@@ -39,8 +39,8 @@ export default function Register() {
       return
     }
     
-    if(form.phone.length !== 10) {
-      setError('Phone must be 10 digits starting with 0')
+    if(!/^07\d{8}$/.test(form.phone)) {
+      setError('Phone must be 10 digits starting with 07')
       return
     }
     
@@ -130,8 +130,9 @@ export default function Register() {
             required
             minLength={10}
             maxLength={10}
-            pattern="0[0-9]{9}"
+            pattern="07[0-9]{8}"
             placeholder="07xxxxxxxx"
+            title="Enter 10 digits starting with 07"
             style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
           />
         </div>

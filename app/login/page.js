@@ -11,6 +11,12 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    
+    if (!/^07\d{8}$/.test(form.phone)) {
+      setError('Phone must be 10 digits starting with 07')
+      return
+    }
+
     setLoading(true)
     
     try {
@@ -54,19 +60,46 @@ export default function Login() {
       <form onSubmit={handleSubmit} style={{ maxWidth: '400px', margin: '0 auto' }}>
         <div style={{marginBottom: '15px'}}>
           <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Phone Number</label>
-          <input type="tel" required value={form.phone} onChange={(e) => setForm({...form, phone: e.target.value})} placeholder="07XXXXXXXXX" style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}/>
+          <input 
+            type="tel" 
+            required 
+            value={form.phone} 
+            onChange={(e) => setForm({...form, phone: e.target.value})} 
+            pattern="07[0-9]{8}"
+            minLength={10}
+            maxLength={10}
+            placeholder="07xxxxxxxx" 
+            title="Enter 10 digits starting with 07"
+            style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
+          />
         </div>
         <div style={{marginBottom: '20px'}}>
           <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Password</label>
           <div style={{ position: 'relative' }}>
-            <input type={showPass ? 'text' : 'password'} required value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}/>
-            <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}>
+            <input 
+              type={showPass ? 'text' : 'password'} 
+              required 
+              value={form.password} 
+              onChange={(e) => setForm({...form, password: e.target.value})} 
+              style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
+            />
+            <button 
+              type="button" 
+              onClick={() => setShowPass(!showPass)} 
+              style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}
+            >
               {showPass ? '🙈' : '👁️'}
             </button>
           </div>
         </div>
-        <p style={{ textAlign: 'right', marginBottom: '20px' }}><Link href="/register" style={{ color: '#000' }}>No account? Register</Link></p>
-        <button type="submit" disabled={loading} style={{width: '100%', padding: '14px', background: '#000', color: '#fff', border: 'none', cursor: 'pointer'}}>
+        <p style={{ textAlign: 'right', marginBottom: '20px' }}>
+          <Link href="/register" style={{ color: '#000' }}>No account? Register</Link>
+        </p>
+        <button 
+          type="submit" 
+          disabled={loading} 
+          style={{width: '100%', padding: '14px', background: loading ? '#666' : '#000', color: '#fff', border: 'none', cursor: loading ? 'not-allowed' : 'pointer'}}
+        >
           {loading ? 'Logging in...' : 'Login'}
         </button>
       </form>
