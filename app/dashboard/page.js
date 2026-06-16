@@ -16,11 +16,9 @@ export default function Dashboard() {
     if (!phone) return ''
     phone = String(phone).replace(/\D/g, '')
     
-    if (phone.startsWith('256') && phone.length === 12) {
-      phone = '0' + phone.slice(3)
-    }
-    if (phone.length === 9 && !phone.startsWith('0')) {
-      phone = '0' + phone
+    // Only accept 07XXXXXXXX
+    if (!/^07\d{8}$/.test(phone)) {
+      return ''
     }
     return phone
   }
