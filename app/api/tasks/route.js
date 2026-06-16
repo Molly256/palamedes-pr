@@ -14,7 +14,17 @@ function getUGDayOfWeek(date = new Date()) {
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
-  if (phone.length === 9 &&!phone.startsWith('0')) phone = '0' + phone
+
+  // Convert 256753520252 -> 0753520252
+  if (phone.startsWith('256') && phone.length === 12) {
+    phone = '0' + phone.slice(3)
+  }
+
+  // Convert 753520252 -> 0753520252
+  if (phone.length === 9 &&!phone.startsWith('0')) {
+    phone = '0' + phone
+  }
+
   return phone
 }
 
@@ -80,7 +90,7 @@ export async function GET(request) {
       tasks,
       completed,
       total: tasks.length,
-      available_balance: Number(user.available_balance) || 0 // return this to UI
+      balance: Number(user.balance) || 0 // fixed: use balance
     })
 
   } catch (err) {
@@ -106,7 +116,8 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'No tasks available on weekends' }, { status: 400 })
     }
 
-    const user = await kv.hgetall(`user:${normalizedPhone}`)
+    const userKey = `user:${normalizedPhone}`
+    const user = await kv.hgetall(userKey)
     if (!user || Object.keys(user).length === 0) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
@@ -124,16 +135,42 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Task already submitted' }, { status: 400 })
     }
 
-    await kv.hset(taskKey, { [taskId]: 'submitted' })
+    const pipe = kv.pipeline()
+    pipe.hset(taskKey, { [taskId]: 'submitted' })
+    pipe.hincrby(userKey, 'balance', config.perBook) // fixed: use balance
+    pipe.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
+      type: 'daily_income',
+      amount: config.perBook,
+      date: new Date().toISOString(),
+      status: 'success',
+      desc: `Task ${taskId} completed`
+    }))
 
-    const newBalance = (Number(user.available_balance) || 0) + config.perBook
-    await kv.hset(`user:${normalizedPhone}`, { available_balance: newBalance })
+    const allTaskData = await kv.hgetall(taskKey)
+    const updatedTaskData = {...allTaskData, [taskId]: 'submitted' }
+
+    const dailyTasks = await kv.get(`tasks:daily:${today}`)
+    if (dailyTasks?.books) {
+      const todaysBookIds = dailyTasks.books.slice(0, config.books).map(b => b.id)
+      const allDone = todaysBookIds.every(id => updatedTaskData[id] === 'submitted')
+
+      if (allDone) {
+        pipe.hset(userKey, {
+          tasksCompleted: config.books,
+          vipLocked: 'true'
+        })
+      }
+    }
+
+    await pipe.exec()
+
+    const newBalance = (Number(user.balance) || 0) + config.perBook
 
     return NextResponse.json({
       success: true,
       message: 'Task submitted successfully',
       reward: config.perBook,
-      available_balance: newBalance
+      balance: newBalance // fixed
     })
 
   } catch (err) {

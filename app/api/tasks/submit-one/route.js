@@ -14,7 +14,13 @@ function getUGDayOfWeek(date = new Date()) {
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
-  if (phone.length === 9 &&!phone.startsWith('0')) phone = '0' + phone
+
+  if (phone.startsWith('256') && phone.length === 12) {
+    phone = '0' + phone.slice(3)
+  }
+  if (phone.length === 9 &&!phone.startsWith('0')) {
+    phone = '0' + phone
+  }
   return phone
 }
 
@@ -48,7 +54,8 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
     }
 
-    const user = await kv.hgetall(`user:${normalizedPhone}`)
+    const userKey = `user:${normalizedPhone}`
+    const user = await kv.hgetall(userKey)
     if (!user || Object.keys(user).length === 0) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
@@ -58,7 +65,6 @@ export async function POST(request) {
     const maxBooks = VIP_CONFIG[vipLevel]?.books || 4
     const taskKey = `task:${normalizedPhone}:${today}`
 
-    // FIX: Auto-initialize user's task hash from daily tasks if it doesn't exist
     const exists = await kv.exists(taskKey)
     if (!exists) {
       const dailyTasks = await kv.get(`tasks:daily:${today}`)
@@ -83,7 +89,7 @@ export async function POST(request) {
 
     const pipe = kv.pipeline()
     pipe.hset(taskKey, { [taskId]: 'submitted' })
-    pipe.hincrby(`user:${normalizedPhone}`, 'available_balance', reward)
+    pipe.hincrby(userKey, 'balance', reward) // fixed: use balance
     pipe.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
       type: 'daily_income',
       amount: reward,
@@ -101,7 +107,7 @@ export async function POST(request) {
       const allDone = todaysBookIds.every(id => updatedTaskData[id] === 'submitted')
 
       if (allDone) {
-        pipe.hset(`user:${normalizedPhone}`, {
+        pipe.hset(userKey, {
           tasksCompleted: maxBooks,
           vipLocked: 'true'
         })
@@ -110,12 +116,12 @@ export async function POST(request) {
 
     await pipe.exec()
 
-    const newBalance = (Number(user.available_balance) || 0) + reward
+    const newBalance = (Number(user.balance) || 0) + reward
 
     return NextResponse.json({
       success: true,
       reward,
-      available_balance: newBalance
+      balance: newBalance // fixed: return balance
     })
 
   } catch (err) {
