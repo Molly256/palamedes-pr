@@ -58,6 +58,20 @@ export async function POST(request) {
     const maxBooks = VIP_CONFIG[vipLevel]?.books || 4
     const taskKey = `task:${normalizedPhone}:${today}`
 
+    // FIX: Auto-initialize user's task hash from daily tasks if it doesn't exist
+    const exists = await kv.exists(taskKey)
+    if (!exists) {
+      const dailyTasks = await kv.get(`tasks:daily:${today}`)
+      if (!dailyTasks?.books) {
+        return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
+      }
+      const initialTasks = {}
+      dailyTasks.books.slice(0, maxBooks).forEach(b => {
+        initialTasks[b.id] = 'pending'
+      })
+      await kv.hset(taskKey, initialTasks)
+    }
+
     const currentStatus = await kv.hget(taskKey, taskId)
     if (!currentStatus) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
