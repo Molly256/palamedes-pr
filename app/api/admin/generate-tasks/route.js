@@ -1,32 +1,29 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
 import booksData from '../../../../data/books.json'
-export const dynamic = 'force-dynamic';
 
 const TZ = 'Africa/Kampala'
+const ADMIN_SECRET = process.env.ADMIN_SECRET // set this in Vercel env vars
 
-function getUGDateStr(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
-}
-
-function getUGDayOfWeek(date = new Date()) {
-  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'long' }).format(date)
+function getUGDateStr() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())
 }
 
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5)
 }
 
-export async function GET() {
+export async function GET(request) {
+  // 1. Protect it
+  const secret = request.nextUrl.searchParams.get('secret')
+  if (secret !== ADMIN_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const today = getUGDateStr()
-    const day = getUGDayOfWeek()
 
-    if (day === 'Saturday' || day === 'Sunday') {
-      return NextResponse.json({ success: true, message: 'Weekend, no tasks' })
-    }
-
-    // Create today's 4 books if not exists
+    // 2. Get or create today's 4 books
     let dailyData = await kv.get(`tasks:daily:${today}`)
     if (!dailyData) {
       const dailyBooks = shuffle(booksData).slice(0, 4).map(b => ({
@@ -39,12 +36,9 @@ export async function GET() {
       await kv.set(`tasks:daily:${today}`, dailyData)
     }
 
-    console.log('Daily books for', today, ':', dailyData.books.map(b => b.id))
-
-    // Get only real user keys: user:0753520252
+    // 3. Get all VIP users
     const allKeys = await kv.keys('user:*')
     const userKeys = allKeys.filter(k => /^user:\d{10}$/.test(k))
-    console.log('Found user keys:', userKeys)
     
     let createdFor = 0
     const pipeline = kv.pipeline()
@@ -62,21 +56,12 @@ export async function GET() {
         const phone = key.replace('user:', '')
         const taskKey = `task:${phone}:${today}`
         
-        // Delete old hash first to remove junk
-        pipeline.del(taskKey)
-
-        // Add book IDs with status pending
+        pipeline.del(taskKey) // clear old junk
+        
         for (const book of dailyData.books) {
-          const fieldName = String(book.id)
-          const statusValue = 'pending' 
-          
-          console.log('WRITING', taskKey, 'field:', fieldName, 'value:', statusValue)
-          pipeline.hset(taskKey, fieldName, statusValue)
+          pipeline.hset(taskKey, String(book.id), 'pending')
         }
         createdFor++
-        console.log('Queued tasks for:', phone)
-      } else {
-        console.log('Skipping', key, 'hasBoughtVIP:', user.hasBoughtVIP)
       }
     }
 
@@ -86,11 +71,12 @@ export async function GET() {
       success: true,
       date: today,
       createdFor,
-      message: `Created task:phone:${today} for ${createdFor} users`
+      books: dailyData.books.map(b => b.id),
+      message: `Created tasks for ${createdFor} VIP users`
     })
 
   } catch (err) {
-    console.error('[CRON ERROR]', err)
+    console.error('[ADMIN GENERATE ERROR]', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
 }
