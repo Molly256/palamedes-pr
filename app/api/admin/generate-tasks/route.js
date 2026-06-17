@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server'
 import booksData from '../../../../data/books.json'
 
 const TZ = 'Africa/Kampala'
-const ADMIN_SECRET = process.env.ADMIN_SECRET // set this in Vercel env vars
+// TEMP: Hardcoded for testing only. Remove after it works.
+const ADMIN_SECRET = 'vip-tasks-9k2m8x4z'
 
 function getUGDateStr() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())
