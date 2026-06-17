@@ -71,37 +71,36 @@ export async function POST(request) {
     const vipLevel = Number(user.vip) || Number(user.vip_level) || 0
     const reward = VIP_CONFIG[vipLevel]?.perBook || 625
 
-    // Get today's tasks for this user
-    const taskKey = `tasks:user:${normalizedPhone}:${today}`
-    const taskData = await kv.get(taskKey)
+    // Get task status from hash: task:phone:YYYY-MM-DD
+    const taskKey = `task:${normalizedPhone}:${today}`
+    const taskStatus = await kv.hget(taskKey, String(taskId))
 
-    if (!taskData ||!taskData.books) {
-      return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
-    }
-
-    const book = taskData.books.find(b => b.id === String(taskId))
-    if (!book) {
+    if (!taskStatus) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (book.status === 'submitted') {
+    if (taskStatus === 'submitted') {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    // Mark only this book as submitted
-    book.status = 'submitted'
-    book.submittedAt = new Date().toISOString()
-
-    // Update balance and available_balance together
-    const currentBalance = Number(user.balance || user.available_balance || 0)
-    const newBalance = currentBalance + reward
+    if (taskStatus!== 'read' && taskStatus!== 'pending') {
+      return NextResponse.json({ success: false, message: 'Task not ready to submit' }, { status: 400 })
+    }
 
     const pipe = kv.pipeline()
-    pipe.set(taskKey, taskData)
+
+    // Mark task as submitted
+    pipe.hset(taskKey, String(taskId), 'submitted')
+
+    // Update balance
+    const currentBalance = Number(user.balance || user.available_balance || 0)
+    const newBalance = currentBalance + reward
     pipe.hset(userKey, {
       balance: String(newBalance),
       available_balance: String(newBalance)
     })
+
+    // Add transaction
     pipe.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
       type: 'daily_income',
       amount: reward,
@@ -109,6 +108,19 @@ export async function POST(request) {
       status: 'success',
       desc: `Task ${taskId} completed`
     }))
+
+    // Check if all tasks done and lock VIP
+    const allTasks = await kv.hgetall(taskKey)
+    const totalTasks = Object.keys(allTasks).length
+    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length + 1
+
+    if (doneTasks >= totalTasks) {
+      pipe.hset(userKey, {
+        tasksCompleted: String(totalTasks),
+        vipLocked: 'true'
+      })
+    }
+
     await pipe.exec()
 
     return NextResponse.json({

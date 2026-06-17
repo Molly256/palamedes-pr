@@ -18,61 +18,58 @@ function shuffle(arr) {
 }
 
 async function getVipUserPhones() {
-  const phones = []
-  let cursor = '0'
-
-  do {
-    const [nextCursor, keys] = await kv.scan(cursor, { match: 'user:*', count: 100 })
-    cursor = nextCursor
-
-    for (const key of keys) {
-      const user = await kv.hgetall(key)
-      const isVip = user.vip === true || user.vip === 'true' || Number(user.vip_level || 0) > 0
-      if (isVip) {
-        phones.push(key.split(':')[1])
-      }
-    }
-  } while (cursor!== '0')
-
-  return phones
+  const phones = await kv.smembers('vip:phones')
+  return phones || []
 }
 
 export async function GET() {
-  const today = getUGDateStr()
-  const day = getUGDayOfWeek()
+  try {
+    const today = getUGDateStr()
+    const day = getUGDayOfWeek()
 
-  // Only Mon-Fri
-  if (day === 'Saturday' || day === 'Sunday') {
-    return NextResponse.json({ success: true, message: 'Weekend, no tasks' })
-  }
+    // Only Mon-Fri
+    if (day === 'Saturday' || day === 'Sunday') {
+      return NextResponse.json({ success: true, message: 'Weekend, no tasks' })
+    }
 
-  // Pick 4 different books
-  const dailyBooks = shuffle(booksData).slice(0, 4).map(b => ({
-    id: String(b.id),
-    title: b.title,
-    cover: b.cover,
-    preview: b.preview
-  }))
+    // Pick 4 different books
+    let dailyData = await kv.get(`tasks:daily:${today}`)
+    if (!dailyData) {
+      const dailyBooks = shuffle(booksData).slice(0, 4).map(b => ({
+        id: String(b.id),
+        title: b.title,
+        cover: b.cover,
+        preview: b.preview
+      }))
+      dailyData = { books: dailyBooks, date: today }
+      await kv.set(`tasks:daily:${today}`, dailyData)
+    }
 
-  await kv.set(`tasks:daily:${today}`, { books: dailyBooks, date: today })
+    // Get all VIP users from set
+    const phones = await getVipUserPhones()
+    if (phones.length === 0) {
+      return NextResponse.json({ success: true, message: 'No VIP users', distributedTo: 0 })
+    }
 
-  // Get all VIP users and assign the same 4 books
-  const phones = await getVipUserPhones()
+    // Assign tasks as hash: task:phone:YYYY-MM-DD
+    const pipeline = kv.pipeline()
+    for (const phone of phones) {
+      const taskKey = `task:${phone}:${today}`
+      for (const book of dailyData.books) {
+        pipeline.hset(taskKey, book.id, 'pending')
+      }
+    }
+    await pipeline.exec()
 
-  const pipeline = kv.pipeline()
-  for (const phone of phones) {
-    pipeline.set(`tasks:user:${phone}:${today}`, {
-      books: dailyBooks,
+    return NextResponse.json({
+      success: true,
       date: today,
-      assignedAt: new Date().toISOString()
+      books: dailyData.books.length,
+      distributedTo: phones.length
     })
-  }
-  await pipeline.exec()
 
-  return NextResponse.json({
-    success: true,
-    date: today,
-    books: dailyBooks,
-    distributedTo: phones.length
-  })
+  } catch (err) {
+    console.error('[CRON ERROR]', err)
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+  }
 }

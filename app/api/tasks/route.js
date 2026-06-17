@@ -1,5 +1,6 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
+import booksData from '../../../data/books.json'
 
 const TZ = 'Africa/Kampala'
 
@@ -65,22 +66,27 @@ export async function GET(request) {
       return NextResponse.json({ success: false, message: 'No tasks available' })
     }
 
-    const taskKey = `tasks:user:${phone}:${today}`
-    const taskData = await kv.get(taskKey)
+    // Read from hash: task:phone:YYYY-MM-DD
+    const taskKey = `task:${phone}:${today}`
+    const taskHash = await kv.hgetall(taskKey)
 
-    if (!taskData ||!taskData.books) {
+    if (!taskHash || Object.keys(taskHash).length === 0) {
       return NextResponse.json({ success: false, message: 'No tasks available' })
     }
 
-    const tasks = taskData.books.slice(0, config.books).map(book => ({
-      taskId: book.id,
-      bookId: book.id,
-      title: book.title,
-      cover: book.cover,
-      preview: book.preview,
-      status: book.status || 'pending',
-      reward: config.perBook
-    }))
+    // Get book details from books.json and merge with status from hash
+    const bookIds = Object.keys(taskHash).slice(0, config.books)
+    const tasks = booksData
+     .filter(b => bookIds.includes(String(b.id)))
+     .map(b => ({
+        taskId: String(b.id),
+        bookId: String(b.id),
+        title: b.title,
+        cover: b.cover,
+        preview: b.preview,
+        status: taskHash[b.id] || 'pending',
+        reward: config.perBook
+      }))
 
     const completed = tasks.filter(t => t.status === 'submitted').length
     const balance = Number(user.balance || user.available_balance || 0)
@@ -129,31 +135,23 @@ export async function POST(request) {
 
     const vip = Number(user.vip) || Number(user.vip_level) || 0
     const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
-    const taskKey = `tasks:user:${normalizedPhone}:${today}`
+    const taskKey = `task:${normalizedPhone}:${today}`
 
-    const taskData = await kv.get(taskKey)
-    if (!taskData ||!taskData.books) {
-      return NextResponse.json({ success: false, message: 'No tasks for today' }, { status: 404 })
-    }
-
-    const book = taskData.books.find(b => b.id === String(taskId))
-    if (!book) {
+    const taskStatus = await kv.hget(taskKey, String(taskId))
+    if (!taskStatus) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (book.status === 'submitted') {
+    if (taskStatus === 'submitted') {
       return NextResponse.json({ success: false, message: 'Task already submitted' }, { status: 400 })
     }
 
-    // Mark only this book as submitted
-    book.status = 'submitted'
-    book.submittedAt = new Date().toISOString()
+    // Mark this book as submitted
+    const pipe = kv.pipeline()
+    pipe.hset(taskKey, String(taskId), 'submitted')
 
     const currentBalance = Number(user.balance || user.available_balance || 0)
     const newBalance = currentBalance + config.perBook
-
-    const pipe = kv.pipeline()
-    pipe.set(taskKey, taskData)
     pipe.hset(userKey, {
       balance: String(newBalance),
       available_balance: String(newBalance)
@@ -167,10 +165,13 @@ export async function POST(request) {
     }))
 
     // Check if all tasks done
-    const allDone = taskData.books.slice(0, config.books).every(b => b.status === 'submitted')
-    if (allDone) {
+    const allTasks = await kv.hgetall(taskKey)
+    const totalTasks = Object.keys(allTasks).length
+    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length + 1 // +1 for current task
+
+    if (doneTasks >= totalTasks) {
       pipe.hset(userKey, {
-        tasksCompleted: String(config.books),
+        tasksCompleted: String(totalTasks),
         vipLocked: 'true'
       })
     }

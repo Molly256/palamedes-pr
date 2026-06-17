@@ -39,7 +39,18 @@ export default function TasksPage() {
         return
       }
 
-      setTasks(data.tasks || [])
+      // Map API response to what the UI expects
+      const mappedTasks = (data.books || []).map(b => ({
+        bookId: b.id,
+        taskId: b.id, // using bookId as taskId since they're 1:1 per day
+        title: b.title,
+        cover: b.cover,
+        preview: b.preview,
+        status: b.status, // pending, reading, read, submitted
+        reward: 500 // set your reward here or return it from API
+      }))
+
+      setTasks(mappedTasks)
     } catch (err) {
       console.error('fetchTasks error:', err)
       setTasks([])
@@ -100,7 +111,6 @@ export default function TasksPage() {
 
         alert(`+${Number(data.reward).toLocaleString()}shs added!`)
         
-        // Trigger dashboard and transactions to refresh from KV
         localStorage.setItem('palamedes_refresh_my', 'true')
         window.dispatchEvent(new Event('refreshTransactions'))
         window.dispatchEvent(new Event('focus'))
