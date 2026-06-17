@@ -39,6 +39,8 @@ export async function GET() {
       await kv.set(`tasks:daily:${today}`, dailyData)
     }
 
+    console.log('Daily books for', today, ':', dailyData.books.map(b => b.id))
+
     // Get only real user keys: user:0753520252
     const allKeys = await kv.keys('user:*')
     const userKeys = allKeys.filter(k => /^user:\d{10}$/.test(k))
@@ -54,10 +56,7 @@ export async function GET() {
       const user = await kv.hgetall(key)
       if (!user) continue
       
-      console.log(key, 'data:', user)
-      
       const isVIP = String(user.hasBoughtVIP).toLowerCase() === 'true'
-      console.log(key, 'isVIP:', isVIP, 'raw value:', user.hasBoughtVIP)
       
       if (isVIP) {
         const phone = key.replace('user:', '')
@@ -66,8 +65,9 @@ export async function GET() {
         // Delete old hash first to remove 0:4, 1:0 junk
         pipeline.del(taskKey)
 
-        // Add only book IDs
+        // Add only book IDs with status pending
         for (const book of dailyData.books) {
+          console.log('WRITING', taskKey, 'field:', book.id, 'value: pending')
           pipeline.hset(taskKey, book.id, 'pending')
         }
         createdFor++
@@ -75,7 +75,8 @@ export async function GET() {
       }
     }
 
-    if (createdFor > 0) await pipeline.exec()
+    // Always exec so deletes run even if createdFor = 0
+    await pipeline.exec()
 
     return NextResponse.json({
       success: true,
