@@ -14,17 +14,12 @@ function getUGDayOfWeek(date = new Date()) {
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
-
-  // If user entered 2567... convert to 07...
   if (phone.startsWith('256') && phone.length === 12) {
     phone = '0' + phone.slice(3)
   }
-
-  // Must be 10 digits starting with 07
   if (!/^07\d{8}$/.test(phone)) {
     return ''
   }
-
   return phone
 }
 
@@ -71,7 +66,6 @@ export async function POST(request) {
     const vipLevel = Number(user.vip) || Number(user.vip_level) || 0
     const reward = VIP_CONFIG[vipLevel]?.perBook || 625
 
-    // Get task status from hash: task:phone:YYYY-MM-DD
     const taskKey = `task:${normalizedPhone}:${today}`
     const taskStatus = await kv.hget(taskKey, String(taskId))
 
@@ -109,19 +103,19 @@ export async function POST(request) {
       desc: `Task ${taskId} completed`
     }))
 
-    // Check if all tasks done and lock VIP
+    await pipe.exec()
+
+    // Check if all tasks done AFTER update
     const allTasks = await kv.hgetall(taskKey)
     const totalTasks = Object.keys(allTasks).length
-    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length + 1
+    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length
 
-    if (doneTasks >= totalTasks) {
-      pipe.hset(userKey, {
+    if (doneTasks >= totalTasks && totalTasks > 0) {
+      await kv.hset(userKey, {
         tasksCompleted: String(totalTasks),
         vipLocked: 'true'
       })
     }
-
-    await pipe.exec()
 
     return NextResponse.json({
       success: true,

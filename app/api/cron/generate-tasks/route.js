@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 const TZ = 'Africa/Kampala'
 
 function getUGDateStr(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date) // yyyy-mm-dd
 }
 
 function getUGDayOfWeek(date = new Date()) {
@@ -17,22 +17,16 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5)
 }
 
-async function getVipUserPhones() {
-  const phones = await kv.smembers('vip:phones')
-  return phones || []
-}
-
 export async function GET() {
   try {
-    const today = getUGDateStr()
+    const today = getUGDateStr() // 2026-06-17
     const day = getUGDayOfWeek()
 
-    // Only Mon-Fri
     if (day === 'Saturday' || day === 'Sunday') {
       return NextResponse.json({ success: true, message: 'Weekend, no tasks' })
     }
 
-    // Pick 4 different books
+    // Create today's 4 books if not exists
     let dailyData = await kv.get(`tasks:daily:${today}`)
     if (!dailyData) {
       const dailyBooks = shuffle(booksData).slice(0, 4).map(b => ({
@@ -45,27 +39,37 @@ export async function GET() {
       await kv.set(`tasks:daily:${today}`, dailyData)
     }
 
-    // Get all VIP users from set
-    const phones = await getVipUserPhones()
-    if (phones.length === 0) {
-      return NextResponse.json({ success: true, message: 'No VIP users', distributedTo: 0 })
-    }
-
-    // Assign tasks as hash: task:phone:YYYY-MM-DD
+    // Create task:phone:yyyy-mm-dd for all VIP users
+    const allKeys = await kv.keys('user:*')
+    let createdFor = 0
     const pipeline = kv.pipeline()
-    for (const phone of phones) {
-      const taskKey = `task:${phone}:${today}`
-      for (const book of dailyData.books) {
-        pipeline.hset(taskKey, book.id, 'pending')
+
+    for (const key of allKeys) {
+      const user = await kv.hgetall(key)
+      if (!user) continue
+      
+      if (user.hasboughtvip === true || user.hasboughtvip === 'true') {
+        const phone = key.replace('user:', '')
+        const taskKey = `task:${phone}:${today}`
+        
+        // Skip if tasks already exist for today
+        const existing = await kv.hgetall(taskKey)
+        if (existing && Object.keys(existing).length > 0) continue
+
+        for (const book of dailyData.books) {
+          pipeline.hset(taskKey, book.id, 'pending')
+        }
+        createdFor++
       }
     }
-    await pipeline.exec()
+
+    if (createdFor > 0) await pipeline.exec()
 
     return NextResponse.json({
       success: true,
       date: today,
-      books: dailyData.books.length,
-      distributedTo: phones.length
+      createdFor,
+      message: `Created task:phone:${today} for ${createdFor} users`
     })
 
   } catch (err) {
