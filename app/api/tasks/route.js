@@ -51,7 +51,7 @@ export async function GET() {
         const user = await kv.hgetall(key)
         if (!user) continue
 
-        const hasVip = user.hasboughtvip === true || user.hasboughtvip === 'true'
+        const hasVip = user.hasBoughtVIP === true || user.hasBoughtVIP === 'true'
         if (!hasVip) continue
 
         const phone = key.replace('user:', '')
