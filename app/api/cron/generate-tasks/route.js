@@ -68,10 +68,11 @@ export async function GET() {
         // Add only book IDs with status pending
        for (const book of dailyData.books) {
     // Dynamically creates field name: "Book1 title cover", "Book2 title cover", etc.
-    const fieldName = `Book${book.id} title cover`; 
+    const fieldName = `Book${book.id} title cover`;
+    const statusValue = 'pending' 
     
-    console.log('WRITING', taskKey, 'field:', fieldName, 'value: pending');
-    pipeline.hset(taskKey, fieldName, 'pending');
+    console.log('WRITING', taskKey, 'field:', fieldName, 'value:' statusValue');
+    pipeline.hset(taskKey, { [fieldName]: statusValue });
 }        createdFor++
         console.log('Queued tasks for:', phone)
       } else {
