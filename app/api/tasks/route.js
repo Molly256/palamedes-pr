@@ -2,21 +2,9 @@ import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
 import booksData from '../../../data/books.json'
 
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
 
 const TZ = 'Africa/Kampala'
-
-function getUGDateStr(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
-}
-
-function getUGDayOfWeek(date = new Date()) {
-  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'long' }).format(date)
-}
-
-function shuffle(arr) {
-  return [...arr].sort(() => Math.random() - 0.5)
-}
 
 const VIP_CONFIG = {
  0: { books: 4, perBook: 625 },
@@ -32,65 +20,56 @@ const VIP_CONFIG = {
  10: { books: 5, perBook: 60000 },
 }
 
-export async function GET() {
+function getUGDateStr(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
+}
+
+export async function GET(req) {
   try {
+    const { searchParams } = new URL(req.url)
+    const phone = searchParams.get('phone')
+
+    if (!phone) {
+      return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
+    }
+
     const today = getUGDateStr()
-    const day = getUGDayOfWeek()
+    const taskKey = `task:${phone}:${today}`
 
-    if (day === 'Saturday' || day === 'Sunday') {
-      return NextResponse.json({ success: false, message: 'No tasks on weekends' })
+    // Get task status hash from Redis
+    const taskHash = await kv.hgetall(taskKey)
+
+    if (!taskHash || Object.keys(taskHash).length === 0) {
+      return NextResponse.json({ success: true, books: [] })
     }
 
-    const allKeys = await kv.keys('user:*')
-    let created = 0
-    const errors = []
-    const pipeline = kv.pipeline()
+    // Get user VIP level for reward amount
+    const userKey = `user:${phone}`
+    const user = await kv.hgetall(userKey)
+    const vip = Number(user?.vip) || Number(user?.vip_level) || 0
+    const reward = VIP_CONFIG[vip]?.perBook || VIP_CONFIG[0].perBook
 
-    for (const key of allKeys) {
-      try {
-        const user = await kv.hgetall(key)
-        if (!user) continue
-
-        const hasVip = user.hasBoughtVIP === true || user.hasBoughtVIP === 'true'
-        if (!hasVip) continue
-
-        const phone = key.replace('user:', '')
-        const vip = Number(user.vip) || Number(user.vip_level) || 0
-        const config = VIP_CONFIG[vip] || VIP_CONFIG[0]
-        const taskKey = `task:${phone}:${today}`
-
-        // Skip if tasks already exist for today
-        const existing = await kv.hgetall(taskKey)
-        if (existing && Object.keys(existing).length > 0) continue
-
-        // Pick random books based on VIP level
-        const selectedBooks = shuffle(booksData).slice(0, config.books)
-        const taskHash = {}
-        selectedBooks.forEach(b => {
-          taskHash[String(b.id)] = 'pending'
-        })
-
-        pipeline.hset(taskKey, taskHash)
-        created++
-
-      } catch (e) {
-        errors.push({ key, error: e.message })
+    // Merge book IDs with full book data
+    const books = Object.entries(taskHash).map(([bookId, status]) => {
+      const book = booksData.find(b => String(b.id) === String(bookId))
+      return {
+        id: bookId,
+        title: book?.title || '',
+        cover: book?.cover || '',
+        preview: book?.preview || '',
+        status,
+        reward
       }
-    }
-
-    if (created > 0) await pipeline.exec()
+    })
 
     return NextResponse.json({
       success: true,
-      message: `Created tasks for ${created} users`,
-      date: today,
-      day,
-      created,
-      errors
+      books,
+      date: today
     })
 
   } catch (err) {
-    console.error('post-tasks error:', err)
+    console.error('tasks error:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
 }
