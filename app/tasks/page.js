@@ -11,27 +11,19 @@ export default function TasksPage() {
   const [showPopup, setShowPopup] = useState(false)
   const [submittingId, setSubmittingId] = useState(null)
 
-  const normalizePhone = (phone) => {
-    if (!phone) return ''
-    phone = String(phone).replace(/\D/g, '')
-    if (!/^07\d{8}$/.test(phone)) {
-      return ''
-    }
-    return phone
-  }
-
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    const cleanPhone = normalizePhone(userData.phone)
-    if (!cleanPhone) return
+    const phone = userData.phone
     
-    setUser({ ...userData, phone: cleanPhone })
-    fetchTasks(cleanPhone)
+    if (!phone) return
+    
+    setUser(userData)
+    fetchTasks(phone)
   }, [])
 
   const fetchTasks = async (phone) => {
     try {
-      const res = await fetch(`/api/tasks?phone=${phone}`)
+      const res = await fetch(`/api/tasks?phone=${encodeURIComponent(phone)}`)
       const data = await res.json()
 
       if (!data.success) {
@@ -39,15 +31,14 @@ export default function TasksPage() {
         return
       }
 
-      // Map API response to what the UI expects
       const mappedTasks = (data.books || []).map(b => ({
         bookId: b.id,
-        taskId: b.id, // using bookId as taskId since they're 1:1 per day
+        taskId: b.id,
         title: b.title,
         cover: b.cover,
         preview: b.preview,
-        status: b.status, // pending, reading, read, submitted
-        reward: 500 // set your reward here or return it from API
+        status: b.status,
+        reward: b.reward || 500
       }))
 
       setTasks(mappedTasks)
@@ -92,12 +83,12 @@ export default function TasksPage() {
 
     setSubmittingId(book.taskId)
     try {
-      const cleanPhone = normalizePhone(user.phone)
+      const phone = user.phone
       const res = await fetch('/api/tasks/submit-one', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: cleanPhone,
+          phone: phone,
           taskId: book.taskId
         })
       })
