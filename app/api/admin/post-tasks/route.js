@@ -17,13 +17,14 @@ function shuffle(arr) {
 export async function POST(req) {
   try {
     const { key } = await req.json()
-    if (key !== ADMIN_KEY) {
+    
+    if (!key || key !== ADMIN_KEY) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const today = getUGDateStr()
 
-    // Pick 4 books from books.json
+    // Pick 4 random books from books.json
     const dailyBooks = shuffle(booksData).slice(0, 4).map(b => ({
       id: String(b.id),
       title: b.title,
@@ -31,6 +32,7 @@ export async function POST(req) {
       preview: b.preview
     }))
 
+    // Save today's books for /tasks page
     await kv.set(`tasks:daily:${today}`, { books: dailyBooks, date: today })
 
     // Assign to all VIP users
@@ -44,10 +46,12 @@ export async function POST(req) {
 
       for (const key of keys) {
         const user = await kv.hgetall(key)
-        if (!user) continue
+        if (!user || Object.keys(user).length === 0) continue
 
         const phone = key.split(':')[1]
-        if (user.boughtvip === true || user.boughtvip === 'true') {
+        const isVip = user.boughtvip === true || user.boughtvip === 'true'
+
+        if (isVip) {
           const taskKey = `task:${phone}:${today}`
           for (const book of dailyBooks) {
             pipeline.hset(taskKey, book.id, 'pending')
@@ -67,6 +71,7 @@ export async function POST(req) {
     })
 
   } catch (err) {
+    console.error('Post-tasks error:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
 }
