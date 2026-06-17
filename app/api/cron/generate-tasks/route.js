@@ -45,18 +45,17 @@ export async function GET() {
     const pipeline = kv.pipeline()
 
     for (const key of allKeys) {
-      // Skip keys that aren't hashes
       const type = await kv.type(key)
       if (type !== 'hash') continue
 
       const user = await kv.hgetall(key)
       if (!user) continue
       
-      if (user.hasboughtvip === true || user.hasboughtvip === 'true') {
+      const isVIP = String(user.hasboughtvip).toLowerCase() === 'true'
+      if (isVIP) {
         const phone = key.replace('user:', '')
         const taskKey = `task:${phone}:${today}`
         
-        // Skip if tasks already exist for today
         const existing = await kv.hgetall(taskKey)
         if (existing && Object.keys(existing).length > 0) continue
 
