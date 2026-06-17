@@ -1,7 +1,5 @@
 import { kv } from '@vercel/kv'
-import { NextResponse } from 'next/server'
 import booksData from '../../../../data/books.json'
-export const dynamic = 'force-dynamic'
 
 const TZ = 'Africa/Kampala'
 
@@ -13,12 +11,9 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5)
 }
 
-export async function GET() {
+export default async function handler(req, res) {
   try {
     const today = getUGDateStr()
-    console.log('Backfilling tasks for', today)
-
-    // 1. Pick 4 books for today
     const dailyBooks = shuffle(booksData).slice(0, 4).map(b => ({
       id: String(b.id),
       title: b.title,
@@ -28,7 +23,6 @@ export async function GET() {
 
     await kv.set(`tasks:daily:${today}`, { books: dailyBooks, date: today })
 
-    // 2. Scan all users with boughtvip=true
     let cursor = '0'
     let count = 0
     const pipeline = kv.pipeline()
@@ -51,19 +45,10 @@ export async function GET() {
       }
     } while (cursor !== '0')
 
-    if (count > 0) {
-      await pipeline.exec()
-    }
+    if (count > 0) await pipeline.exec()
 
-    return NextResponse.json({
-      success: true,
-      date: today,
-      books: dailyBooks.length,
-      assignedTo: count
-    })
-
+    res.status(200).json({ success: true, date: today, books: 4, assignedTo: count })
   } catch (err) {
-    console.error('[BACKFILL ERROR]', err)
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+    res.status(500).json({ success: false, error: err.message })
   }
 }
