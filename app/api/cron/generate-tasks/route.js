@@ -39,14 +39,15 @@ export async function GET() {
       await kv.set(`tasks:daily:${today}`, dailyData)
     }
 
-    // Create task:phone:yyyy-mm-dd for all VIP users
+    // Get only real user keys: user:0753520252
     const allKeys = await kv.keys('user:*')
-    console.log('Found keys:', allKeys)
+    const userKeys = allKeys.filter(k => /^user:\d{10}$/.test(k))
+    console.log('Found user keys:', userKeys)
     
     let createdFor = 0
     const pipeline = kv.pipeline()
 
-    for (const key of allKeys) {
+    for (const key of userKeys) {
       const type = await kv.type(key)
       if (type !== 'hash') continue
 
@@ -62,12 +63,10 @@ export async function GET() {
         const phone = key.replace('user:', '')
         const taskKey = `task:${phone}:${today}`
         
-        const existing = await kv.hgetall(taskKey)
-        if (existing && Object.keys(existing).length > 0) {
-          console.log('Tasks already exist for:', phone)
-          continue
-        }
+        // Delete old hash first to remove 0:4, 1:0 junk
+        pipeline.del(taskKey)
 
+        // Add only book IDs
         for (const book of dailyData.books) {
           pipeline.hset(taskKey, book.id, 'pending')
         }
