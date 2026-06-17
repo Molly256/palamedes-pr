@@ -76,11 +76,10 @@ export async function GET(request) {
 
     // Get book details from books.json and merge with status from hash
     const bookIds = Object.keys(taskHash).slice(0, config.books)
-    const tasks = booksData
-     .filter(b => bookIds.includes(String(b.id)))
-     .map(b => ({
-        taskId: String(b.id),
-        bookId: String(b.id),
+    const books = booksData
+    .filter(b => bookIds.includes(String(b.id)))
+    .map(b => ({
+        id: String(b.id),
         title: b.title,
         cover: b.cover,
         preview: b.preview,
@@ -88,14 +87,14 @@ export async function GET(request) {
         reward: config.perBook
       }))
 
-    const completed = tasks.filter(t => t.status === 'submitted').length
+    const completed = books.filter(t => t.status === 'submitted').length
     const balance = Number(user.balance || user.available_balance || 0)
 
     return NextResponse.json({
       success: true,
-      tasks,
+      books,
       completed,
-      total: tasks.length,
+      total: books.length,
       balance,
       available_balance: balance
     })
@@ -167,7 +166,7 @@ export async function POST(request) {
     // Check if all tasks done
     const allTasks = await kv.hgetall(taskKey)
     const totalTasks = Object.keys(allTasks).length
-    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length + 1 // +1 for current task
+    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length + 1
 
     if (doneTasks >= totalTasks) {
       pipe.hset(userKey, {
