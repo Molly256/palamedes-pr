@@ -9,10 +9,26 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
+  const normalizePhone = (phone) => {
+    if (!phone) return ''
+    phone = String(phone).replace(/\D/g, '')
+    if (!/^07\d{8}$/.test(phone)) {
+      return ''
+    }
+    return phone
+  }
+
   const fetchTransactions = useCallback(async (phone) => {
     setLoading(true)
     try {
-      const url = `/api/user?action=getTransactions&phone=${encodeURIComponent(phone)}`
+      const cleanPhone = normalizePhone(phone)
+      if (!cleanPhone) {
+        setTx([])
+        setLoading(false)
+        return
+      }
+
+      const url = `/api/user?action=getTransactions&phone=${encodeURIComponent(cleanPhone)}`
       console.log('[TX] Fetching:', url)
 
       const res = await fetch(url)
@@ -37,29 +53,28 @@ export default function Transactions() {
     const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
     if (!u) return router.push('/login')
 
-    // Auto-fix phone if leading 0 is missing
-    if (u.phone &&!u.phone.startsWith('0') && u.phone.length === 9) {
-      u.phone = '0' + u.phone
-      localStorage.setItem('palamedes_user', JSON.stringify(u))
-      console.log('[TX] Fixed phone to:', u.phone)
+    const cleanPhone = normalizePhone(u.phone)
+    if (!cleanPhone) {
+      router.push('/login')
+      return
     }
 
-    console.log('[TX] Using phone:', u.phone)
-    setUser(u)
-    fetchTransactions(u.phone)
+    const syncedUser = {...u, phone: cleanPhone }
+    setUser(syncedUser)
+    fetchTransactions(cleanPhone)
 
-    // Listen for refresh event from deposit page
+    // Listen for refresh event from deposit/tasks page
     const handleRefresh = () => {
       console.log('[TX] Refresh event received')
-      fetchTransactions(u.phone)
+      fetchTransactions(cleanPhone)
     }
     window.addEventListener('refreshTransactions', handleRefresh)
 
-    // Also refresh when tab becomes visible again
+    // Refresh when tab becomes visible again
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         console.log('[TX] Tab visible, refreshing')
-        fetchTransactions(u.phone)
+        fetchTransactions(cleanPhone)
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
