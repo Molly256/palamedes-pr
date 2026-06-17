@@ -31,27 +31,16 @@ export default function TasksPage() {
         return
       }
 
-      const userTasks = data.userTasks || {}
-      const taskDetails = data.taskDetails || {}
-
-      // Map hash: { "0": "1", "1": "0" } into array with details
-      const mappedTasks = Object.entries(userTasks).map(([taskId, status]) => {
-        const details = taskDetails[taskId] ? JSON.parse(taskDetails[taskId]) : {}
-        
-        let taskStatus = "pending"
-        if (status === "1") taskStatus = "submitted"
-        if (status === "2") taskStatus = "read"
-
-        return {
-          bookId: taskId,
-          taskId: taskId,
-          title: details.title || `Task ${taskId}`,
-          cover: details.cover || "/default-cover.png",
-          preview: details.preview || "No preview available",
-          status: taskStatus,
-          reward: details.reward || 500
-        }
-      })
+      // Backend returns { books: [...] }
+      const mappedTasks = (data.books || []).map((book) => ({
+        bookId: book.id,
+        taskId: book.id,
+        title: book.title,
+        cover: book.cover,
+        preview: book.preview,
+        status: book.status, // "pending" or "submitted"
+        reward: book.reward
+      }))
 
       setTasks(mappedTasks)
     } catch (err) {
@@ -101,7 +90,7 @@ export default function TasksPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: phone,
-          taskId: book.taskId
+          bookId: book.bookId  // fixed: was taskId
         })
       })
 
@@ -202,6 +191,7 @@ export default function TasksPage() {
           const isRead = book.status === 'read'
           const isReading = book.status === 'reading'
           const isSubmitted = book.status === 'submitted'
+          const isPending = book.status === 'pending'
 
           return (
             <div key={book.bookId} style={{
@@ -221,16 +211,16 @@ export default function TasksPage() {
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button
                     onClick={() => handleRead(book)}
-                    disabled={isRead || isReading || isSubmitted}
+                    disabled={!isPending || isReading}
                     style={{
                       padding: "8px 16px",
-                      background: isRead || isSubmitted ? "#E0E0E0" : isReading ? "#B0B0B0" : SKYBLUE,
+                      background: isPending ? SKYBLUE : "#E0E0E0",
                       border: "none",
                       borderRadius: 6,
                       fontWeight: "400",
-                      cursor: (isRead || isReading || isSubmitted) ? "not-allowed" : "pointer",
+                      cursor: isPending ? "pointer" : "not-allowed",
                       color: "#000",
-                      opacity: (isRead || isReading || isSubmitted) ? 0.6 : 1
+                      opacity: isPending ? 1 : 0.6
                     }}
                   >
                     {isSubmitted ? "Done" : isRead ? "Read ✓" : isReading ? "Reading..." : "Read"}
@@ -238,16 +228,16 @@ export default function TasksPage() {
 
                   <button
                     onClick={() => handleSubmit(book)}
-                    disabled={!isRead || submittingId === book.taskId}
+                    disabled={book.status !== 'read' || submittingId === book.taskId}
                     style={{
                       padding: "8px 16px",
-                      background: isRead ? "#4CAF50" : "#E0E0E0",
+                      background: book.status === 'read' ? "#4CAF50" : "#E0E0E0",
                       border: "none",
                       borderRadius: 6,
                       fontWeight: "400",
-                      cursor: !isRead || submittingId === book.taskId ? "not-allowed" : "pointer",
+                      cursor: book.status === 'read' && !submittingId ? "pointer" : "not-allowed",
                       color: "#000",
-                      opacity: !isRead || submittingId === book.taskId ? 0.6 : 1
+                      opacity: book.status === 'read' && !submittingId ? 1 : 0.6
                     }}
                   >
                     {submittingId === book.taskId ? "Submitting..." : "Submit"}
