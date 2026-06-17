@@ -24,7 +24,6 @@ function normalizePhone(phone) {
 }
 
 const VIP_CONFIG = {
- 0: { perBook: 625 },
  1: { perBook: 625 },
  2: { perBook: 2000 },
  3: { perBook: 6500 },
@@ -64,7 +63,7 @@ export async function POST(request) {
     }
 
     const vipLevel = Number(user.vip) || Number(user.vip_level) || 0
-    const reward = VIP_CONFIG[vipLevel]?.perBook || 625
+    const reward = VIP_CONFIG[vipLevel]?.perBook || 0
 
     const taskKey = `task:${normalizedPhone}:${today}`
     const taskStatus = await kv.hget(taskKey, String(taskId))

@@ -16,7 +16,6 @@ export default function Dashboard() {
     if (!phone) return ''
     phone = String(phone).replace(/\D/g, '')
     
-    // Only accept 07XXXXXXXX
     if (!/^07\d{8}$/.test(phone)) {
       return ''
     }
@@ -68,8 +67,9 @@ export default function Dashboard() {
     { icon: '🎧', label: 'Manager', href: '/manager' }
   ]
 
-  // Treat balance and available_balance as the same
   const displayBalance = Number(user?.available_balance ?? user?.balance ?? 0)
+  const vipLevel = Number(user?.vip || 0)
+  const vipName = vipLevel > 0 ? `VIP ${vipLevel}` : 'Internship'
 
   return (
     <Card>
@@ -107,10 +107,13 @@ export default function Dashboard() {
             <p style={{ margin: '0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
               {loading ? '0' : displayBalance.toLocaleString()} shs
             </p>
+            <p style={{ margin: '6px 0 0', fontSize: '14px', fontWeight: '700', color: '#000' }}>
+              {vipName}
+            </p>
           </div>
 
           <div style={{ position: 'absolute', top: '20px', right: '18px' }}>
-            <AvatarWithBadge username={user?.username} vipLevel={user?.vip || 0} size={72} avatar={user?.avatar || ''} />
+            <AvatarWithBadge username={user?.username} vipLevel={vipLevel} size={72} avatar={user?.avatar || ''} />
           </div>
         </div>
 

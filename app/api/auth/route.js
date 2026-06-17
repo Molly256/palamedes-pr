@@ -126,49 +126,25 @@ export async function POST(request) {
       const inviteCode = getUserInviteCode(phone)
       const regDate = getUGDateStr()
 
+      // Register: only create user + 2500shs balance. No VIP logic here.
       await kv.hset(userKey, {
         username,
         displayName: username,
         phone,
         password,
-        balance: '0',
-        available_balance: '0',
-        vip: '0',
-        vipPricePaid: '0',
-        vipLocked: 'false',
-        tasksCompleted: '0',
+        balance: '2500',
+        available_balance: '2500',
         referralCode: inviteCode,
         upline1,
         upline2,
         upline3,
         referralPaid: 'false',
         role: 'user',
-        hasBoughtVIP: 'false',
         regDate
       })
 
       await kv.hset(usernameKey, { phone })
       await kv.set(`referral:${inviteCode}`, phone)
-
-      // Create 4 books for VIP 0 - 625shs per book, expires in 24h
-      const tasks = []
-      const expireAt = Math.floor(Date.now() / 1000) + 86400
-      
-      for (let i = 1; i <= 4; i++) {
-        const taskId = `vip0_${phone}_${regDate}_${i}`
-        await kv.hset(taskId, {
-          userPhone: phone,
-          vipLevel: '0',
-          bookId: i,
-          reward: '625',
-          status: 'pending',
-          date: regDate,
-          expiresAt: String(expireAt)
-        })
-        tasks.push(taskId)
-      }
-      await kv.sadd(`tasks:${phone}:${regDate}`, ...tasks)
-      await kv.expire(`tasks:${phone}:${regDate}`, 86400)
 
       return Response.json({
         success: true,

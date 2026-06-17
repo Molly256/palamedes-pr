@@ -47,7 +47,6 @@ export default function VipTask() {
 
   /** @type {Vip[]} */
   const vips = [
-    { level: 0, name: 'VIP 0.Internship', price: 0, books: 4, perBook: 625 },
     { level: 1, name: 'VIP 1', price: 80000, books: 4, perBook: 625 },
     { level: 2, name: 'VIP 2', price: 250000, books: 4, perBook: 2000 },
     { level: 3, name: 'VIP 3', price: 790000, books: 4, perBook: 6500 },
@@ -62,7 +61,7 @@ export default function VipTask() {
 
   /** @type {Record<number, string>} */
   const hotColors = {
-    0: '#E0E0E0', 1: '#00BFFF', 2: '#FFD700', 3: '#FF00FF', 4: '#FF1493',
+    1: '#00BFFF', 2: '#FFD700', 3: '#FF00FF', 4: '#FF1493',
     5: '#FF4500', 6: '#32CD32', 7: '#FF69B4', 8: '#DC143C', 9: '#9400D3', 10: '#FF8C00'
   }
 
@@ -71,7 +70,7 @@ export default function VipTask() {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!userData.phone) return
     userData.vip = Number(userData.vip || 0)
-    userData.balance = Number(userData.balance || 0) // fixed: use balance not available_balance
+    userData.balance = Number(userData.balance || 0)
     userData.vipPricePaid = Number(userData.vipPricePaid || 0)
     if (!userData.tasks_read_today) userData.tasks_read_today = 0
     localStorage.setItem('palamedes_user', JSON.stringify(userData))
@@ -96,7 +95,7 @@ export default function VipTask() {
 
     const newPrice = selectedVip.price
     const currentPricePaid = Number(user.vipPricePaid || 0)
-    const upgradeCost = newPrice - currentPricePaid // only charge difference
+    const upgradeCost = newPrice - currentPricePaid
 
     if ((user.balance || 0) < upgradeCost) {
       alert(`Insufficient balance. You need ${upgradeCost.toLocaleString()}shs more to upgrade`)
@@ -124,7 +123,6 @@ export default function VipTask() {
         return
       }
 
-      // Update UI immediately with POST response
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
       setShowBuyPopup(false)
@@ -159,7 +157,7 @@ export default function VipTask() {
               Balance: {user.balance?.toLocaleString() || 0} shs
             </p>
             <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
-              {vips[currentVipLevel]?.name || 'VIP 0.Internship'}
+              {vips.find(v => v.level === currentVipLevel)?.name || 'No VIP'}
             </p>
             {user.vipExpiry && (
               <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#666', fontWeight: '600' }}>
@@ -176,7 +174,7 @@ export default function VipTask() {
         {vips.map(vip => {
           const isCurrent = currentVipLevel === vip.level
           const isOwned = currentVipLevel >= vip.level
-          const showBuyButton = vip.level >= 1 && vip.level <= 3 && vip.level > currentVipLevel
+          const showBuyButton = vip.level <= 3 && vip.level > currentVipLevel
           const showLock = vip.level >= 4 && vip.level > currentVipLevel
 
           return (
@@ -190,7 +188,7 @@ export default function VipTask() {
                 <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '800', color: '#000' }}>
                   Daily tasks: {vip.books} books @ {vip.perBook.toLocaleString()}shs
                 </p>
-                {vip.price > 0 && <p style={{ margin: '4px 0 0', fontWeight: '900', color: '#000' }}>{vip.price.toLocaleString()}shs</p>}
+                <p style={{ margin: '4px 0 0', fontWeight: '900', color: '#000' }}>{vip.price.toLocaleString()}shs</p>
               </div>
 
               <div>

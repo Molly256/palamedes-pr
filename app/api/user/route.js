@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic';
 
 const VIP_CONFIG = {
- 0: { price: 0, books: 4, perBook: 625 },
  1: { price: 80000, books: 4, perBook: 625 },
  2: { price: 250000, books: 4, perBook: 2000 },
  3: { price: 790000, books: 4, perBook: 6500 },
@@ -29,12 +28,10 @@ function safeParse(val) {
   } catch { return null }
 }
 
-// Only allow 07XXXXXXXX format - 10 digits
 function normalizePhone(phone) {
   if (!phone) return ''
   phone = String(phone).replace(/\D/g, '')
   
-  // Convert 256753520252 -> 0753520252
   if (phone.startsWith('256') && phone.length === 12) {
     phone = '0' + phone.slice(3)
   }
@@ -379,7 +376,6 @@ export async function POST(request) {
         return NextResponse.json({ success: false, message: 'Phone number and names required' }, { status: 400 })
       }
 
-      // Validate withdrawal phone format
       const withdrawalPhone = normalizePhone(number)
       if (!withdrawalPhone) {
         return NextResponse.json({ success: false, message: 'Withdrawal phone must be 10 digits starting with 07' }, { status: 400 })
@@ -414,19 +410,21 @@ export async function POST(request) {
       const config = VIP_CONFIG[vipLevel]
 
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
+      if (vipLevel < 1) return NextResponse.json({ success: false, message: 'Cannot buy VIP 0' }, { status: 400 })
 
       const newPrice = Number(config.price)
       const balance = Number(user.balance || user.available_balance || 0)
 
-      if (!vipLevel || vipLevel <= currentVip) {
+      if (vipLevel <= currentVip) {
         return NextResponse.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
       }
-      if (balance < newPrice) {
-        return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
+      
+      const upgradeCost = newPrice - currentPricePaid
+      if (balance < upgradeCost) {
+        return NextResponse.json({ success: false, message: `Insufficient balance. Need ${upgradeCost}shs more` }, { status: 400 })
       }
 
-      let newBalance = balance - newPrice
-      if (currentPricePaid > 0) newBalance += currentPricePaid
+      const newBalance = balance - upgradeCost
 
       await kv.hset(userKey, {
         balance: String(newBalance),
@@ -467,7 +465,7 @@ export async function POST(request) {
         const paidUplines = new Set()
 
         if (user.upline1 && user.upline1!== phone &&!paidUplines.has(user.upline1)) {
-          const { user: upline1, userKey: upline1Key } = await getUserData(user.upline1)
+          const { user: upline1 } = await getUserData(user.upline1)
           if (upline1) {
             const rewardA = Math.floor(paidPrice * 0.05)
             if (rewardA > 0) {
@@ -487,7 +485,7 @@ export async function POST(request) {
         }
 
         if (user.upline2 && user.upline2!== user.upline1 && user.upline2!== phone &&!paidUplines.has(user.upline2)) {
-          const { user: upline2, userKey: upline2Key } = await getUserData(user.upline2)
+          const { user: upline2 } = await getUserData(user.upline2)
           if (upline2) {
             const rewardB = Math.floor(paidPrice * 0.02)
             if (rewardB > 0) {
@@ -507,7 +505,7 @@ export async function POST(request) {
         }
 
         if (user.upline3 && user.upline3!== user.upline2 && user.upline3!== user.upline1 && user.upline3!== phone &&!paidUplines.has(user.upline3)) {
-          const { user: upline3, userKey: upline3Key } = await getUserData(user.upline3)
+          const { user: upline3 } = await getUserData(user.upline3)
           if (upline3) {
             const rewardC = Math.floor(paidPrice * 0.01)
             if (rewardC > 0) {
@@ -556,7 +554,7 @@ export async function POST(request) {
           upline3: freshUser?.upline3 || '',
           createdAt: freshUser?.createdAt || ''
         },
-        message: `VIP${vipLevel} activated! Deducted ${newPrice}shs, refunded ${currentPricePaid}shs`
+        message: `VIP${vipLevel} activated! Paid ${upgradeCost}shs`
       })
     }
 

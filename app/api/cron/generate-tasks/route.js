@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 const TZ = 'Africa/Kampala'
 
 function getUGDateStr(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date) // yyyy-mm-dd
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
 }
 
 function getUGDayOfWeek(date = new Date()) {
@@ -56,13 +56,13 @@ export async function GET() {
       const user = await kv.hgetall(key)
       if (!user) continue
       
-      const isVIP = String(user.hasBoughtVIP).toLowerCase() === 'true'
+      const hasBoughtVIP = String(user.hasBoughtVIP).toLowerCase() === 'true'
       
-      if (isVIP) {
+      if (hasBoughtVIP) {
         const phone = key.replace('user:', '')
         const taskKey = `task:${phone}:${today}`
         
-        // Delete old hash first to remove 0:4, 1:0 junk
+        // Delete old hash first to remove junk
         pipeline.del(taskKey)
 
         // Add only book IDs with status pending
@@ -72,10 +72,11 @@ export async function GET() {
         }
         createdFor++
         console.log('Queued tasks for:', phone)
+      } else {
+        console.log('Skipping', key, 'hasBoughtVIP:', user.hasBoughtVIP)
       }
     }
 
-    // Always exec so deletes run even if createdFor = 0
     await pipeline.exec()
 
     return NextResponse.json({

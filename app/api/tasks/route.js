@@ -7,7 +7,6 @@ export const dynamic = 'force-dynamic'
 const TZ = 'Africa/Kampala'
 
 const VIP_CONFIG = {
- 0: { books: 4, perBook: 625 },
  1: { books: 4, perBook: 625 },
  2: { books: 4, perBook: 2000 },
  3: { books: 4, perBook: 6500 },
@@ -47,7 +46,7 @@ export async function GET(req) {
     const userKey = `user:${phone}`
     const user = await kv.hgetall(userKey)
     const vip = Number(user?.vip) || Number(user?.vip_level) || 0
-    const reward = VIP_CONFIG[vip]?.perBook || VIP_CONFIG[0].perBook
+    const reward = VIP_CONFIG[vip]?.perBook || 0
 
     // Merge book IDs with full book data
     const books = Object.entries(taskHash).map(([bookId, status]) => {
