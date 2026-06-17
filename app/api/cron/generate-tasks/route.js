@@ -45,6 +45,10 @@ export async function GET() {
     const pipeline = kv.pipeline()
 
     for (const key of allKeys) {
+      // Skip keys that aren't hashes
+      const type = await kv.type(key)
+      if (type !== 'hash') continue
+
       const user = await kv.hgetall(key)
       if (!user) continue
       
