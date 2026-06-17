@@ -19,7 +19,7 @@ function shuffle(arr) {
 
 export async function GET() {
   try {
-    const today = getUGDateStr() // 2026-06-17
+    const today = getUGDateStr()
     const day = getUGDayOfWeek()
 
     if (day === 'Saturday' || day === 'Sunday') {
@@ -41,6 +41,8 @@ export async function GET() {
 
     // Create task:phone:yyyy-mm-dd for all VIP users
     const allKeys = await kv.keys('user:*')
+    console.log('Found keys:', allKeys)
+    
     let createdFor = 0
     const pipeline = kv.pipeline()
 
@@ -51,18 +53,26 @@ export async function GET() {
       const user = await kv.hgetall(key)
       if (!user) continue
       
+      console.log(key, 'data:', user)
+      
       const isVIP = String(user.hasboughtvip).toLowerCase() === 'true'
+      console.log(key, 'isVIP:', isVIP, 'raw value:', user.hasboughtvip)
+      
       if (isVIP) {
         const phone = key.replace('user:', '')
         const taskKey = `task:${phone}:${today}`
         
         const existing = await kv.hgetall(taskKey)
-        if (existing && Object.keys(existing).length > 0) continue
+        if (existing && Object.keys(existing).length > 0) {
+          console.log('Tasks already exist for:', phone)
+          continue
+        }
 
         for (const book of dailyData.books) {
           pipeline.hset(taskKey, book.id, 'pending')
         }
         createdFor++
+        console.log('Queued tasks for:', phone)
       }
     }
 
