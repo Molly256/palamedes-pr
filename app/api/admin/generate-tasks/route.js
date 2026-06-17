@@ -14,9 +14,16 @@ function shuffle(arr) {
 }
 
 export async function GET(request) {
-  // 1. Protect it
+  // 1. Protect it - with logging for debugging
   const secret = request.nextUrl.searchParams.get('secret')
-  if (secret !== ADMIN_SECRET) {
+  const cleanSecret = secret?.trim()
+  const cleanAdminSecret = ADMIN_SECRET?.trim()
+  
+  console.log('[DEBUG] Received secret:', cleanSecret)
+  console.log('[DEBUG] Env secret:', cleanAdminSecret)
+  console.log('[DEBUG] Match:', cleanSecret === cleanAdminSecret)
+  
+  if (cleanSecret !== cleanAdminSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
