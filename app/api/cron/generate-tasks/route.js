@@ -55,8 +55,8 @@ export async function GET() {
       
       console.log(key, 'data:', user)
       
-      const isVIP = String(user.hasboughtvip).toLowerCase() === 'true'
-      console.log(key, 'isVIP:', isVIP, 'raw value:', user.hasboughtvip)
+      const isVIP = String(user.hasBoughtVIP).toLowerCase() === 'true'
+      console.log(key, 'isVIP:', isVIP, 'raw value:', user.hasBoughtVIP)
       
       if (isVIP) {
         const phone = key.replace('user:', '')
