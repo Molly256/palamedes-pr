@@ -43,14 +43,14 @@ export async function GET(req) {
     ])
 
     if (!taskHash || Object.keys(taskHash).length === 0) {
-      return NextResponse.json({ success: true, books: [], user: user || null })
+      return NextResponse.json({ success: true, books: [], user: user || null, date: today })
     }
 
     // Get user VIP level for reward amount
     const vip = Number(user?.vip) || Number(user?.vip_level) || 0
     const reward = VIP_CONFIG[vip]?.perBook || 0
 
-    // Build lookup for faster matching
+    // Build lookup map with string keys to match Redis
     const booksMap = booksData.reduce((acc, b) => {
       acc[String(b.id)] = b
       return acc
@@ -60,12 +60,26 @@ export async function GET(req) {
     const books = Object.entries(taskHash).map(([bookId, status]) => {
       const book = booksMap[bookId]
 
+      if (!book) {
+        console.warn(`Book ID ${bookId} not found in books.json`)
+        return {
+          id: bookId,
+          title: 'Book not found',
+          author: '',
+          cover: '/placeholder.png',
+          preview: '',
+          status,
+          reward
+        }
+      }
+
       return {
         id: bookId,
-        title: book?.title || '',
-        cover: book?.cover || '',
-        preview: book?.preview || '',
-        status: status, // "pending", "reading", "read", "submitted"
+        title: book.title,
+        author: book.author,
+        cover: book.cover, // Returns "/books/covers/58169.jpg" from books.json
+        preview: book.preview,
+        status, // "pending", "reading", "read", "submitted"
         reward
       }
     })
@@ -73,7 +87,7 @@ export async function GET(req) {
     return NextResponse.json({
       success: true,
       books,
-      user, // <-- added this
+      user,
       date: today
     })
 
