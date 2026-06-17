@@ -34,30 +34,38 @@ export async function GET(req) {
 
     const today = getUGDateStr()
     const taskKey = `task:${phone}:${today}`
+    const userKey = `user:${phone}`
 
-    // Get task status hash from Redis
-    const taskHash = await kv.hgetall(taskKey)
+    // Get task status hash and user data in parallel
+    const [taskHash, user] = await Promise.all([
+      kv.hgetall(taskKey),
+      kv.hgetall(userKey)
+    ])
 
     if (!taskHash || Object.keys(taskHash).length === 0) {
-      return NextResponse.json({ success: true, books: [] })
+      return NextResponse.json({ success: true, books: [], user: user || null })
     }
 
     // Get user VIP level for reward amount
-    const userKey = `user:${phone}`
-    const user = await kv.hgetall(userKey)
     const vip = Number(user?.vip) || Number(user?.vip_level) || 0
     const reward = VIP_CONFIG[vip]?.perBook || 0
 
+    // Build lookup for faster matching
+    const booksMap = booksData.reduce((acc, b) => {
+      acc[String(b.id)] = b
+      return acc
+    }, {})
+
     // Merge book IDs with full book data
     const books = Object.entries(taskHash).map(([bookId, status]) => {
-      const book = booksData.find(b => String(b.id) === String(bookId))
+      const book = booksMap[bookId]
 
       return {
         id: bookId,
         title: book?.title || '',
         cover: book?.cover || '',
         preview: book?.preview || '',
-        status: status, // already "pending" or "submitted" from Redis
+        status: status, // "pending", "reading", "read", "submitted"
         reward
       }
     })
@@ -65,6 +73,7 @@ export async function GET(req) {
     return NextResponse.json({
       success: true,
       books,
+      user, // <-- added this
       date: today
     })
 

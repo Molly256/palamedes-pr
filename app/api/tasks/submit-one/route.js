@@ -76,7 +76,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    if (taskStatus!== 'pending') {
+    if (taskStatus!== 'pending' && taskStatus!== 'read') {
       return NextResponse.json({ success: false, message: 'Task not ready to submit' }, { status: 400 })
     }
 

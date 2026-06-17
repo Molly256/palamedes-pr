@@ -31,6 +31,12 @@ export default function TasksPage() {
         return
       }
 
+      // Update user from API response if available - this fixes stale localStorage data
+      if (data.user) {
+        setUser(data.user)
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      }
+
       // Backend returns { books: [...] }
       const mappedTasks = (data.books || []).map((book) => ({
         bookId: book.id,
@@ -90,7 +96,7 @@ export default function TasksPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: phone,
-          bookId: book.bookId  // fixed: was taskId
+          bookId: book.bookId
         })
       })
 
@@ -120,8 +126,9 @@ export default function TasksPage() {
 
   if (!user) return <div style={{ padding: 20 }}>Loading...</div>
 
-  const hasBoughtVIP = user.hasBoughtVIP === 'true'
-  const vipLabel = hasBoughtVIP ? `VIP ${user.vip}` : 'Internship'
+  // Fixed: handle boolean, string, and number values from KV
+  const hasBoughtVIP = user.hasBoughtVIP === 'true' || user.hasBoughtVIP === true || user.hasBoughtVIP === 1
+  const vipLabel = hasBoughtVIP ? `VIP ${user.vip || ''}`.trim() : 'Internship'
   const doneCount = tasks.filter(b => b.status === 'submitted').length
 
   if (readingBook) {
