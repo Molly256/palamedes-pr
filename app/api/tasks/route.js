@@ -48,15 +48,21 @@ export async function GET(req) {
     const vip = Number(user?.vip) || Number(user?.vip_level) || 0
     const reward = VIP_CONFIG[vip]?.perBook || 0
 
-    // Merge book IDs with full book data
+    // Merge book IDs with full book data and map status
     const books = Object.entries(taskHash).map(([bookId, status]) => {
       const book = booksData.find(b => String(b.id) === String(bookId))
+      
+      // Map Redis status codes to frontend status
+      let readableStatus = "pending"
+      if (status === "1") readableStatus = "submitted"
+      if (status === "2") readableStatus = "read"
+
       return {
         id: bookId,
         title: book?.title || '',
         cover: book?.cover || '',
         preview: book?.preview || '',
-        status,
+        status: readableStatus,
         reward
       }
     })

@@ -31,15 +31,27 @@ export default function TasksPage() {
         return
       }
 
-      const mappedTasks = (data.books || []).map(b => ({
-        bookId: b.id,
-        taskId: b.id,
-        title: b.title,
-        cover: b.cover,
-        preview: b.preview,
-        status: b.status,
-        reward: b.reward || 500
-      }))
+      const userTasks = data.userTasks || {}
+      const taskDetails = data.taskDetails || {}
+
+      // Map hash: { "0": "1", "1": "0" } into array with details
+      const mappedTasks = Object.entries(userTasks).map(([taskId, status]) => {
+        const details = taskDetails[taskId] ? JSON.parse(taskDetails[taskId]) : {}
+        
+        let taskStatus = "pending"
+        if (status === "1") taskStatus = "submitted"
+        if (status === "2") taskStatus = "read"
+
+        return {
+          bookId: taskId,
+          taskId: taskId,
+          title: details.title || `Task ${taskId}`,
+          cover: details.cover || "/default-cover.png",
+          preview: details.preview || "No preview available",
+          status: taskStatus,
+          reward: details.reward || 500
+        }
+      })
 
       setTasks(mappedTasks)
     } catch (err) {

@@ -72,18 +72,18 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (taskStatus === 'submitted') {
+    if (taskStatus === '1') {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    if (taskStatus!== 'read' && taskStatus!== 'pending') {
+    if (taskStatus!== '0' && taskStatus!== '2') {
       return NextResponse.json({ success: false, message: 'Task not ready to submit' }, { status: 400 })
     }
 
     const pipe = kv.pipeline()
 
-    // Mark task as submitted
-    pipe.hset(taskKey, String(taskId), 'submitted')
+    // Mark task as submitted: 1 = submitted
+    pipe.hset(taskKey, String(taskId), '1')
 
     // Update balance
     const currentBalance = Number(user.balance || user.available_balance || 0)
@@ -107,7 +107,7 @@ export async function POST(request) {
     // Check if all tasks done AFTER update
     const allTasks = await kv.hgetall(taskKey)
     const totalTasks = Object.keys(allTasks).length
-    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length
+    const doneTasks = Object.values(allTasks).filter(v => v === '1').length
 
     if (doneTasks >= totalTasks && totalTasks > 0) {
       await kv.hset(userKey, {
