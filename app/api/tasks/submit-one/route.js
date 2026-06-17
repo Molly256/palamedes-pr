@@ -38,9 +38,9 @@ const VIP_CONFIG = {
 
 export async function POST(request) {
   try {
-    const { phone, taskId } = await request.json()
+    const { phone, bookId } = await request.json()
 
-    if (!phone ||!taskId) {
+    if (!phone ||!bookId) {
       return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
 
@@ -66,24 +66,24 @@ export async function POST(request) {
     const reward = VIP_CONFIG[vipLevel]?.perBook || 0
 
     const taskKey = `task:${normalizedPhone}:${today}`
-    const taskStatus = await kv.hget(taskKey, String(taskId))
+    const taskStatus = await kv.hget(taskKey, String(bookId))
 
     if (!taskStatus) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (taskStatus === '1') {
+    if (taskStatus === 'submitted') {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    if (taskStatus!== '0' && taskStatus!== '2') {
+    if (taskStatus!== 'pending') {
       return NextResponse.json({ success: false, message: 'Task not ready to submit' }, { status: 400 })
     }
 
     const pipe = kv.pipeline()
 
-    // Mark task as submitted: 1 = submitted
-    pipe.hset(taskKey, String(taskId), '1')
+    // Mark task as submitted
+    pipe.hset(taskKey, String(bookId), 'submitted')
 
     // Update balance
     const currentBalance = Number(user.balance || user.available_balance || 0)
@@ -99,7 +99,7 @@ export async function POST(request) {
       amount: reward,
       date: new Date().toISOString(),
       status: 'success',
-      desc: `Task ${taskId} completed`
+      desc: `Book ${bookId} completed`
     }))
 
     await pipe.exec()
@@ -107,7 +107,7 @@ export async function POST(request) {
     // Check if all tasks done AFTER update
     const allTasks = await kv.hgetall(taskKey)
     const totalTasks = Object.keys(allTasks).length
-    const doneTasks = Object.values(allTasks).filter(v => v === '1').length
+    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length
 
     if (doneTasks >= totalTasks && totalTasks > 0) {
       await kv.hset(userKey, {
