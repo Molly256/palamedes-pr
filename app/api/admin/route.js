@@ -45,7 +45,18 @@ async function getUserData(phone) {
 
   const balance = Number(user.balance?? user.available_balance?? 0)
   user.balance = balance
+  user.available_balance = balance
   return { user, userKey }
+}
+
+// Update both balance fields at once so they never drift apart
+async function syncBalanceFields(phone, amount) {
+  const userKey = `user:${phone}`
+  const amountStr = String(amount)
+  await kv.hset(userKey, {
+    balance: amountStr,
+    available_balance: amountStr
+  })
 }
 
 async function getTransactions(phone) {
@@ -135,19 +146,19 @@ export async function POST(request) {
       tx.status = action === 'approve'? 'success' : 'rejected'
 
       if (action === 'approve') {
-        const { user: targetUser, userKey: targetKey } = await getUserData(targetPhoneNorm)
-        if (!targetKey) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+        const { user: targetUser } = await getUserData(targetPhoneNorm)
+        if (!targetUser) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
         const currentBalance = Number(targetUser.balance) || 0
 
         if (type === 'deposit') {
           const newBalance = currentBalance + Number(tx.amount)
-          await kv.hset(targetKey, { balance: String(newBalance) })
+          await syncBalanceFields(targetPhoneNorm, newBalance)
         }
 
         if (type === 'withdraw') {
           const newBalance = currentBalance - Math.abs(Number(tx.amount))
-          await kv.hset(targetKey, { balance: String(newBalance) })
+          await syncBalanceFields(targetPhoneNorm, newBalance)
         }
       }
 

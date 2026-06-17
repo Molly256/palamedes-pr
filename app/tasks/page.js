@@ -119,6 +119,10 @@ export default function TasksPage() {
 
   if (!user) return <div style={{ padding: 20 }}>Loading...</div>
 
+  const hasBoughtVIP = user.hasBoughtVIP === 'true'
+  const vipLabel = hasBoughtVIP ? `VIP ${user.vip}` : 'Internship'
+  const doneCount = tasks.filter(b => b.status === 'submitted').length
+
   if (readingBook) {
     return (
       <div style={{ padding: 20, minHeight: "100vh", background: "#FFFFFF", color: "#000" }}>
@@ -154,15 +158,30 @@ export default function TasksPage() {
     )
   }
 
-  const doneCount = tasks.filter(b => b.status === 'submitted').length
-
   return (
     <div style={{ padding: 20, background: "#FFFFFF", minHeight: "100vh", color: "#000" }}>
       <h2 style={{ marginBottom: 20, fontWeight: "400", color: "#000" }}>
-        Today's Tasks - VIP{user.vip} {doneCount}/{tasks.length} Done
+        Today's Tasks - {vipLabel} {doneCount}/{tasks.length} Done
       </h2>
 
-      {tasks.length === 0 ? (
+      {!hasBoughtVIP ? (
+        <div style={{ textAlign: "center", marginTop: 100 }}>
+          <p style={{ fontSize: 16, color: "#666", marginBottom: 15 }}>
+            Buy VIP to unlock daily tasks
+          </p>
+          <a href="/viptasks" style={{ 
+            display: "inline-block", 
+            padding: "10px 20px", 
+            background: SKYBLUE, 
+            color: "#000", 
+            borderRadius: 8, 
+            textDecoration: "none",
+            fontWeight: "600"
+          }}>
+            Go to VIP Tasks
+          </a>
+        </div>
+      ) : tasks.length === 0 ? (
         <p style={{ textAlign: "center", marginTop: 100, color: "#666" }}>
           No tasks available
         </p>
@@ -228,7 +247,7 @@ export default function TasksPage() {
         })
       )}
 
-      {doneCount === tasks.length && tasks.length > 0 && (
+      {hasBoughtVIP && doneCount === tasks.length && tasks.length > 0 && (
         <p style={{ textAlign: "center", marginTop: 40, fontSize: 18, color: "#4CAF50", fontWeight: "600" }}>
           Tasks done for today {doneCount}/{tasks.length}
         </p>
