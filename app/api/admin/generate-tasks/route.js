@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 import booksData from '../../../../data/books.json'
 
 const TZ = 'Africa/Kampala'
-// TEMP: Hardcoded for testing only. Remove after it works.
 const ADMIN_SECRET = 'vip-tasks-9k2m8x4z'
 
 function getUGDateStr() {
@@ -14,37 +13,55 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5)
 }
 
+function getUniqueBooks(count = 4) {
+  const seen = new Set()
+  const result = []
+  
+  for (const b of shuffle(booksData)) {
+    const id = String(b.id)
+    if (!seen.has(id)) {
+      seen.add(id)
+      result.push({
+        id,
+        title: b.title,
+        cover: b.cover,
+        preview: b.preview
+      })
+    }
+    if (result.length === count) break
+  }
+  
+  return result
+}
+
 export async function GET(request) {
-  // 1. Protect it - with logging for debugging
   const secret = request.nextUrl.searchParams.get('secret')
-  const cleanSecret = secret?.trim()
-  const cleanAdminSecret = ADMIN_SECRET?.trim()
+  const force = request.nextUrl.searchParams.get('force') === '1'
   
-  console.log('[DEBUG] Received secret:', cleanSecret)
-  console.log('[DEBUG] Env secret:', cleanAdminSecret)
-  console.log('[DEBUG] Match:', cleanSecret === cleanAdminSecret)
-  
-  if (cleanSecret !== cleanAdminSecret) {
+  if (secret?.trim() !== ADMIN_SECRET?.trim()) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     const today = getUGDateStr()
+    const dailyKey = `tasks:daily:${today}`
 
-    // 2. Get or create today's 4 books
-    let dailyData = await kv.get(`tasks:daily:${today}`)
-    if (!dailyData) {
-      const dailyBooks = shuffle(booksData).slice(0, 4).map(b => ({
-        id: String(b.id),
-        title: b.title,
-        cover: b.cover,
-        preview: b.preview
-      }))
+    // Delete and regenerate if force=1 or if data doesn't exist
+    let dailyData = await kv.get(dailyKey)
+    if (!dailyData || force) {
+      const dailyBooks = getUniqueBooks(4)
+      
+      if (dailyBooks.length < 4) {
+        return NextResponse.json({ 
+          error: `Only ${dailyBooks.length} unique books found. Check books.json for duplicates.` 
+        }, { status: 500 })
+      }
+      
       dailyData = { books: dailyBooks, date: today }
-      await kv.set(`tasks:daily:${today}`, dailyData)
+      await kv.set(dailyKey, dailyData)
     }
 
-    // 3. Get all VIP users
+    // Get all VIP users
     const allKeys = await kv.keys('user:*')
     const userKeys = allKeys.filter(k => /^user:\d{10}$/.test(k))
     
@@ -64,10 +81,10 @@ export async function GET(request) {
         const phone = key.replace('user:', '')
         const taskKey = `task:${phone}:${today}`
         
-        pipeline.del(taskKey) // clear old junk
+        pipeline.del(taskKey)
         
         for (const book of dailyData.books) {
-          pipeline.hset(taskKey, String(book.id), 'pending')
+          pipeline.hset(taskKey, book.id, 'pending')
         }
         createdFor++
       }
@@ -80,7 +97,7 @@ export async function GET(request) {
       date: today,
       createdFor,
       books: dailyData.books.map(b => b.id),
-      message: `Created tasks for ${createdFor} VIP users`
+      message: `Created tasks for ${createdFor} VIP users with ${dailyData.books.length} unique books`
     })
 
   } catch (err) {
