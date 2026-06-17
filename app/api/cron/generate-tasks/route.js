@@ -65,15 +65,15 @@ export async function GET() {
         // Delete old hash first to remove junk
         pipeline.del(taskKey)
 
-        // Add only book IDs with status pending
-       for (const book of dailyData.books) {
-    // Dynamically creates field name: "Book1 title cover", "Book2 title cover", etc.
-    const fieldName = `Book${book.id} title cover`;
-    const statusValue = 'pending' 
-    
-    console.log('WRITING', taskKey, 'field:', fieldName, 'value:' statusValue');
-    pipeline.hset(taskKey, { [fieldName]: statusValue });
-}        createdFor++
+        // Add book IDs with status pending
+        for (const book of dailyData.books) {
+          const fieldName = String(book.id)
+          const statusValue = 'pending' 
+          
+          console.log('WRITING', taskKey, 'field:', fieldName, 'value:', statusValue)
+          pipeline.hset(taskKey, fieldName, statusValue)
+        }
+        createdFor++
         console.log('Queued tasks for:', phone)
       } else {
         console.log('Skipping', key, 'hasBoughtVIP:', user.hasBoughtVIP)
