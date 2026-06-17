@@ -53,7 +53,7 @@ export async function POST(req) {
         if (!user || Object.keys(user).length === 0) continue
 
         const phone = key.split(':')[1]
-        const isVip = user.boughtvip === true || user.boughtvip === 'true'
+        const isVip = user.hasBoughtVIP === true || user.hasBoughtVIP === 'true'
 
         if (isVip) {
           const taskKey = `task:${phone}:${today}`
