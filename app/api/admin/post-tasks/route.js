@@ -45,6 +45,10 @@ export async function POST(req) {
       cursor = nextCursor
 
       for (const key of keys) {
+        // Skip non-hash keys to avoid WRONGTYPE error
+        const type = await kv.type(key)
+        if (type !== 'hash') continue
+
         const user = await kv.hgetall(key)
         if (!user || Object.keys(user).length === 0) continue
 
