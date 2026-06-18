@@ -1,6 +1,5 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
-import booksData from '../../../../data/books.json'
 
 const TZ = 'Africa/Kampala'
 const ADMIN_SECRET = 'vip-tasks-9k2m8x4z'
@@ -13,7 +12,22 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5)
 }
 
-function getUniqueBooks(count = 4) {
+async function getBooksData() {
+  const baseUrl = process.env.VERCEL_URL 
+    ? `https://${process.env.VERCEL_URL}` 
+    : 'http://localhost:3000'
+  
+  const res = await fetch(`${baseUrl}/data/books.json`, { cache: 'no-store' })
+  
+  if (!res.ok) {
+    throw new Error(`Failed to fetch books.json: ${res.status}`)
+  }
+  
+  return res.json()
+}
+
+async function getUniqueBooks(count = 4) {
+  const booksData = await getBooksData()
   const seen = new Set()
   const result = []
   
@@ -49,7 +63,7 @@ export async function GET(request) {
     // Delete and regenerate if force=1 or if data doesn't exist
     let dailyData = await kv.get(dailyKey)
     if (!dailyData || force) {
-      const dailyBooks = getUniqueBooks(4)
+      const dailyBooks = await getUniqueBooks(4)
       
       if (dailyBooks.length < 4) {
         return NextResponse.json({ 

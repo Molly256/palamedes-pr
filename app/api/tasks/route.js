@@ -1,6 +1,5 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
-import booksData from '../../../data/books.json'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +22,20 @@ function getUGDateStr(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
 }
 
+async function getBooksData() {
+  const baseUrl = process.env.VERCEL_URL
+   ? `https://${process.env.VERCEL_URL}`
+    : 'http://localhost:3000'
+
+  const res = await fetch(`${baseUrl}/data/books.json`, { cache: 'no-store' })
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch books.json: ${res.status}`)
+  }
+
+  return res.json()
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)
@@ -36,10 +49,11 @@ export async function GET(req) {
     const taskKey = `task:${phone}:${today}`
     const userKey = `user:${phone}`
 
-    // Get task status hash and user data in parallel
-    const [taskHash, user] = await Promise.all([
+    // Get task status hash and user data + books in parallel
+    const [taskHash, user, booksData] = await Promise.all([
       kv.hgetall(taskKey),
-      kv.hgetall(userKey)
+      kv.hgetall(userKey),
+      getBooksData()
     ])
 
     if (!taskHash || Object.keys(taskHash).length === 0) {
@@ -77,9 +91,9 @@ export async function GET(req) {
         id: bookId,
         title: book.title,
         author: book.author,
-        cover: book.cover, // Returns "/books/covers/58169.jpg" from books.json
+        cover: book.cover,
         preview: book.preview,
-        status, // "pending", "reading", "read", "submitted"
+        status,
         reward
       }
     })
