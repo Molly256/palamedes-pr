@@ -13,11 +13,8 @@ function shuffle(arr) {
 }
 
 async function getBooksData() {
-  const baseUrl = process.env.VERCEL_URL 
-    ? `https://${process.env.VERCEL_URL}` 
-    : 'http://localhost:3000'
-  
-  const res = await fetch(`${baseUrl}/data/books.json`, { cache: 'no-store' })
+  // Use relative path - works on Vercel and locally
+  const res = await fetch('/data/books.json', { cache: 'no-store' })
   
   if (!res.ok) {
     throw new Error(`Failed to fetch books.json: ${res.status}`)
@@ -60,7 +57,6 @@ export async function GET(request) {
     const today = getUGDateStr()
     const dailyKey = `tasks:daily:${today}`
 
-    // Delete and regenerate if force=1 or if data doesn't exist
     let dailyData = await kv.get(dailyKey)
     if (!dailyData || force) {
       const dailyBooks = await getUniqueBooks(4)
@@ -75,7 +71,6 @@ export async function GET(request) {
       await kv.set(dailyKey, dailyData)
     }
 
-    // Get all VIP users
     const allKeys = await kv.keys('user:*')
     const userKeys = allKeys.filter(k => /^user:\d{10}$/.test(k))
     
