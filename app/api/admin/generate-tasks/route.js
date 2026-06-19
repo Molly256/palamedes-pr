@@ -1,5 +1,7 @@
 import { kv } from '@vercel/kv'
 import { NextResponse } from 'next/server'
+import fs from 'fs'
+import path from 'path'
 
 const TZ = 'Africa/Kampala'
 const ADMIN_SECRET = 'vip-tasks-9k2m8x4z'
@@ -13,31 +15,38 @@ function shuffle(arr) {
 }
 
 async function getBooksData() {
-  // Use relative path - works on Vercel and locally
-  const res = await fetch('/data/books.json', { cache: 'no-store' })
+  const filePath = path.join(process.cwd(), 'public', 'data', 'books.json')
   
-  if (!res.ok) {
-    throw new Error(`Failed to fetch books.json: ${res.status}`)
+  try {
+    const file = fs.readFileSync(filePath, 'utf-8')
+    const books = JSON.parse(file)
+    
+    return books.map(b => ({
+      id: String(b.id),
+      title: b.title,
+      author: b.author,
+      cover: b.cover,
+      preview: b.preview
+    }))
+  } catch (err) {
+    throw new Error(`Failed to read books.json: ${err.message}`)
   }
-  
-  return res.json()
 }
 
 async function getUniqueBooks(count = 4) {
   const booksData = await getBooksData()
+  
+  if (booksData.length < count) {
+    throw new Error(`Not enough books. Found ${booksData.length}, need ${count}`)
+  }
+
   const seen = new Set()
   const result = []
   
   for (const b of shuffle(booksData)) {
-    const id = String(b.id)
-    if (!seen.has(id)) {
-      seen.add(id)
-      result.push({
-        id,
-        title: b.title,
-        cover: b.cover,
-        preview: b.preview
-      })
+    if (!seen.has(b.id)) {
+      seen.add(b.id)
+      result.push(b)
     }
     if (result.length === count) break
   }
@@ -60,13 +69,6 @@ export async function GET(request) {
     let dailyData = await kv.get(dailyKey)
     if (!dailyData || force) {
       const dailyBooks = await getUniqueBooks(4)
-      
-      if (dailyBooks.length < 4) {
-        return NextResponse.json({ 
-          error: `Only ${dailyBooks.length} unique books found. Check books.json for duplicates.` 
-        }, { status: 500 })
-      }
-      
       dailyData = { books: dailyBooks, date: today }
       await kv.set(dailyKey, dailyData)
     }
@@ -93,7 +95,13 @@ export async function GET(request) {
         pipeline.del(taskKey)
         
         for (const book of dailyData.books) {
-          pipeline.hset(taskKey, book.id, 'pending')
+          pipeline.hset(taskKey, book.id, JSON.stringify({
+            status: 'pending',
+            title: book.title,
+            author: book.author,
+            cover: book.cover,
+            preview: book.preview
+          }))
         }
         createdFor++
       }
@@ -105,8 +113,8 @@ export async function GET(request) {
       success: true,
       date: today,
       createdFor,
-      books: dailyData.books.map(b => b.id),
-      message: `Created tasks for ${createdFor} VIP users with ${dailyData.books.length} unique books`
+      books: dailyData.books.map(b => ({ id: b.id, title: b.title, cover: b.cover })),
+      message: `Created tasks for ${createdFor} VIP users with 4 unique books`
     })
 
   } catch (err) {
