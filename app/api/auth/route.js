@@ -1,4 +1,4 @@
-import { kv } from '@vercel/kv'
+import { db } from '../../../lib/db'
 
 const TZ = 'Africa/Kampala'
 
@@ -26,7 +26,7 @@ function isValidInviteCode(code) {
 function normalizeUser(user) {
   if (!user) return null
 
-  const balance = Number(user.balance ?? user.available_balance ?? 0)
+  const balance = Number(user.balance?? user.available_balance?? 0)
 
   return {
     username: user.username,
@@ -49,12 +49,11 @@ function normalizeUser(user) {
 }
 
 async function syncBalanceFields(phone, amount) {
-  const userKey = `user:${phone}`
   const amountStr = String(amount)
-  await kv.hset(userKey, {
-    balance: amountStr,
-    available_balance: amountStr
-  })
+  await db.execute(
+    'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
+    [amountStr, amountStr, phone]
+  )
 }
 
 export async function POST(request) {
@@ -64,7 +63,7 @@ export async function POST(request) {
 
     // REGISTER
     if (action === 'register') {
-      if (!username || !password || !phone) {
+      if (!username ||!password ||!phone) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
@@ -81,14 +80,13 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Username must be 3-6 letters or digits only' })
       }
 
-      const userKey = `user:${phone}`
-      const usernameKey = `username:${username}`
-
-      if ((await kv.type(userKey)) === 'hash') {
+      const existingUser = await db.execute('SELECT phone FROM users WHERE phone =?', [phone])
+      if (existingUser.rows.length > 0) {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
 
-      if ((await kv.type(usernameKey)) === 'hash') {
+      const existingUsername = await db.execute('SELECT phone FROM usernames WHERE username =?', [username])
+      if (existingUsername.rows.length > 0) {
         return Response.json({ success: false, message: 'Username taken' })
       }
 
@@ -99,52 +97,43 @@ export async function POST(request) {
           return Response.json({ success: false, message: 'Invalid referral code format' })
         }
 
-        const upline1Phone = await kv.get(`referral:${referral}`)
-        if (!upline1Phone) {
+        const refRes = await db.execute('SELECT phone FROM referrals WHERE code =?', [referral])
+        if (refRes.rows.length === 0) {
           return Response.json({ success: false, message: 'Referral code not found' })
         }
 
+        const upline1Phone = refRes.rows[0].phone
         if (upline1Phone === phone) {
           return Response.json({ success: false, message: 'Cannot use your own referral code' })
         }
 
         upline1 = upline1Phone
 
-        const upline1Data = await kv.hgetall(`user:${upline1Phone}`)
-        if (upline1Data?.upline1) upline2 = upline1Data.upline1
-
+        const upline1Data = await db.execute('SELECT upline1, upline2 FROM users WHERE phone =?', [upline1Phone])
+        if (upline1Data.rows[0]?.upline1) upline2 = upline1Data.rows[0].upline1
         if (upline2) {
-          const upline2Data = await kv.hgetall(`user:${upline2}`)
-          if (upline2Data?.upline1) upline3 = upline2Data.upline1
+          const upline2Data = await db.execute('SELECT upline1 FROM users WHERE phone =?', [upline2])
+          if (upline2Data.rows[0]?.upline1) upline3 = upline2Data.rows[0].upline1
         }
 
-        await kv.sadd(`user:${upline1}:downline1`, phone)
-        if (upline2) await kv.sadd(`user:${upline2}:downline2`, phone)
-        if (upline3) await kv.sadd(`user:${upline3}:downline3`, phone)
+        // Insert downline records
+        await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,1)', [upline1, phone])
+        if (upline2) await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,2)', [upline2, phone])
+        if (upline3) await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,3)', [upline3, phone])
       }
 
       const inviteCode = getUserInviteCode(phone)
       const regDate = getUGDateStr()
 
-      // Register: only create user + 2500shs balance. No VIP logic here.
-      await kv.hset(userKey, {
-        username,
-        displayName: username,
-        phone,
-        password,
-        balance: '2500',
-        available_balance: '2500',
-        referralCode: inviteCode,
-        upline1,
-        upline2,
-        upline3,
-        referralPaid: 'false',
-        role: 'user',
-        regDate
-      })
+      await db.execute(
+        `INSERT INTO users(phone, username, displayName, password, balance, available_balance,
+         referralCode, upline1, upline2, upline3, referralPaid, role, regDate)
+         VALUES (?,?,?,?,2500,2500,?,?,?,?, 'false', 'user',?)`,
+        [phone, username, username, password, inviteCode, upline1, upline2, upline3, regDate]
+      )
 
-      await kv.hset(usernameKey, { phone })
-      await kv.set(`referral:${inviteCode}`, phone)
+      await db.execute('INSERT INTO usernames(username, phone) VALUES (?,?)', [username, phone])
+      await db.execute('INSERT INTO referrals(code, phone) VALUES (?,?)', [inviteCode, phone])
 
       return Response.json({
         success: true,
@@ -155,7 +144,7 @@ export async function POST(request) {
 
     // LOGIN
     if (action === 'login') {
-      if (!phone || !password) {
+      if (!phone ||!password) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
@@ -164,19 +153,19 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
       }
 
-      const user = await kv.hgetall(`user:${phone}`)
+      const res = await db.execute('SELECT * FROM users WHERE phone =?', [phone])
+      const user = res.rows[0]
 
-      if (!user || Object.keys(user).length === 0) {
+      if (!user) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (String(user.password) !== String(password)) {
+      if (String(user.password)!== String(password)) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
-      // Sync fields if they differ
-      const currentBalance = Number(user.balance ?? user.available_balance ?? 0)
-      if (String(user.balance) !== String(currentBalance) || String(user.available_balance) !== String(currentBalance)) {
+      const currentBalance = Number(user.balance?? user.available_balance?? 0)
+      if (String(user.balance)!== String(currentBalance) || String(user.available_balance)!== String(currentBalance)) {
         await syncBalanceFields(phone, currentBalance)
       }
 

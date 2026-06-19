@@ -1,4 +1,4 @@
-import { kv } from '@vercel/kv'
+import { db } from '../../../lib/db'
 import { NextResponse } from 'next/server'
 
 const TZ = 'Africa/Kampala'
@@ -56,65 +56,81 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
     }
 
-    const userKey = `user:${normalizedPhone}`
-    const user = await kv.hgetall(userKey)
-    if (!user || Object.keys(user).length === 0) {
+    const userRes = await db.execute('SELECT * FROM users WHERE phone =?', [normalizedPhone])
+    const user = userRes.rows[0]
+    if (!user) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
 
     const vipLevel = Number(user.vip) || Number(user.vip_level) || 0
     const reward = VIP_CONFIG[vipLevel]?.perBook || 0
 
-    const taskKey = `task:${normalizedPhone}:${today}`
-    const taskStatus = await kv.hget(taskKey, String(bookId))
+    const taskRes = await db.execute(
+      'SELECT status FROM daily_tasks WHERE phone =? AND date =? AND bookId =?',
+      [normalizedPhone, today, String(bookId)]
+    )
+    const task = taskRes.rows[0]
 
-    if (!taskStatus) {
+    if (!task) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
-    if (taskStatus === 'submitted') {
+    if (task.status === 'submitted') {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    if (taskStatus!== 'pending' && taskStatus!== 'read') {
-      return NextResponse.json({ success: false, message: 'Task not ready to submit' }, { status: 400 })
+    // Only allow submit if still pending
+    if (task.status!== 'pending') {
+      return NextResponse.json({ success: false, message: 'Invalid task status' }, { status: 400 })
     }
 
-    const pipe = kv.pipeline()
-
-    // Mark task as submitted
-    pipe.hset(taskKey, String(bookId), 'submitted')
-
-    // Update balance
     const currentBalance = Number(user.balance || user.available_balance || 0)
     const newBalance = currentBalance + reward
-    pipe.hset(userKey, {
-      balance: String(newBalance),
-      available_balance: String(newBalance)
+
+    await db.transaction(async (tx) => {
+      // Mark as submitted
+      await tx.execute(
+        'UPDATE daily_tasks SET status =? WHERE phone =? AND date =? AND bookId =?',
+        ['submitted', normalizedPhone, today, String(bookId)]
+      )
+
+      // Update balance
+      await tx.execute(
+        'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
+        [String(newBalance), String(newBalance), normalizedPhone]
+      )
+
+      // Log transaction
+      await tx.execute(
+        `INSERT INTO transactions(id, phone, type, amount, date, status, desc)
+         VALUES (?,?,?,?,?,?,?)`,
+        [
+          String(Date.now()),
+          normalizedPhone,
+          'daily_income',
+          reward,
+          new Date().toISOString(),
+          'success',
+          `Book ${bookId} completed`
+        ]
+      )
+
+      // Check if all tasks done for today
+      const allTasksRes = await tx.execute(
+        'SELECT status FROM daily_tasks WHERE phone =? AND date =?',
+        [normalizedPhone, today]
+      )
+      const allTasks = allTasksRes.rows
+      const totalTasks = allTasks.length
+      const doneTasks = allTasks.filter(t => t.status === 'submitted').length
+
+      if (doneTasks >= totalTasks && totalTasks > 0) {
+        await tx.execute(
+          'UPDATE users SET tasksCompleted =?, vipLocked =? WHERE phone =?',
+          [String(totalTasks), 'true', normalizedPhone]
+        )
+      }
     })
-
-    // Add transaction
-    pipe.lpush(`transactions:${normalizedPhone}`, JSON.stringify({
-      type: 'daily_income',
-      amount: reward,
-      date: new Date().toISOString(),
-      status: 'success',
-      desc: `Book ${bookId} completed`
-    }))
-
-    await pipe.exec()
-
-    // Check if all tasks done AFTER update
-    const allTasks = await kv.hgetall(taskKey)
-    const totalTasks = Object.keys(allTasks).length
-    const doneTasks = Object.values(allTasks).filter(v => v === 'submitted').length
-
-    if (doneTasks >= totalTasks && totalTasks > 0) {
-      await kv.hset(userKey, {
-        tasksCompleted: String(totalTasks),
-        vipLocked: 'true'
-      })
-    }
 
     return NextResponse.json({
       success: true,

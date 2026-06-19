@@ -1,4 +1,4 @@
-import { kv } from '@vercel/kv'
+import { db } from '../../../lib/db'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -46,32 +46,36 @@ export async function GET(req) {
     }
 
     const today = getUGDateStr()
-    const taskKey = `task:${phone}:${today}`
-    const userKey = `user:${phone}`
 
-    // Get task status hash and user data + books in parallel
-    const [taskHash, user, booksData] = await Promise.all([
-      kv.hgetall(taskKey),
-      kv.hgetall(userKey),
+    // Get task status, user data + books in parallel
+    const [taskRes, userRes, booksData] = await Promise.all([
+      db.execute(
+        'SELECT bookId, status FROM daily_tasks WHERE phone =? AND date =?',
+        [phone, today]
+      ),
+      db.execute('SELECT * FROM users WHERE phone =?', [phone]),
       getBooksData()
     ])
 
-    if (!taskHash || Object.keys(taskHash).length === 0) {
-      return NextResponse.json({ success: true, books: [], user: user || null, date: today })
+    const tasks = taskRes.rows
+    const user = userRes.rows[0] || null
+
+    if (!tasks.length) {
+      return NextResponse.json({ success: true, books: [], user, date: today })
     }
 
     // Get user VIP level for reward amount
     const vip = Number(user?.vip) || Number(user?.vip_level) || 0
     const reward = VIP_CONFIG[vip]?.perBook || 0
 
-    // Build lookup map with string keys to match Redis
+    // Build lookup map with string keys
     const booksMap = booksData.reduce((acc, b) => {
       acc[String(b.id)] = b
       return acc
     }, {})
 
     // Merge book IDs with full book data
-    const books = Object.entries(taskHash).map(([bookId, status]) => {
+    const books = tasks.map(({ bookId, status }) => {
       const book = booksMap[bookId]
 
       if (!book) {

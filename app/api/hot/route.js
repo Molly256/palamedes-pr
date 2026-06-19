@@ -1,4 +1,4 @@
-import { kv } from '@vercel/kv'
+import { db } from '../../../lib/db'
 import { NextResponse } from 'next/server'
 
 const TZ = 'Africa/Kampala'
@@ -36,16 +36,16 @@ function normalizePhone(phone) {
 }
 
 async function getUserData(phone) {
-  const userKey = `user:${phone}`
-  if ((await kv.type(userKey)) === 'hash') {
-    const user = await kv.hgetall(userKey)
-    return { user, userKey }
-  }
-  return { user: null, userKey: null }
+  const res = await db.execute('SELECT * FROM users WHERE phone =?', [phone])
+  return res.rows[0] || null
 }
 
 async function pushTransaction(phone, tx) {
-  await kv.lpush(`transactions:${phone}`, JSON.stringify(tx))
+  await db.execute(
+    `INSERT INTO transactions(id, phone, type, amount, status, date, desc)
+     VALUES (?,?,?,?,?,?,?)`,
+    [tx.id, phone, tx.type, tx.amount, tx.status, tx.date, tx.desc]
+  )
 }
 
 // GET - Load user's ongoing and expired shares
@@ -59,54 +59,28 @@ export async function GET(request) {
     phone = normalizePhone(phone)
     if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
-    const sharesKey = `share:palamedes:${phone}`
-    console.error('GET DEBUG: Looking for key', sharesKey)
+    const res = await db.execute(
+      'SELECT * FROM shares WHERE phone =? ORDER BY buyDate DESC',
+      [phone]
+    )
 
-    if ((await kv.type(sharesKey))!== 'hash') {
-      console.error('GET DEBUG: Key not found or not hash')
-      return NextResponse.json({ success: true, shares: [], expired: [] })
-    }
-
-    const sharesHash = await kv.hgetall(sharesKey)
-    console.error('GET DEBUG: Raw hash', sharesHash)
-
-    let shares = []
-    if (sharesHash) {
-      for (const [id, val] of Object.entries(sharesHash)) {
-        try {
-          if (typeof val === 'string' && val.startsWith('{')) {
-            const share = JSON.parse(val)
-            if (share.id && share.endDate && share.status) {
-              shares.push(share)
-            } else {
-              await kv.hdel(sharesKey, id)
-            }
-          } else {
-            await kv.hdel(sharesKey, id)
-          }
-        } catch (e) {
-          console.error('GET DEBUG: Error parsing share', id, e)
-          await kv.hdel(sharesKey, id)
-        }
-      }
-    }
-
+    let shares = res.rows
     const now = getUGNow()
-    const updatedShares = await Promise.all(shares.map(async (s) => {
+
+    // Mark expired shares
+    for (let s of shares) {
       if (s.status === 'ongoing') {
         const endDate = parseKampalaDate(s.endDate)
         if (endDate &&!isNaN(endDate) && now >= endDate) {
+          await db.execute('UPDATE shares SET status =? WHERE id =?', ['expired', s.id])
           s.status = 'expired'
-          await kv.hset(sharesKey, s.id, JSON.stringify(s))
         }
       }
-      return s
-    }))
+    }
 
-    const ongoing = updatedShares.filter(s => s.status === 'ongoing')
-    const expired = updatedShares.filter(s => s.status === 'expired')
+    const ongoing = shares.filter(s => s.status === 'ongoing')
+    const expired = shares.filter(s => s.status === 'expired')
 
-    console.error('GET DEBUG: Returning', ongoing.length, 'ongoing,', expired.length, 'expired')
     return NextResponse.json({ success: true, shares: ongoing, expired })
   } catch (err) {
     console.error('GET /api/hot error:', err)
@@ -116,52 +90,37 @@ export async function GET(request) {
 
 // POST - Buy or collect share
 export async function POST(request) {
-  console.error('=== POST /api/hot START ===')
   try {
     const body = await request.json()
-    console.error('POST DEBUG: Body received', JSON.stringify(body))
-
-    let { action, phone, shareId, shareName, quantity, totalCost, cycleDays, dailyProfit, shareId: collectShareId } = body
+    let { action, phone, shareId, shareName, quantity, totalCost, cycleDays, collectShareId } = body
 
     if (!action) return NextResponse.json({ success: false, message: 'Action required' }, { status: 400 })
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
 
     phone = normalizePhone(phone)
-    console.error('POST DEBUG: Normalized phone:', phone)
     if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
-    const { user, userKey } = await getUserData(phone)
+    const user = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-
-    const sharesKey = `share:palamedes:${phone}`
-    console.error('POST DEBUG: Using sharesKey:', sharesKey)
 
     if (action === 'buyShare') {
       const config = SHARE_CONFIG[shareId]
-      console.error('POST DEBUG: Config for shareId', shareId, config)
-
-      if (!config) {
-        console.error('POST DEBUG: Invalid shareId')
-        return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
-      }
+      if (!config) return NextResponse.json({ success: false, message: 'Invalid share' }, { status: 400 })
 
       const qty = Number(quantity) || 1
       const cycle = Number(cycleDays) || Number(config.cycle) || 30
       const cost = Number(totalCost) || config.price * qty
       const balance = Number(user.balance) || 0
 
-      console.error('POST DEBUG: Balance', balance, 'Cost', cost, 'Cycle', cycle)
-
       if (balance < cost) {
         return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
 
       const newBalance = balance - cost
-      await kv.hset(userKey, {
-        balance: String(newBalance),
-        available_balance: String(newBalance)
-      })
-      console.error('POST DEBUG: Balance updated to', newBalance)
+      await db.execute(
+        'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
+        [String(newBalance), String(newBalance), phone]
+      )
 
       const buyDate = getUGNow()
       const endDate = new Date(buyDate)
@@ -170,60 +129,39 @@ export async function POST(request) {
       const expectedProfit = Math.round(config.price * qty * config.daily * cycle)
       const shareIdUnique = `${shareId}_${Date.now()}`
 
-      const shareData = {
-        id: shareIdUnique,
-        shareId: shareId,
-        shareName: shareName || config.name,
-        quantity: qty,
-        pricePerShare: config.price,
-        totalInvested: cost,
-        dailyProfit: config.daily * 100,
-        cycleDays: cycle,
-        expectedProfit: expectedProfit,
-        buyDate: formatKampalaDate(buyDate),
-        endDate: formatKampalaDate(endDate),
-        status: 'ongoing',
-        collectedAt: null,
-        profitReceived: 0
-      }
-
-      const value = JSON.stringify(shareData)
-      console.error('POST DEBUG: Saving share. Key:', sharesKey, 'Field:', shareIdUnique, 'Value length:', value.length)
-
-      try {
-        const res = await kv.hset(sharesKey, shareIdUnique, value)
-        console.error('POST DEBUG: hset result:', res)
-      } catch (err) {
-        console.error('POST DEBUG: hset FAILED:', err.message, err.stack)
-        return NextResponse.json({ success: false, message: err.message }, { status: 500 })
-      }
+      await db.execute(
+        `INSERT INTO shares(id, phone, shareId, shareName, quantity, pricePerShare, totalInvested,
+         dailyProfit, cycleDays, expectedProfit, buyDate, endDate, status, profitReceived)
+         VALUES (?,?,?,?, 'ongoing', 0)`,
+        [
+          shareIdUnique, phone, shareId, shareName || config.name, qty, config.price, cost,
+          config.daily * 100, cycle, expectedProfit, formatKampalaDate(buyDate), formatKampalaDate(endDate)
+        ]
+      )
 
       await pushTransaction(phone, {
-        id: Date.now(),
+        id: String(Date.now()),
         type: 'share_purchase',
         amount: -cost,
-        shareName: shareData.shareName,
-        quantity: qty,
-        date: new Date().toISOString(),
         status: 'success',
-        desc: `Bought ${qty} x ${shareData.shareName}`,
-        phone: phone
+        date: new Date().toISOString(),
+        desc: `Bought ${qty} x ${shareName || config.name}`
       })
 
       return NextResponse.json({
         success: true,
         balance: newBalance,
-        message: `Bought ${qty} share(s) of ${shareData.shareName}!`
+        message: `Bought ${qty} share(s) of ${shareName || config.name}!`
       })
     }
 
     if (action === 'collectShare') {
       if (!collectShareId) return NextResponse.json({ success: false, message: 'Share ID required' }, { status: 400 })
 
-      const shareStr = await kv.hget(sharesKey, collectShareId)
-      if (!shareStr) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
+      const res = await db.execute('SELECT * FROM shares WHERE id =? AND phone =?', [collectShareId, phone])
+      const share = res.rows[0]
+      if (!share) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
 
-      const share = JSON.parse(shareStr)
       if (share.status!== 'ongoing') {
         return NextResponse.json({ success: false, message: 'Share already collected' }, { status: 400 })
       }
@@ -237,26 +175,23 @@ export async function POST(request) {
       const profit = share.expectedProfit
       const newBalance = Number(user.balance) + profit
 
-      share.status = 'expired'
-      share.collectedAt = formatKampalaDate(now)
-      share.profitReceived = profit
+      await db.execute(
+        'UPDATE shares SET status =?, collectedAt =?, profitReceived =? WHERE id =?',
+        ['expired', formatKampalaDate(now), profit, collectShareId]
+      )
 
-      await kv.hset(sharesKey, collectShareId, JSON.stringify(share))
-      await kv.hset(userKey, {
-        balance: String(newBalance),
-        available_balance: String(newBalance)
-      })
+      await db.execute(
+        'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
+        [String(newBalance), String(newBalance), phone]
+      )
 
       await pushTransaction(phone, {
-        id: Date.now(),
+        id: String(Date.now()),
         type: 'share_profit',
         amount: profit,
-        shareName: share.shareName,
-        quantity: share.quantity,
-        date: new Date().toISOString(),
         status: 'success',
-        desc: `Profit from ${share.shareName} x${share.quantity}`,
-        phone: phone
+        date: new Date().toISOString(),
+        desc: `Profit from ${share.shareName} x${share.quantity}`
       })
 
       return NextResponse.json({ success: true, balance: newBalance, profit, message: 'Profits collected successfully' })

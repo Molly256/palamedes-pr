@@ -2,8 +2,13 @@
 import Card from '../../components/Card'
 
 export default function ManagerPage() {
-  const phone = "447412283536" // Change this to your real manager WhatsApp with country code
-  const waLink = `https://wa.me/${phone}?text=Hello%20Manager%20-%20Palamedes%20PR`
+  const managers = [
+    { name: "Manager 1", phone: "447412283536" },
+    { name: "Manager 2", phone: "447441424968" },
+    { name: "Manager 3", phone: "447451296569" }
+  ]
+
+  const getWaLink = (phone) => `https://wa.me/${phone}?text=Hello%20Manager%20-%20Palamedes%20PR`
 
   return (
     <Card>
@@ -49,36 +54,40 @@ export default function ManagerPage() {
             We reply within 5 minutes.
           </p>
 
-          <button 
-            onClick={() => window.open(waLink, "_blank")}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              padding: '16px 20px',
-              borderRadius: '14px',
-              background: '#25D366',
-              border: 'none',
-              color: 'white',
-              fontWeight: '900',
-              fontSize: '16px',
-              boxShadow: '0 4px 12px rgba(37, 211, 102, 0.3)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseDown={(e) => {
-              e.currentTarget.style.transform = 'scale(0.97)'
-              e.currentTarget.style.boxShadow = '0 2px 6px rgba(37, 211, 102, 0.3)'
-            }}
-            onMouseUp={(e) => {
-              e.currentTarget.style.transform = 'scale(1)'
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 211, 102, 0.3)'
-            }}
-          >
-            👤 Chat on WhatsApp
-          </button>
+          {managers.map((mgr, idx) => (
+            <button 
+              key={mgr.phone}
+              onClick={() => window.open(getWaLink(mgr.phone), "_blank")}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                padding: '16px 20px',
+                borderRadius: '14px',
+                background: '#25D366',
+                border: 'none',
+                color: 'white',
+                fontWeight: '900',
+                fontSize: '16px',
+                boxShadow: '0 4px 12px rgba(37, 211, 102, 0.3)',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                marginBottom: idx < managers.length - 1 ? '12px' : '0'
+              }}
+              onMouseDown={(e) => {
+                e.currentTarget.style.transform = 'scale(0.97)'
+                e.currentTarget.style.boxShadow = '0 2px 6px rgba(37, 211, 102, 0.3)'
+              }}
+              onMouseUp={(e) => {
+                e.currentTarget.style.transform = 'scale(1)'
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 211, 102, 0.3)'
+              }}
+            >
+              👤 Chat with {mgr.name}
+            </button>
+          ))}
 
           <div style={{
             marginTop: '20px',
@@ -86,9 +95,12 @@ export default function ManagerPage() {
             background: '#f5f5f5',
             borderRadius: '10px',
             fontSize: '12px',
-            color: '#666'
+            color: '#666',
+            textAlign: 'left'
           }}>
-            📱 Number: +{phone}
+            <div>📱 Manager Maya: +447412283536</div>
+            <div>📱 Manager Zoe: +447441424968</div>
+            <div>📱 Manager Alicia: +447451296569</div>
           </div>
         </div>
       </main>

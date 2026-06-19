@@ -1,89 +1,70 @@
-import { kv } from '@vercel/kv'
+import { db } from '../../../lib/db'
 import { NextResponse } from 'next/server'
 
 function normalizePhone(phone) {
   if (!phone) return phone
   phone = String(phone).replace(/\D/g, '')
-  if (phone.length === 9 && !phone.startsWith('0')) phone = '0' + phone
+  if (phone.length === 9 &&!phone.startsWith('0')) phone = '0' + phone
   return phone
 }
 
 async function buildTeams(phone) {
   const phoneNorm = normalizePhone(phone)
-  
-  const [downline1, downline2, downline3] = await Promise.all([
-    kv.smembers(`user:${phoneNorm}:downline1`),
-    kv.smembers(`user:${phoneNorm}:downline2`),
-    kv.smembers(`user:${phoneNorm}:downline3`)
+
+  // Get level 1, 2, 3 downlines in one query each
+  const [teamA, teamB, teamC] = await Promise.all([
+    db.execute(
+      `SELECT phone, username, nickname, vip, vip_paid_at, vip
+       FROM users
+       WHERE referrer =? AND referral_level =1`,
+      [phoneNorm]
+    ),
+    db.execute(
+      `SELECT phone, username, nickname, vip, vip_paid_at, vip
+       FROM users
+       WHERE referrer IN (SELECT phone FROM users WHERE referrer =? AND referral_level =1)
+       AND referral_level =2`,
+      [phoneNorm]
+    ),
+    db.execute(
+      `SELECT phone, username, nickname, vip, vip_paid_at, vip
+       FROM users
+       WHERE referrer IN (
+         SELECT phone FROM users WHERE referrer IN (
+           SELECT phone FROM users WHERE referrer =? AND referral_level =1
+         ) AND referral_level =2
+       ) AND referral_level =3`,
+      [phoneNorm]
+    )
   ])
 
-  const teamA = []
-  const teamB = []
-  const teamC = []
+  const formatTeam = (rows) => rows.rows.map(u => ({
+    phone: u.phone,
+    username: u.username || '',
+    nickname: u.nickname || '',
+    vip: Number(u.vip) || 0,
+    vipPaidAt: u.vip_paid_at || null,
+    vipBought: Number(u.vip) > 0
+  }))
 
-  for (const memberPhone of downline1) {
-    const user = await kv.hgetall(`user:${memberPhone}`)
-    if (!user || !user.phone) continue
-    teamA.push({
-      phone: user.phone,
-      username: user.username || '',
-      nickname: user.nickname || '',
-      vip: Number(user.vip) || 0,
-      vipPaidAt: user.vip_paid_at || null,
-      vipBought: Number(user.vip) > 0
-    })
+  return {
+    teamA: formatTeam(teamA),
+    teamB: formatTeam(teamB),
+    teamC: formatTeam(teamC)
   }
-
-  for (const memberPhone of downline2) {
-    const user = await kv.hgetall(`user:${memberPhone}`)
-    if (!user || !user.phone) continue
-    teamB.push({
-      phone: user.phone,
-      username: user.username || '',
-      nickname: user.nickname || '',
-      vip: Number(user.vip) || 0,
-      vipPaidAt: user.vip_paid_at || null,
-      vipBought: Number(user.vip) > 0
-    })
-  }
-
-  for (const memberPhone of downline3) {
-    const user = await kv.hgetall(`user:${memberPhone}`)
-    if (!user || !user.phone) continue
-    teamC.push({
-      phone: user.phone,
-      username: user.username || '',
-      nickname: user.nickname || '',
-      vip: Number(user.vip) || 0,
-      vipPaidAt: user.vip_paid_at || null,
-      vipBought: Number(user.vip) > 0
-    })
-  }
-
-  return { teamA, teamB, teamC }
 }
 
 async function getTotalCommission(phone) {
   const phoneNorm = normalizePhone(phone)
-  
-  // Read only the user's own transaction list
-  const txList = await kv.lrange(`transactions:${phoneNorm}`, 0, 99)
-  if (!txList) return 0
 
-  let total = 0
+  const res = await db.execute(
+    `SELECT SUM(amount) as total
+     FROM transactions
+     WHERE phone =? AND type ='referral_reward' AND status!='rejected'`,
+    [phoneNorm]
+  )
 
-  for (const tx of txList) {
-    try {
-      const txObj = typeof tx === 'string' ? JSON.parse(tx) : tx
-      
-      if (txObj.type === 'referral_reward' && txObj.status !== 'rejected') {
-        total += Number(txObj.amount || 0)
-      }
-    } catch (e) {
-      console.error(`MYTEAM: Parse error`, e)
-    }
-  }
-
+  const total = Number(res.rows[0]?.total) || 0
   console.error(`MYTEAM: Phone ${phoneNorm} total commission = ${total}`)
   return total
 }

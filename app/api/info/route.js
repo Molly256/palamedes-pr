@@ -18,7 +18,11 @@ export async function GET(request) {
       return Response.json({
         success: true,
         data: {
-          whatsapp: '+447412283536'
+          managers: [
+            { name: 'Manager Maya', whatsapp: '+447412283536' },
+            { name: 'Manager Zoe', whatsapp: '+447441424968' },
+            { name: 'Manager Alicia', whatsapp: '+447451296569' }
+          ]
         }
       })
     }

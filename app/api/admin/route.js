@@ -1,119 +1,79 @@
-import { kv } from '@vercel/kv'
+import { db } from '../../../lib/db'
 import { NextResponse } from 'next/server'
 
 const ADMIN_PHONES = ['0753520252']
 
 function normalizePhone(phone) {
-  if (!phone) return phone
+  if (!phone) return ''
   phone = String(phone).replace(/\D/g, '')
 
-  // Convert 256753520252 -> 0753520252
   if (phone.startsWith('256') && phone.length === 12) {
     phone = '0' + phone.slice(3)
   }
-
-  // Convert 753520252 -> 0753520252
-  if (phone.length === 9 &&!phone.startsWith('0')) {
+  if (phone.length === 9 && !phone.startsWith('0')) {
     phone = '0' + phone
   }
+  
+  if (!/^07\d{8}$/.test(phone)) return ''
   return phone
-}
-
-function safeParse(val) {
-  if (!val || typeof val === 'object') return val
-  try { return JSON.parse(val) } catch { return null }
 }
 
 async function verifyAdmin(phone) {
   return ADMIN_PHONES.includes(normalizePhone(phone))
 }
 
-// Raw data from KV - used for admin display
-async function getUserDataRaw(phone) {
-  const userKey = `user:${phone}`
-  if ((await kv.type(userKey)) === 'hash') {
-    const user = await kv.hgetall(userKey)
-    return { user, userKey }
-  }
-  return { user: null, userKey: null }
-}
-
-// Normalized for logic - treats available_balance as balance
 async function getUserData(phone) {
-  const { user, userKey } = await getUserDataRaw(phone)
-  if (!user) return { user: null, userKey: null }
-
-  const balance = Number(user.balance?? user.available_balance?? 0)
-  user.balance = balance
-  user.available_balance = balance
-  return { user, userKey }
-}
-
-// Update both balance fields at once so they never drift apart
-async function syncBalanceFields(phone, amount) {
-  const userKey = `user:${phone}`
-  const amountStr = String(amount)
-  await kv.hset(userKey, {
-    balance: amountStr,
-    available_balance: amountStr
-  })
-}
-
-async function getTransactions(phone) {
-  const key = `transactions:${phone}`
-  if ((await kv.type(key))!== 'list') return []
-  const raw = await kv.lrange(key, 0, 99)
-  return raw.map(t => safeParse(t)).filter(Boolean)
+  const res = await db.execute('SELECT * FROM users WHERE phone = ?', [phone])
+  const user = res.rows[0] || null
+  return user
 }
 
 export async function GET(request) {
-  const { searchParams } = new URL(request.url)
-  const phone = searchParams.get('phone')
-  const action = searchParams.get('action')
+  try {
+    const { searchParams } = new URL(request.url)
+    const phone = searchParams.get('phone')
+    const action = searchParams.get('action')
 
-  if (!await verifyAdmin(phone)) {
-    return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
-  }
-
-  if (action === 'pending') {
-    const keys = await kv.keys('user:*')
-    let deposits = [], withdraws = []
-
-    for (let key of keys) {
-      if ((await kv.type(key))!== 'hash') continue
-      const userPhone = key.split(':')[1]
-
-      // Get RAW data so admin sees what's actually in DB
-      const { user } = await getUserDataRaw(userPhone)
-      if (!user) continue
-
-      const txList = await getTransactions(userPhone)
-      txList.forEach(tx => {
-        if (tx?.status === 'pending') {
-          tx.phone = userPhone
-          tx.user_balance = user.balance || 0
-          tx.user_available_balance = user.available_balance || 0
-
-          if (tx.type === 'deposit') deposits.push(tx)
-          if (tx.type === 'withdraw') withdraws.push(tx)
-        }
-      })
+    if (!await verifyAdmin(phone)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
     }
 
-    deposits.sort((a, b) => new Date(b.date) - new Date(a.date))
-    withdraws.sort((a, b) => new Date(b.date) - new Date(a.date))
+    if (action === 'pending') {
+      // Single query to get all pending transactions with user data
+      const res = await db.execute(`
+        SELECT t.*, u.balance, u.available_balance 
+        FROM transactions t
+        JOIN users u ON t.phone = u.phone
+        WHERE t.status = 'pending'
+        ORDER BY t.date ASC
+      `)
 
-    return NextResponse.json({ success: true, deposits, withdraws })
+      const deposits = []
+      const withdraws = []
+
+      for (const tx of res.rows) {
+        if (tx.type === 'deposit') deposits.push(tx)
+        if (tx.type === 'withdraw') withdraws.push(tx)
+      }
+
+      return NextResponse.json({ success: true, deposits, withdraws })
+    }
+
+    if (action === 'getUser') {
+      const targetPhone = normalizePhone(searchParams.get('targetPhone'))
+      const user = await getUserData(targetPhone)
+      if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+      
+      // Don't send password
+      delete user.password
+      return NextResponse.json({ success: true, user })
+    }
+
+    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
+  } catch (err) {
+    console.error('GET /api/admin error:', err)
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
-
-  if (action === 'getUser') {
-    const targetPhone = normalizePhone(searchParams.get('targetPhone'))
-    const { user } = await getUserDataRaw(targetPhone)
-    if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-    return NextResponse.json({ success: true, user })
-  }
-
-  return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
 }
 
 export async function POST(request) {
@@ -127,52 +87,70 @@ export async function POST(request) {
 
     if (action === 'resetPassword') {
       const targetPhoneNorm = normalizePhone(targetPhone)
-      const { userKey: targetKey } = await getUserDataRaw(targetPhoneNorm)
-      if (!targetKey) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
+      if (!newPassword || newPassword.length < 6) {
+        return NextResponse.json({ success: false, message: 'Password must be 6+ chars' }, { status: 400 })
+      }
 
-      await kv.hset(targetKey, { password: newPassword })
+      const user = await getUserData(targetPhoneNorm)
+      if (!user) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
+
+      await db.execute('UPDATE users SET password = ? WHERE phone = ?', [newPassword, targetPhoneNorm])
       return NextResponse.json({ success: true, message: 'Password reset successfully' })
     }
 
     if (action === 'approve' || action === 'reject') {
       const targetPhoneNorm = normalizePhone(targetPhone)
-      const rawList = await kv.lrange(`transactions:${targetPhoneNorm}`, 0, 99)
-      const txList = rawList.map(t => safeParse(t)).filter(Boolean)
 
-      const txIndex = txList.findIndex(t => t.id == txId)
-      if (txIndex === -1) return NextResponse.json({ success: false, message: 'Transaction not found' })
+      const txRes = await db.execute(
+        'SELECT * FROM transactions WHERE phone = ? AND id = ? AND status = "pending"',
+        [targetPhoneNorm, txId]
+      )
+      const tx = txRes.rows[0]
+      if (!tx) return NextResponse.json({ success: false, message: 'Transaction not found or already processed' })
 
-      const tx = txList[txIndex]
-      tx.status = action === 'approve'? 'success' : 'rejected'
+      const newStatus = action === 'approve' ? 'success' : 'rejected'
 
-      if (action === 'approve') {
-        const { user: targetUser } = await getUserData(targetPhoneNorm)
-        if (!targetUser) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+      await db.transaction(async (txDb) => {
+        // Update transaction status
+        await txDb.execute(
+          'UPDATE transactions SET status = ? WHERE phone = ? AND id = ?',
+          [newStatus, targetPhoneNorm, txId]
+        )
 
-        const currentBalance = Number(targetUser.balance) || 0
+        // Only update balance on approval
+        if (action === 'approve') {
+          if (type === 'deposit') {
+            // Atomic increment
+            await txDb.execute(
+              'UPDATE users SET balance = balance + ?, available_balance = available_balance + ? WHERE phone = ?',
+              [tx.amount, tx.amount, targetPhoneNorm]
+            )
+          }
 
-        if (type === 'deposit') {
-          const newBalance = currentBalance + Number(tx.amount)
-          await syncBalanceFields(targetPhoneNorm, newBalance)
+          if (type === 'withdraw') {
+            const withdrawAmount = Math.abs(Number(tx.amount))
+            // Check balance first
+            const userRes = await txDb.execute('SELECT balance FROM users WHERE phone = ?', [targetPhoneNorm])
+            const currentBalance = Number(userRes.rows[0]?.balance || 0)
+            
+            if (currentBalance < withdrawAmount) {
+              throw new Error('Insufficient balance')
+            }
+
+            await txDb.execute(
+              'UPDATE users SET balance = balance - ?, available_balance = available_balance - ? WHERE phone = ?',
+              [withdrawAmount, withdrawAmount, targetPhoneNorm]
+            )
+          }
         }
-
-        if (type === 'withdraw') {
-          const newBalance = currentBalance - Math.abs(Number(tx.amount))
-          await syncBalanceFields(targetPhoneNorm, newBalance)
-        }
-      }
-
-      rawList[txIndex] = JSON.stringify(tx)
-      await kv.del(`transactions:${targetPhoneNorm}`)
-      if (rawList.length > 0) {
-        await kv.lpush(`transactions:${targetPhoneNorm}`,...rawList)
-      }
+      })
 
       return NextResponse.json({ success: true, message: `Transaction ${action}d` })
     }
 
     return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
   } catch (err) {
+    console.error('POST /api/admin error:', err)
     return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
 }
