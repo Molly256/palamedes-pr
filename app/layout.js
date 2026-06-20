@@ -8,12 +8,15 @@ export const metadata = {
     icon: '/favicon.ico',
   },
   manifest: '/manifest.json',
-  themeColor: '#00BFFF',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'Palamedes'
   }
+}
+
+export const viewport = {
+  themeColor: '#00BFFF'
 }
 
 export default function RootLayout({ children }) {
