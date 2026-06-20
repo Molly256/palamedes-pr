@@ -1,6 +1,7 @@
-import { kv } from '@vercel/kv'
+import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { sql } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,26 +20,13 @@ const VIP_CONFIG = {
 
 const ADMIN_PHONE = '0753520252'
 
-function safeParse(val) {
-  if (!val || val === '' || val === 'null' || val === 'undefined') return null
-  if (typeof val === 'object') return val
-  try {
-    let parsed = val
-    for (let i = 0; i < 2; i++) {
-      if (typeof parsed === 'string') parsed = JSON.parse(parsed)
-      else break
-    }
-    return parsed
-  } catch { return null }
-}
-
 function normalizePhone(phone) {
-  if (!phone) return ''
+  if (!phone) return null
   phone = String(phone).replace(/\D/g, '')
   if (phone.startsWith('256') && phone.length === 12) {
     phone = '0' + phone.slice(3)
   }
-  if (!/^07\d{8}$/.test(phone)) return ''
+  if (!/^07\d{8}$/.test(phone)) return null
   return phone
 }
 
@@ -58,66 +46,73 @@ function isWithdrawOpen() {
   const minute = ugandaTime.getMinutes()
   const isWeekday = day >= 1 && day <= 5
   const isOpenTime = (hour > 10 || (hour === 10 && minute >= 0)) && (hour < 17 || (hour === 17 && minute === 0))
-  return { open: isWeekday && isOpenTime, day, hour, minute }
+  return { open: isWeekday && isOpenTime }
 }
 
 async function getUserData(phone) {
-  const userKey = `user:${phone}`
-  const type = await kv.type(userKey)
-  if (type === 'hash') {
-    const user = await kv.hgetall(userKey)
-    return { user, userKey }
-  }
-  return { user: null, userKey: null }
+  if (!phone) return { user: null }
+  const result = await db.execute(sql`SELECT * FROM users WHERE phone = ${phone} LIMIT 1`)
+  const user = result.rows[0] || null
+  return { user }
 }
 
 async function addBalance(phone, amount) {
-  const userKey = `user:${phone}`
-  await kv.hincrby(userKey, 'balance', amount)
-  await kv.hincrby(userKey, 'available_balance', amount)
+  if (!phone) return
+  await db.execute(sql`
+    UPDATE users
+    SET balance = balance + ${amount}, available_balance = available_balance + ${amount}
+    WHERE phone = ${phone}
+  `)
 }
 
 async function getTransactions(phone) {
-  const key = `transactions:${phone}`
-  const type = await kv.type(key)
-  if (type !== 'list') return []
-  const raw = await kv.lrange(key, 0, 99)
-  return raw.map(t => safeParse(t)).filter(Boolean)
+  if (!phone) return []
+  const result = await db.execute(sql`
+    SELECT * FROM transactions
+    WHERE phone = ${phone}
+    ORDER BY created_at DESC
+    LIMIT 99
+  `)
+  return result.rows
 }
 
 async function pushTransaction(phone, tx) {
-  await kv.lpush(`transactions:${phone}`, JSON.stringify(tx))
+  if (!phone) return
+  await db.execute(sql`
+    INSERT INTO transactions (id, phone, type, amount, net_amount, fee, method, number, names, created_at, status, desc)
+    VALUES (${tx.id}, ${phone}, ${tx.type}, ${tx.amount}, ${tx.netAmount || null}, ${tx.fee || null},
+            ${tx.method || null}, ${tx.number || null}, ${tx.names || null}, ${tx.created_at}, ${tx.status}, ${tx.desc})
+  `)
 }
 
 async function buildTeams(phone) {
-  const keys = await kv.keys('user:*')
-  const allUsers = []
-  for (let key of keys) {
-    if ((await kv.type(key)) !== 'hash') continue
-    const u = await kv.hgetall(key)
-    if (!u) continue
-    allUsers.push({ ...u, phone: key.split(':')[1] })
-  }
+  if (!phone) return { teamA: [], teamB: [], teamC: [] }
+  const allUsers = await db.execute(sql`SELECT * FROM users`)
+  const users = allUsers.rows
 
-  const teamA = allUsers.filter(u => normalizePhone(u.upline1) === phone)
+  const teamA = users.filter(u => normalizePhone(u.upline1) === phone)
   const teamAPhones = new Set(teamA.map(u => u.phone))
-  const teamB = allUsers.filter(u => teamAPhones.has(normalizePhone(u.upline1)))
+  const teamB = users.filter(u => teamAPhones.has(normalizePhone(u.upline1)))
   const teamBPhones = new Set(teamB.map(u => u.phone))
-  const teamC = allUsers.filter(u => teamBPhones.has(normalizePhone(u.upline1)))
+  const teamC = users.filter(u => teamBPhones.has(normalizePhone(u.upline1)))
 
   return { teamA, teamB, teamC }
 }
 
 async function requireAuth(request, phone) {
   const token = request.headers.get('x-session-token')
-  if (!token) return false
-  const sessionPhone = await kv.get(`session:${token}`)
-  return sessionPhone === phone
+  if (!token ||!phone) return false
+  const result = await db.execute(sql`SELECT phone FROM sessions WHERE token = ${token} LIMIT 1`)
+  return result.rows[0]?.phone === phone
 }
 
 async function createSession(phone) {
   const token = crypto.randomBytes(32).toString('hex')
-  await kv.set(`session:${token}`, phone, { ex: 60 * 60 * 24 * 7 }) // 7 days
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  await db.execute(sql`
+    INSERT INTO sessions (token, phone, expires_at)
+    VALUES (${token}, ${phone}, ${expiresAt})
+  `)
   return token
 }
 
@@ -136,13 +131,13 @@ export async function GET(request) {
 
     phone = normalizePhone(phone)
 
-    if (!phone && action !== 'register') {
+    if (!phone && action!== 'register') {
       return NextResponse.json({ success: false, message: 'Phone must be 10 digits starting with 07' }, { status: 400 })
     }
 
     if (action === 'register') {
       const { username, password, inviteCode } = Object.fromEntries(searchParams)
-      if (!username || !password) {
+      if (!username ||!password) {
         return NextResponse.json({ success: false, message: 'Username and password required' }, { status: 400 })
       }
 
@@ -151,31 +146,20 @@ export async function GET(request) {
         return NextResponse.json({ success: false, message: 'User already exists' }, { status: 400 })
       }
 
-      let upline1 = ''
+      let upline1 = null
       if (inviteCode) {
         const inviterPhone = normalizePhone(inviteCode.replace('PM', ''))
         const { user: inviter } = await getUserData(inviterPhone)
         if (inviter) upline1 = inviterPhone
       }
 
-      const userKey = `user:${phone}`
-      await kv.hset(userKey, {
-        phone,
-        username,
-        password,
-        upline1,
-        upline2: '',
-        upline3: '',
-        referralPaid: 'false',
-        vip: '0',
-        balance: '0',
-        available_balance: '0',
-        vipPricePaid: '0',
-        tasksCompleted: '0',
-        vipLocked: 'false',
-        hasBoughtVIP: 'false',
-        createdAt: getISOTimestamp()
-      })
+      await db.execute(sql`
+        INSERT INTO users (phone, username, password, upline1, upline2, upline3, referral_paid, vip,
+                          balance, available_balance, vip_price_paid, tasks_completed, vip_locked,
+                          has_bought_vip, created_at)
+        VALUES (${phone}, ${username}, ${password}, ${upline1}, null, null, 'false', 0, 0, 0, 0, 0, 'false',
+                'false', ${getISOTimestamp()})
+      `)
 
       const token = await createSession(phone)
       return NextResponse.json({ success: true, message: 'User registered', token })
@@ -184,7 +168,7 @@ export async function GET(request) {
     if (action === 'login') {
       const { password } = Object.fromEntries(searchParams)
       const { user } = await getUserData(phone)
-      if (!user || user.password !== password) {
+      if (!user || user.password!== password) {
         return NextResponse.json({ success: false, message: 'Invalid credentials' }, { status: 401 })
       }
       const token = await createSession(phone)
@@ -194,7 +178,7 @@ export async function GET(request) {
     const { user } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
-    if (action !== 'getDashboard' && action !== 'getTransactions') {
+    if (action!== 'getDashboard' && action!== 'getTransactions') {
       if (!(await requireAuth(request, phone))) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
       }
@@ -204,7 +188,7 @@ export async function GET(request) {
       const transactions = await getTransactions(phone)
       const type = searchParams.get('type') || 'all'
       let filtered = transactions
-      if (type !== 'all') {
+      if (type!== 'all') {
         filtered = transactions.filter(t => t.type === type)
       }
       return NextResponse.json({ success: true, transactions: filtered })
@@ -214,11 +198,11 @@ export async function GET(request) {
       const transactions = await getTransactions(phone)
       const recentTx = transactions.slice(0, 49)
       const vipTx = transactions.find(t => t.type === 'viptask_purchase')
-      const vipPurchaseDate = vipTx ? vipTx.date : null
+      const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-        .filter(t => t.type === 'referral_reward' && t.status === 'success')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+     .filter(t => t.type === 'referral_reward' && t.status === 'success')
+     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
       const balance = Number(user.balance || user.available_balance || 0)
 
       return NextResponse.json({
@@ -231,18 +215,18 @@ export async function GET(request) {
           vip: Number(user.vip) || 0,
           avatar: user.avatar || '',
           nickname: user.nickname || '',
-          vipLocked: user.vipLocked === 'true',
-          hasBoughtVIP: user.hasBoughtVIP === 'true',
-          tasksCompleted: Number(user.tasksCompleted) || 0,
-          vipPricePaid: Number(user.vipPricePaid) || 0,
-          bankMTN: safeParse(user.bankMTN),
-          bankAirtel: safeParse(user.bankAirtel),
-          referralPaid: user.referralPaid || 'false',
+          vipLocked: user.vip_locked === 'true',
+          hasBoughtVIP: user.has_bought_vip === 'true',
+          tasksCompleted: Number(user.tasks_completed) || 0,
+          vipPricePaid: Number(user.vip_price_paid) || 0,
+          bankMTN: user.bank_mtn? JSON.parse(user.bank_mtn) : null,
+          bankAirtel: user.bank_airtel? JSON.parse(user.bank_airtel) : null,
+          referralPaid: user.referral_paid || 'false',
           vip_commission_paid: user.vip_commission_paid || 'false',
           upline1: user.upline1 || '',
           upline2: user.upline2 || '',
           upline3: user.upline3 || '',
-          createdAt: user.createdAt || ''
+          createdAt: user.created_at || ''
         },
         transactions: recentTx,
         vipPurchaseDate,
@@ -267,18 +251,18 @@ export async function GET(request) {
         vip: Number(user.vip) || 0,
         nickname: user.nickname || '',
         avatar: user.avatar || '',
-        bankMTN: safeParse(user.bankMTN),
-        bankAirtel: safeParse(user.bankAirtel),
-        vipLocked: user.vipLocked === 'true',
-        hasBoughtVIP: user.hasBoughtVIP === 'true',
-        tasksCompleted: Number(user.tasksCompleted) || 0,
-        vipPricePaid: Number(user.vipPricePaid) || 0,
-        referralPaid: user.referralPaid || 'false',
+        bankMTN: user.bank_mtn? JSON.parse(user.bank_mtn) : null,
+        bankAirtel: user.bank_airtel? JSON.parse(user.bank_airtel) : null,
+        vipLocked: user.vip_locked === 'true',
+        hasBoughtVIP: user.has_bought_vip === 'true',
+        tasksCompleted: Number(user.tasks_completed) || 0,
+        vipPricePaid: Number(user.vip_price_paid) || 0,
+        referralPaid: user.referral_paid || 'false',
         vip_commission_paid: user.vip_commission_paid || 'false',
         upline1: user.upline1 || '',
         upline2: user.upline2 || '',
         upline3: user.upline3 || '',
-        createdAt: user.createdAt || ''
+        createdAt: user.created_at || ''
       }
     })
   } catch (err) {
@@ -297,7 +281,7 @@ export async function POST(request) {
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone must be 10 digits starting with 07' }, { status: 400 })
 
-    const { user, userKey } = await getUserData(phone)
+    const { user } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
     if (!(await requireAuth(request, phone))) {
@@ -316,7 +300,7 @@ export async function POST(request) {
         type: 'deposit',
         amount: depositAmount,
         method: method || '',
-        date: getISOTimestamp(),
+        created_at: getISOTimestamp(),
         status: 'pending',
         desc: `Deposit via ${method || 'Mobile Money'}`,
         phone: phone,
@@ -324,46 +308,44 @@ export async function POST(request) {
       }
 
       await pushTransaction(phone, tx)
-      await kv.lpush(`admin:deposits:pending:${ADMIN_PHONE}`, JSON.stringify(tx))
+      await db.execute(sql`
+        INSERT INTO admin_deposits (id, admin_phone, data, status)
+        VALUES (${txId}, ${ADMIN_PHONE}, ${JSON.stringify(tx)}, 'pending')
+      `)
 
       return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending admin approval.' })
     }
 
     if (action === 'confirmDeposit') {
-      if (adminPhone !== ADMIN_PHONE) {
+      if (adminPhone!== ADMIN_PHONE) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
       }
       if (!txId) {
         return NextResponse.json({ success: false, message: 'Transaction ID required' }, { status: 400 })
       }
 
-      const pendingKey = `admin:deposits:pending:${ADMIN_PHONE}`
-      const pendingDeposits = await kv.lrange(pendingKey, 0, -1)
-      const tx = pendingDeposits.map(t => safeParse(t)).find(t => t?.id === txId)
+      const deposit = await db.execute(sql`
+        SELECT * FROM admin_deposits WHERE id = ${txId} AND status = 'pending' LIMIT 1
+      `)
+      const tx = deposit.rows[0]
       if (!tx) {
         return NextResponse.json({ success: false, message: 'Deposit not found' }, { status: 404 })
       }
 
-      const targetPhone = tx.userPhone
+      const txData = JSON.parse(tx.data)
+      const targetPhone = txData.userPhone
       const { user: targetUser } = await getUserData(targetPhone)
       if (!targetUser) {
         return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
       }
 
-      await addBalance(targetPhone, Number(tx.amount))
-      const updatedTx = { ...tx, status: 'success' }
-
-      await kv.lrem(pendingKey, 0, JSON.stringify(tx))
-      await kv.lpush(`admin:deposits:approved:${ADMIN_PHONE}`, JSON.stringify(updatedTx))
-
-      const userTxs = await kv.lrange(`transactions:${targetPhone}`, 0, -1)
-      const txIndex = userTxs.findIndex(t => {
-        const parsed = safeParse(t)
-        return parsed?.id === txId
-      })
-      if (txIndex >= 0) {
-        await kv.lset(`transactions:${targetPhone}`, txIndex, JSON.stringify(updatedTx))
-      }
+      await addBalance(targetPhone, Number(txData.amount))
+      await db.execute(sql`
+        UPDATE admin_deposits SET status = 'success' WHERE id = ${txId}
+      `)
+      await db.execute(sql`
+        UPDATE transactions SET status = 'success' WHERE id = ${txId}
+      `)
 
       return NextResponse.json({ success: true, message: 'Deposit confirmed' })
     }
@@ -385,7 +367,7 @@ export async function POST(request) {
       if (amount > balance) {
         return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
       }
-      if (!number || !names) {
+      if (!number ||!names) {
         return NextResponse.json({ success: false, message: 'Phone number and names required' }, { status: 400 })
       }
 
@@ -406,7 +388,7 @@ export async function POST(request) {
         method: method || '',
         number: withdrawalPhone,
         names: names,
-        date: getISOTimestamp(),
+        created_at: getISOTimestamp(),
         status: 'pending',
         desc: `Withdraw to ${method} - ${withdrawalPhone} - ${names}`,
         phone: phone
@@ -418,7 +400,7 @@ export async function POST(request) {
 
     if (action === 'buyvip') {
       const currentVip = Number(user.vip) || 0
-      const currentPricePaid = Number(user.vipPricePaid) || 0
+      const currentPricePaid = Number(user.vip_price_paid) || 0
       const vipLevel = Number(body.vipLevel)
       const config = VIP_CONFIG[vipLevel]
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
@@ -429,19 +411,21 @@ export async function POST(request) {
       const newPrice = Number(config.price)
       const balance = Number(user.balance || user.available_balance || 0)
       const upgradeCost = newPrice - currentPricePaid
-      
+
       if (balance < upgradeCost) {
         return NextResponse.json({ success: false, message: `Insufficient balance. Need ${upgradeCost}shs more` }, { status: 400 })
       }
 
       await addBalance(phone, -upgradeCost)
-      await kv.hset(userKey, {
-        vip: String(vipLevel),
-        vipPricePaid: String(newPrice),
-        vipLocked: 'false',
-        tasksCompleted: '0',
-        hasBoughtVIP: 'true'
-      })
+      await db.execute(sql`
+        UPDATE users SET
+          vip = ${vipLevel},
+          vip_price_paid = ${newPrice},
+          vip_locked = 'false',
+          tasks_completed = 0,
+          has_bought_vip = 'true'
+        WHERE phone = ${phone}
+      `)
 
       const timestamp = getISOTimestamp()
 
@@ -450,7 +434,7 @@ export async function POST(request) {
           id: generateId(),
           type: 'refund',
           amount: currentPricePaid,
-          date: timestamp,
+          created_at: timestamp,
           status: 'success',
           desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`,
           phone: phone
@@ -461,17 +445,16 @@ export async function POST(request) {
         id: generateId(),
         type: 'viptask_purchase',
         amount: -newPrice,
-        date: timestamp,
+        created_at: timestamp,
         status: 'success',
         desc: `Bought VIP${vipLevel}`,
         phone: phone
       })
 
-      if (currentVip === 0 && user.referralPaid !== 'true') {
+      if (currentVip === 0 && user.referral_paid!== 'true') {
         const paidPrice = Number(config.price)
-        const paidUplines = new Set()
 
-        if (user.upline1 && user.upline1 !== phone && !paidUplines.has(user.upline1)) {
+        if (user.upline1 && user.upline1!== phone) {
           const { user: upline1 } = await getUserData(user.upline1)
           if (upline1) {
             const rewardA = Math.floor(paidPrice * 0.05)
@@ -481,85 +464,22 @@ export async function POST(request) {
                 id: generateId(),
                 type: 'referral_reward',
                 amount: rewardA,
-                date: timestamp,
+                created_at: timestamp,
                 status: 'success',
                 desc: `Team A reward from ${user.username || phone} buying VIP${vipLevel}`,
                 phone: user.upline1
               })
-              paidUplines.add(user.upline1)
             }
           }
         }
 
-        if (user.upline2 && user.upline2 !== user.upline1 && user.upline2 !== phone && !paidUplines.has(user.upline2)) {
-          const { user: upline2 } = await getUserData(user.upline2)
-          if (upline2) {
-            const rewardB = Math.floor(paidPrice * 0.02)
-            if (rewardB > 0) {
-              await addBalance(user.upline2, rewardB)
-              await pushTransaction(user.upline2, {
-                id: generateId(),
-                type: 'referral_reward',
-                amount: rewardB,
-                date: timestamp,
-                status: 'success',
-                desc: `Team B reward from ${user.username || phone} buying VIP${vipLevel}`,
-                phone: user.upline2
-              })
-              paidUplines.add(user.upline2)
-            }
-          }
-        }
-
-        if (user.upline3 && user.upline3 !== user.upline2 && user.upline3 !== user.upline1 && user.upline3 !== phone && !paidUplines.has(user.upline3)) {
-          const { user: upline3 } = await getUserData(user.upline3)
-          if (upline3) {
-            const rewardC = Math.floor(paidPrice * 0.01)
-            if (rewardC > 0) {
-              await addBalance(user.upline3, rewardC)
-              await pushTransaction(user.upline3, {
-                id: generateId(),
-                type: 'referral_reward',
-                amount: rewardC,
-                date: timestamp,
-                status: 'success',
-                desc: `Team C reward from ${user.username || phone} buying VIP${vipLevel}`,
-                phone: user.upline3
-              })
-              paidUplines.add(user.upline3)
-            }
-          }
-        }
-
-        await kv.hset(userKey, { referralPaid: 'true' })
+        await db.execute(sql`UPDATE users SET referral_paid = 'true' WHERE phone = ${phone}`)
       }
 
-      let freshUser = await kv.hgetall(userKey)
-      const finalBalance = Number(freshUser?.balance || freshUser?.available_balance || 0)
-
+      let freshUser = await getUserData(phone)
       return NextResponse.json({
         success: true,
-        user: {
-          username: freshUser?.username || '',
-          phone: freshUser?.phone || phone,
-          balance: finalBalance,
-          available_balance: finalBalance,
-          vip: Number(freshUser?.vip) || 0,
-          vipPricePaid: Number(freshUser?.vipPricePaid) || 0,
-          vipLocked: freshUser?.vipLocked === 'true',
-          hasBoughtVIP: freshUser?.hasBoughtVIP === 'true',
-          tasksCompleted: Number(freshUser?.tasksCompleted) || 0,
-          nickname: freshUser?.nickname || '',
-          avatar: freshUser?.avatar || '',
-          bankMTN: safeParse(freshUser?.bankMTN),
-          bankAirtel: safeParse(freshUser?.bankAirtel),
-          referralPaid: freshUser?.referralPaid || 'false',
-          vip_commission_paid: freshUser?.vip_commission_paid || 'false',
-          upline1: freshUser?.upline1 || '',
-          upline2: freshUser?.upline2 || '',
-          upline3: freshUser?.upline3 || '',
-          createdAt: freshUser?.createdAt || ''
-        },
+        user: freshUser.user,
         message: `VIP${vipLevel} activated! Paid ${upgradeCost}shs`
       })
     }
@@ -567,31 +487,31 @@ export async function POST(request) {
     if (action === 'updateProfile') {
       if (field === 'nickname') {
         if (value.length > 6) return NextResponse.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
-        await kv.hset(userKey, { nickname: value })
+        await db.execute(sql`UPDATE users SET nickname = ${value} WHERE phone = ${phone}`)
         return NextResponse.json({ success: true, message: 'Nickname saved' })
       }
       if (field === 'bankMTN') {
-        await kv.hset(userKey, { bankMTN: JSON.stringify(value) })
+        await db.execute(sql`UPDATE users SET bank_mtn = ${JSON.stringify(value)} WHERE phone = ${phone}`)
         return NextResponse.json({ success: true, message: 'MTN bank saved' })
       }
       if (field === 'bankAirtel') {
-        await kv.hset(userKey, { bankAirtel: JSON.stringify(value) })
+        await db.execute(sql`UPDATE users SET bank_airtel = ${JSON.stringify(value)} WHERE phone = ${phone}`)
         return NextResponse.json({ success: true, message: 'Airtel bank saved' })
       }
       if (field === 'avatar') {
-        await kv.hset(userKey, { avatar: value })
+        await db.execute(sql`UPDATE users SET avatar = ${value} WHERE phone = ${phone}`)
         return NextResponse.json({ success: true, message: 'Avatar updated' })
       }
     }
 
     if (action === 'changePassword') {
-      if (String(user.password) !== String(oldPass)) {
+      if (String(user.password)!== String(oldPass)) {
         return NextResponse.json({ success: false, message: 'Old password incorrect' }, { status: 400 })
       }
       if (newPass.length < 6) {
         return NextResponse.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
       }
-      await kv.hset(userKey, { password: newPass })
+      await db.execute(sql`UPDATE users SET password = ${newPass} WHERE phone = ${phone}`)
       return NextResponse.json({ success: true, message: 'Password changed' })
     }
 
