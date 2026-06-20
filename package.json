@@ -10,7 +10,6 @@
   "dependencies": {
     "@libsql/client": "^0.17.4",
     "@upstash/redis": "^1.38.0",
-    "@vercel/kv": "^2.0.0",
     "drizzle-orm": "^0.45.2",
     "next": "14.2.5",
     "react": "^18",
