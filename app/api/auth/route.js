@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import bcrypt from 'bcryptjs'
 
 const TZ = 'Africa/Kampala'
 
@@ -6,21 +7,12 @@ function getUGDateStr(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
 }
 
-function normalizePhone(phone) {
-  if (!phone) return ''
-  phone = String(phone).replace(/\D/g, '')
-  if (!/^07\d{8}$/.test(phone)) {
-    return ''
-  }
-  return phone
+function isValidInviteCode(code) {
+  return /^PM\d{6}$/.test(code)
 }
 
 function getUserInviteCode(phone) {
   return `PM${phone.slice(-6)}`
-}
-
-function isValidInviteCode(code) {
-  return /^PM\d{6}$/.test(code)
 }
 
 function normalizeUser(user) {
@@ -30,12 +22,11 @@ function normalizeUser(user) {
 
   return {
     username: user.username,
-    displayName: user.displayName || user.username || '',
     phone: user.phone,
     balance: balance,
     available_balance: balance,
     vip: Number(user.vip) || 0,
-    vipLocked: user.vipLocked === 'true',
+    vipLocked: user.vipLocked === 'true' || user.vipLocked === 1,
     tasksCompleted: Number(user.tasksCompleted) || 0,
     referralCode: user.referralCode || '',
     upline1: user.upline1 || '',
@@ -43,7 +34,7 @@ function normalizeUser(user) {
     upline3: user.upline3 || '',
     referralPaid: user.referralPaid || 'false',
     role: user.role || 'user',
-    hasBoughtVIP: user.hasBoughtVIP === 'true',
+    hasBoughtVIP: user.hasBoughtVIP === 'true' || user.hasBoughtVIP === 1,
     regDate: user.regDate || ''
   }
 }
@@ -59,7 +50,7 @@ async function syncBalanceFields(phone, amount) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    let { action, username, password, phone, referral } = body
+    const { action, username, password, phone, referral } = body
 
     // REGISTER
     if (action === 'register') {
@@ -67,17 +58,18 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
-      phone = normalizePhone(phone)
-      if (!phone) {
+      // No normalizePhone - use phone exactly as sent
+      if (!/^07\d{8}$/.test(phone)) {
         return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
       }
 
-      if (password.length < 6) {
-        return Response.json({ success: false, message: 'Password must be at least 6 characters' })
+      // Exactly 6 chars
+      if (!/^[a-zA-Z0-9]{6}$/.test(username)) {
+        return Response.json({ success: false, message: 'Username must be exactly 6 letters or digits' })
       }
 
-      if (!/^[a-zA-Z0-9]{3,6}$/.test(username)) {
-        return Response.json({ success: false, message: 'Username must be 3-6 letters or digits only' })
+      if (!/^[a-zA-Z0-9]{6}$/.test(password)) {
+        return Response.json({ success: false, message: 'Password must be exactly 6 letters or digits' })
       }
 
       const existingUser = await db.execute('SELECT phone FROM users WHERE phone =?', [phone])
@@ -116,7 +108,6 @@ export async function POST(request) {
           if (upline2Data.rows[0]?.upline1) upline3 = upline2Data.rows[0].upline1
         }
 
-        // Insert downline records
         await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,1)', [upline1, phone])
         if (upline2) await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,2)', [upline2, phone])
         if (upline3) await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,3)', [upline3, phone])
@@ -124,12 +115,13 @@ export async function POST(request) {
 
       const inviteCode = getUserInviteCode(phone)
       const regDate = getUGDateStr()
+      const hashedPassword = await bcrypt.hash(password, 10)
 
       await db.execute(
-        `INSERT INTO users(phone, username, displayName, password, balance, available_balance,
+        `INSERT INTO users(phone, username, password_hash, balance, available_balance,
          referralCode, upline1, upline2, upline3, referralPaid, role, regDate)
          VALUES (?,?,?,?,2500,2500,?,?,?,?, 'false', 'user',?)`,
-        [phone, username, username, password, inviteCode, upline1, upline2, upline3, regDate]
+        [phone, username, hashedPassword, inviteCode, upline1, upline2, upline3, regDate]
       )
 
       await db.execute('INSERT INTO usernames(username, phone) VALUES (?,?)', [username, phone])
@@ -148,8 +140,8 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      phone = normalizePhone(phone)
-      if (!phone) {
+      // No normalizePhone - use phone exactly as sent
+      if (!/^07\d{8}$/.test(phone)) {
         return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
       }
 
@@ -160,7 +152,8 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (String(user.password)!== String(password)) {
+      const passwordMatch = await bcrypt.compare(password, user.password_hash)
+      if (!passwordMatch) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 

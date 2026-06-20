@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 export default function Register() {
-  const [form, setForm] = useState({ 
+  const [form, setForm] = useState({
     username: '',
     phone: '',
     password: '',
@@ -15,15 +16,19 @@ export default function Register() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [referralLocked, setReferralLocked] = useState(false)
+  const searchParams = useSearchParams()
 
-  // Auto-fill referral from link
+  // Auto-fill referral from URL?ref=CODE or localStorage
   useEffect(() => {
-    const savedReferrer = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
-    if (savedReferrer) {
-      setForm(prev => ({...prev, referral: savedReferrer}))
+    const refFromUrl = searchParams.get('ref')
+    const refFromStorage = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
+    const ref = refFromUrl || refFromStorage
+
+    if (ref) {
+      setForm(prev => ({...prev, referral: ref}))
       setReferralLocked(true)
     }
-  }, [])
+  }, [searchParams])
 
   const handleChange = (e) => {
     if (e.target.name === 'referral' && referralLocked) return
@@ -33,26 +38,30 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    
-    if(!/^[a-zA-Z0-9]{3,6}$/.test(form.username)) {
-      setError('Username must be 3-6 letters or digits only')
+
+    // Username: exactly 6 letters/digits
+    if(!/^[a-zA-Z0-9]{6}$/.test(form.username)) {
+      setError('Username must be exactly 6 letters or digits')
       return
     }
-    
+
+    // Phone: 07 + 8 digits = 10 total, no trim
     if(!/^07\d{8}$/.test(form.phone)) {
       setError('Phone must be 10 digits starting with 07')
       return
     }
-    
-    if(form.password !== form.confirmPassword) {
+
+    // Password: exactly 6 chars
+    if(!/^[a-zA-Z0-9]{6}$/.test(form.password)) {
+      setError('Password must be exactly 6 letters or digits')
+      return
+    }
+
+    if(form.password!== form.confirmPassword) {
       setError('Passwords do not match')
       return
     }
-    if(form.password.length < 6) {
-      setError('Password must be 6+ characters')
-      return
-    }
-    
+
     setLoading(true)
     try {
       const res = await fetch('/api/auth', {
@@ -61,13 +70,13 @@ export default function Register() {
         body: JSON.stringify({
           action: 'register',
           username: form.username,
-          phone: form.phone,
+          phone: form.phone, // sent as-is, no trim
           password: form.password,
           referral: form.referral
         })
       })
       const data = await res.json()
-      
+
       if(data.success) {
         localStorage.setItem('palamedes_user', JSON.stringify({
           name: form.username,
@@ -89,11 +98,7 @@ export default function Register() {
   }
 
   return (
-    <main style={{
-      minHeight: '100vh',
-      background: '#ffffff',
-      padding: '40px 20px'
-    }}>
+    <main style={{minHeight: '100vh', background: '#ffffff', padding: '40px 20px'}}>
       <h1 style={{textAlign: 'center', marginBottom: '20px', color: '#000', fontSize: '28px'}}>
         PALAMEDES PR
       </h1>
@@ -112,10 +117,9 @@ export default function Register() {
             value={form.username}
             onChange={handleChange}
             required
-            minLength={3}
             maxLength={6}
-            pattern="[a-zA-Z0-9]{3,6}"
-            title="3-6 letters or digits only"
+            pattern="[a-zA-Z0-9]{6}"
+            title="Exactly 6 letters or digits"
             style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
           />
         </div>
@@ -128,11 +132,10 @@ export default function Register() {
             value={form.phone}
             onChange={handleChange}
             required
-            minLength={10}
             maxLength={10}
             pattern="07[0-9]{8}"
             placeholder="07xxxxxxxx"
-            title="Enter 10 digits starting with 07"
+            title="10 digits starting with 07"
             style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
           />
         </div>
@@ -141,15 +144,18 @@ export default function Register() {
           <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Password</label>
           <div style={{position: 'relative'}}>
             <input
-              type={showPass ? 'text' : 'password'}
+              type={showPass? 'text' : 'password'}
               name="password"
               value={form.password}
               onChange={handleChange}
               required
+              maxLength={6}
+              pattern="[a-zA-Z0-9]{6}"
+              title="Exactly 6 letters or digits"
               style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
             />
             <button type="button" onClick={() => setShowPass(!showPass)} style={{position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0'}}>
-              {showPass ? '🙈' : '👁️'}
+              {showPass? '🙈' : '👁️'}
             </button>
           </div>
         </div>
@@ -158,15 +164,17 @@ export default function Register() {
           <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Confirm Password</label>
           <div style={{position: 'relative'}}>
             <input
-              type={showConfirm ? 'text' : 'password'}
+              type={showConfirm? 'text' : 'password'}
               name="confirmPassword"
               value={form.confirmPassword}
               onChange={handleChange}
               required
+              maxLength={6}
+              pattern="[a-zA-Z0-9]{6}"
               style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
             />
             <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0'}}>
-              {showConfirm ? '🙈' : '👁️'}
+              {showConfirm? '🙈' : '👁️'}
             </button>
           </div>
         </div>
@@ -183,29 +191,29 @@ export default function Register() {
             readOnly={referralLocked}
             placeholder="PM20252"
             style={{
-              width: '100%', 
-              padding: '12px', 
-              border: '1px solid #ccc', 
-              background: referralLocked ? '#f3f4f6' : '#fff', 
+              width: '100%',
+              padding: '12px',
+              border: '1px solid #ccc',
+              background: referralLocked? '#f3f4f6' : '#fff',
               color: '#000',
-              cursor: referralLocked ? 'not-allowed' : 'text'
+              cursor: referralLocked? 'not-allowed' : 'text'
             }}
           />
         </div>
 
-        <button 
-          type="submit" 
-          disabled={loading} 
+        <button
+          type="submit"
+          disabled={loading}
           style={{
-            width: '100%', 
-            padding: '14px', 
-            background: loading ? '#666' : '#000', 
-            color: '#fff', 
-            border: 'none', 
-            cursor: loading ? 'not-allowed' : 'pointer'
+            width: '100%',
+            padding: '14px',
+            background: loading? '#666' : '#000',
+            color: '#fff',
+            border: 'none',
+            cursor: loading? 'not-allowed' : 'pointer'
           }}
         >
-          {loading ? 'Creating...' : 'Register'}
+          {loading? 'Creating...' : 'Register'}
         </button>
       </form>
 
