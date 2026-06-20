@@ -1,5 +1,4 @@
 import { db } from '@/lib/db'
-import bcrypt from 'bcryptjs'
 
 const TZ = 'Africa/Kampala'
 
@@ -58,12 +57,10 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
-      // No normalizePhone - use phone exactly as sent
       if (!/^07\d{8}$/.test(phone)) {
         return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
       }
 
-      // Exactly 6 chars
       if (!/^[a-zA-Z0-9]{6}$/.test(username)) {
         return Response.json({ success: false, message: 'Username must be exactly 6 letters or digits' })
       }
@@ -115,13 +112,12 @@ export async function POST(request) {
 
       const inviteCode = getUserInviteCode(phone)
       const regDate = getUGDateStr()
-      const hashedPassword = await bcrypt.hash(password, 10)
 
       await db.execute(
         `INSERT INTO users(phone, username, password_hash, balance, available_balance,
          referralCode, upline1, upline2, upline3, referralPaid, role, regDate)
          VALUES (?,?,?,?,2500,2500,?,?,?,?, 'false', 'user',?)`,
-        [phone, username, hashedPassword, inviteCode, upline1, upline2, upline3, regDate]
+        [phone, username, password, inviteCode, upline1, upline2, upline3, regDate]
       )
 
       await db.execute('INSERT INTO usernames(username, phone) VALUES (?,?)', [username, phone])
@@ -140,7 +136,6 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      // No normalizePhone - use phone exactly as sent
       if (!/^07\d{8}$/.test(phone)) {
         return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
       }
@@ -152,8 +147,7 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      const passwordMatch = await bcrypt.compare(password, user.password_hash)
-      if (!passwordMatch) {
+      if (user.password_hash!== password) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
