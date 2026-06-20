@@ -1,9 +1,9 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
-export default function Register() {
+function RegisterForm() {
   const [form, setForm] = useState({
     username: '',
     phone: '',
@@ -45,7 +45,7 @@ export default function Register() {
       return
     }
 
-    // Phone: 07 + 8 digits = 10 total, no trim
+    // Phone: 07 + 8 digits = 10 total
     if(!/^07\d{8}$/.test(form.phone)) {
       setError('Phone must be 10 digits starting with 07')
       return
@@ -70,7 +70,7 @@ export default function Register() {
         body: JSON.stringify({
           action: 'register',
           username: form.username,
-          phone: form.phone, // sent as-is, no trim
+          phone: form.phone,
           password: form.password,
           referral: form.referral
         })
@@ -98,14 +98,7 @@ export default function Register() {
   }
 
   return (
-    <main style={{minHeight: '100vh', background: '#ffffff', padding: '40px 20px'}}>
-      <h1 style={{textAlign: 'center', marginBottom: '20px', color: '#000', fontSize: '28px'}}>
-        PALAMEDES PR
-      </h1>
-      <p style={{textAlign: 'center', color: '#000', marginBottom: '30px'}}>
-        Create your account
-      </p>
-
+    <>
       {error && <p style={{color: 'red', textAlign: 'center', marginBottom: '20px'}}>{error}</p>}
 
       <form onSubmit={handleSubmit} style={{maxWidth: '400px', margin: '0 auto'}}>
@@ -216,6 +209,23 @@ export default function Register() {
           {loading? 'Creating...' : 'Register'}
         </button>
       </form>
+    </>
+  )
+}
+
+export default function Register() {
+  return (
+    <main style={{minHeight: '100vh', background: '#ffffff', padding: '40px 20px'}}>
+      <h1 style={{textAlign: 'center', marginBottom: '20px', color: '#000', fontSize: '28px'}}>
+        PALAMEDES PR
+      </h1>
+      <p style={{textAlign: 'center', color: '#000', marginBottom: '30px'}}>
+        Create your account
+      </p>
+
+      <Suspense fallback={<div style={{textAlign: 'center'}}>Loading...</div>}>
+        <RegisterForm />
+      </Suspense>
 
       <p style={{textAlign: 'center', marginTop: '20px'}}>
         <Link href="/login" style={{color: '#000'}}>Already have an account? Login</Link>
