@@ -16,33 +16,32 @@ function getUserInviteCode(phone) {
 
 function normalizeUser(user) {
   if (!user) return null
-
-  const balance = Number(user.balance?? user.available_balance?? 0)
-
+  const bal = Number(user.balance?? user.available_balance?? 0)
   return {
-    usernames: user.usernames,
+    id: user.id,
+    username: user.username,
     phone: user.phone,
-    balance: balance,
-    available_balance: balance,
-    vip: Number(user.vip) || 0,
-    vipLocked: user.vipLocked === 'true' || user.vipLocked === 1,
-    tasksCompleted: Number(user.tasksCompleted) || 0,
-    referralCode: user.referralCode || '',
-    upline1: user.upline1 || '',
-    upline2: user.upline2 || '',
-    upline3: user.upline3 || '',
-    referralPaid: user.referralPaid || 'false',
-    role: user.role || 'user',
-    hasBoughtVIP: user.hasBoughtVIP === 1 || user.hasBoughtVIP === '1',
-    regDate: user.regDate || ''
+    balance: bal,
+    available_balance: bal,
+    hasBoughtVIP: user.hasBoughtVIP === 1,
+    vip_level: Number(user.vip_level) || 0,
+    vip_deposit: Number(user.vip_deposit) || 0,
+    first_vip_amount: Number(user.first_vip_amount) || 0,
+    vip_paid: user.vip_paid === 1,
+    invite_code: user.invite_code || '',
+    invited_by: user.invited_by || '',
+    airtel_number: user.airtel_number || '',
+    airtel_name: user.airtel_name || '',
+    mtn_number: user.mtn_number || '',
+    mtn_name: user.mtn_name || '',
+    created_at: user.created_at || ''
   }
 }
 
 async function syncBalanceFields(phone, amount) {
-  const amountStr = String(amount)
   await db.execute(
     'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
-    [amountStr, amountStr, phone]
+    [amount, amount, phone]
   )
 }
 
@@ -62,11 +61,11 @@ export async function POST(request) {
       }
 
       if (!/^[a-zA-Z0-9]{6}$/.test(username)) {
-        return Response.json({ success: false, message: 'Username must be exactly 6 letters or digits' })
+        return Response.json({ success: false, message: 'Username must be 6 letters or digits' })
       }
 
       if (!/^[a-zA-Z0-9]{6}$/.test(password)) {
-        return Response.json({ success: false, message: 'Password must be exactly 6 letters or digits' })
+        return Response.json({ success: false, message: 'Password must be 6 letters or digits' })
       }
 
       const existingUser = await db.execute('SELECT phone FROM users WHERE phone =?', [phone])
@@ -74,59 +73,42 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
 
-      const existingUsername = await db.execute('SELECT phone FROM usernames WHERE username =?', [username])
+      const existingUsername = await db.execute('SELECT id FROM users WHERE username =?', [username])
       if (existingUsername.rows.length > 0) {
         return Response.json({ success: false, message: 'Username taken' })
       }
 
-      let upline1 = '', upline2 = '', upline3 = ''
-
+      let invited_by = ''
       if (referral) {
         if (!isValidInviteCode(referral)) {
           return Response.json({ success: false, message: 'Invalid referral code format' })
         }
-
-        const refRes = await db.execute('SELECT phone FROM referrals WHERE code =?', [referral])
+        const refRes = await db.execute('SELECT phone FROM users WHERE invite_code =?', [referral])
         if (refRes.rows.length === 0) {
           return Response.json({ success: false, message: 'Referral code not found' })
         }
-
-        const upline1Phone = refRes.rows[0].phone
-        if (upline1Phone === phone) {
+        invited_by = refRes.rows[0].phone
+        if (invited_by === phone) {
           return Response.json({ success: false, message: 'Cannot use your own referral code' })
         }
-
-        upline1 = upline1Phone
-
-        const upline1Data = await db.execute('SELECT upline1, upline2 FROM users WHERE phone =?', [upline1Phone])
-        if (upline1Data.rows[0]?.upline1) upline2 = upline1Data.rows[0].upline1
-        if (upline2) {
-          const upline2Data = await db.execute('SELECT upline1 FROM users WHERE phone =?', [upline2])
-          if (upline2Data.rows[0]?.upline1) upline3 = upline2Data.rows[0].upline1
-        }
-
-        await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,1)', [upline1, phone])
-        if (upline2) await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,2)', [upline2, phone])
-        if (upline3) await db.execute('INSERT INTO downlines(phone, downline_phone, level) VALUES (?,?,3)', [upline3, phone])
       }
 
-      const inviteCode = getUserInviteCode(phone)
-      const regDate = getUGDateStr()
+      const invite_code = getUserInviteCode(phone)
+      const created_at = getUGDateStr()
 
       await db.execute(
-        `INSERT INTO users(phone, usernames, password_hash, balance, available_balance,
-         referralCode, upline1, upline2, upline3, referralPaid, role, regDate, hasBoughtVIP)
-         VALUES (?,?,?,?,2500,2500,?,?,?,?, 'user',?, 0)`,
-        [phone, username, password, inviteCode, upline1, upline2, upline3, regDate]
+        `INSERT INTO users (
+          username, phone, password, invite_code, invited_by,
+          balance, available_balance, created_at,
+          hasBoughtVIP, vip_level, vip_deposit, first_vip_amount, vip_paid
+        ) VALUES (?,?, 2500, 2500,?, 0, 0, 0, 0, 0)`,
+        [username, phone, password, invite_code, invited_by, created_at]
       )
-
-      await db.execute('INSERT INTO usernames(username, phone) VALUES (?,?)', [username, phone])
-      await db.execute('INSERT INTO referrals(code, phone) VALUES (?,?)', [inviteCode, phone])
 
       return Response.json({
         success: true,
         message: 'Registered successfully',
-        inviteCode
+        invite_code
       })
     }
 
@@ -136,10 +118,6 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      if (!/^07\d{8}$/.test(phone)) {
-        return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
-      }
-
       const res = await db.execute('SELECT * FROM users WHERE phone =?', [phone])
       const user = res.rows[0]
 
@@ -147,20 +125,18 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (user.password_hash!== password) {
+      if (user.password!== password) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
       const currentBalance = Number(user.balance?? user.available_balance?? 0)
-      if (String(user.balance)!== String(currentBalance) || String(user.available_balance)!== String(currentBalance)) {
+      if (user.balance!== currentBalance || user.available_balance!== currentBalance) {
         await syncBalanceFields(phone, currentBalance)
       }
 
-      const normalizedUser = normalizeUser(user)
-
       return Response.json({
         success: true,
-        user: normalizedUser
+        user: normalizeUser(user)
       })
     }
 
