@@ -33,6 +33,8 @@ export default function Login() {
       const data = await res.json()
       
       if (data.success && data.user) {
+        // Save both token and user data
+        localStorage.setItem('token', data.token)
         localStorage.setItem('palamedes_user', JSON.stringify({
           name: data.user.name || data.user.username,
           username: data.user.username,
@@ -41,6 +43,7 @@ export default function Login() {
           vip: data.user.vip || 0,
           avatar: data.user.avatar || ''
         }))
+        
         window.location.href = '/dashboard'
       } else {
         setError(data.message || 'Invalid phone or password')
