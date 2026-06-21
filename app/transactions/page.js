@@ -184,7 +184,7 @@ export default function Transactions() {
 
               return (
                 <div
-                  key={t.id || t.date}
+                  key={t.id || t.created_at}
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -200,7 +200,7 @@ export default function Transactions() {
                     <p style={{ fontSize: '16px', fontWeight: '500', color: '#000', marginBottom: '4px' }}>
                       {txName(t.type)}
                     </p>
-                    <p style={{ fontSize: '13px', color: '#777' }}>{formatDate(t.date)}</p>
+                    <p style={{ fontSize: '13px', color: '#777' }}>{formatDate(t.created_at)}</p>
                     {t.method && (
                       <p style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{t.method}</p>
                     )}

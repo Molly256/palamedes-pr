@@ -52,14 +52,21 @@ export async function GET(request) {
             tx.balance = user.balance
             tx.available_balance = user.available_balance
 
-            if (tx.type === 'deposit') deposits.push(tx)
-            if (tx.type === 'withdraw') withdraws.push(tx)
+            // Wrap in data field to match frontend
+            const wrapped = {
+              id: tx.id,
+              phone: p,
+              data: tx
+            }
+
+            if (tx.type === 'deposit') deposits.push(wrapped)
+            if (tx.type === 'withdraw') withdraws.push(wrapped)
           }
         }
       }
 
-      deposits.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      withdraws.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      deposits.sort((a, b) => new Date(a.data.created_at) - new Date(b.data.created_at))
+      withdraws.sort((a, b) => new Date(a.data.created_at) - new Date(b.data.created_at))
 
       return NextResponse.json({ success: true, deposits, withdraws })
     }
@@ -102,8 +109,13 @@ export async function POST(request) {
       return NextResponse.json({ success: true, message: 'Password reset successfully' })
     }
 
-    if (action === 'approve' || action === 'reject') {
+    // Handle approve/reject for both deposits and withdraws
+    if (action === 'approve_deposit' || action === 'reject_deposit' ||
+        action === 'approve_withdraw' || action === 'reject_withdraw') {
+
       const targetPhoneNorm = normalizePhone(targetPhone)
+      const isApprove = action.startsWith('approve')
+      const txType = action.includes('deposit')? 'deposit' : 'withdraw'
 
       const txList = await redis.lrange(`tx:${targetPhoneNorm}`, 0, 999)
       let txIndex = -1
@@ -120,20 +132,20 @@ export async function POST(request) {
 
       if (!tx) return NextResponse.json({ success: false, message: 'Transaction not found or already processed' })
 
-      const newStatus = action === 'approve'? 'success' : 'rejected'
+      const newStatus = isApprove? 'success' : 'rejected'
       tx.status = newStatus
 
       await redis.lset(`tx:${targetPhoneNorm}`, txIndex, JSON.stringify(tx))
 
-      if (action === 'approve') {
-        if (type === 'deposit') {
+      if (isApprove) {
+        if (txType === 'deposit') {
           const user = await redis.hgetall(`user:${targetPhoneNorm}`)
           const current = Number(user.balance || 0)
           const newBal = current + Number(tx.amount)
           await redis.hset(`user:${targetPhoneNorm}`, { balance: newBal, available_balance: newBal })
         }
 
-        if (type === 'withdraw') {
+        if (txType === 'withdraw') {
           const withdrawAmount = Math.abs(Number(tx.amount))
           const user = await redis.hgetall(`user:${targetPhoneNorm}`)
           const currentBalance = Number(user.balance || 0)
@@ -147,7 +159,7 @@ export async function POST(request) {
         }
       }
 
-      return NextResponse.json({ success: true, message: `Transaction ${action}d` })
+      return NextResponse.json({ success: true, message: `Transaction ${newStatus}` })
     }
 
     return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })

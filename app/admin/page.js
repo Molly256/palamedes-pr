@@ -53,18 +53,40 @@ export default function AdminPage() {
     loadPendingTransactions()
   }, [router])
 
+  const safeParse = (data) => {
+    if (typeof data === 'string') {
+      try {
+        return JSON.parse(data)
+      } catch {
+        return data
+      }
+    }
+    return data
+  }
+
   const loadPendingTransactions = async () => {
     try {
       const res = await fetch(`/api/admin?action=pending&phone=${ADMIN_PHONE}`)
       const data = await res.json()
+
       if (data.success) {
-        setPendingDeposits(data.deposits || [])
-        setPendingWithdraws(data.withdraws || [])
+        const deposits = (data.deposits || []).map(d => ({
+         ...d,
+          data: safeParse(d.data)
+        }))
+        const withdraws = (data.withdraws || []).map(d => ({
+         ...d,
+          data: safeParse(d.data)
+        }))
+
+        setPendingDeposits(deposits)
+        setPendingWithdraws(withdraws)
       } else {
         alert('Failed to load pending: ' + data.message)
       }
     } catch (err) {
       console.error('Error loading pending:', err)
+      alert('Failed to load pending: ' + err.message)
     }
   }
 
@@ -160,18 +182,21 @@ export default function AdminPage() {
         {pendingDeposits.length === 0? (
           <p style={{color: '#6b7280'}}>No pending deposits</p>
         ) : (
-          pendingDeposits.map(tx => (
-            <div key={tx.id} style={{borderBottom: '1px solid #e5e7eb', padding: '10px 0'}}>
-              <p><strong>Phone:</strong> {tx.phone}</p>
-              <p><strong>Amount:</strong> {tx.amount}shs</p>
-              <p><strong>Method:</strong> {tx.method}</p>
-              <p><strong>Date:</strong> {new Date(tx.date).toLocaleString()}</p>
-              <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
-                <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve', 'deposit', tx.phone)}>Confirm</button>
-                <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject', 'deposit', tx.phone)}>Reject</button>
+          pendingDeposits.map(tx => {
+            const txData = tx.data || {}
+            return (
+              <div key={tx.id} style={{borderBottom: '1px solid #e5e7eb', padding: '10px 0'}}>
+                <p><strong>Phone:</strong> {txData.phone || tx.phone}</p>
+                <p><strong>Amount:</strong> {txData.amount || tx.amount}shs</p>
+                <p><strong>Method:</strong> {txData.method || tx.method}</p>
+                <p><strong>Date:</strong> {new Date(txData.created_at || tx.date || tx.created_at).toLocaleString()}</p>
+                <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
+                  <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve_deposit', 'deposit', txData.userPhone || tx.phone)}>Confirm</button>
+                  <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject_deposit', 'deposit', txData.userPhone || tx.phone)}>Reject</button>
+                </div>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
@@ -180,20 +205,23 @@ export default function AdminPage() {
         {pendingWithdraws.length === 0? (
           <p style={{color: '#6b7280'}}>No pending withdraws</p>
         ) : (
-          pendingWithdraws.map(tx => (
-            <div key={tx.id} style={{borderBottom: '1px solid #e5e7eb', padding: '10px 0'}}>
-              <p><strong>Phone:</strong> {tx.phone}</p>
-              <p><strong>Amount:</strong> {Math.abs(tx.amount)}shs</p>
-              <p><strong>Net:</strong> {tx.netAmount}shs</p>
-              <p><strong>Method:</strong> {tx.method} - {tx.number}</p>
-              <p><strong>Names:</strong> {tx.names}</p>
-              <p><strong>Date:</strong> {new Date(tx.date).toLocaleString()}</p>
-              <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
-                <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve', 'withdraw', tx.phone)}>Confirm</button>
-                <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject', 'withdraw', tx.phone)}>Reject</button>
+          pendingWithdraws.map(tx => {
+            const txData = tx.data || {}
+            return (
+              <div key={tx.id} style={{borderBottom: '1px solid #e5e7eb', padding: '10px 0'}}>
+                <p><strong>Phone:</strong> {txData.phone || tx.phone}</p>
+                <p><strong>Amount:</strong> {Math.abs(txData.amount || tx.amount)}shs</p>
+                <p><strong>Net:</strong> {txData.netAmount || tx.netAmount}shs</p>
+                <p><strong>Method:</strong> {txData.method || tx.method} - {txData.number || tx.number}</p>
+                <p><strong>Names:</strong> {txData.names || tx.names}</p>
+                <p><strong>Date:</strong> {new Date(txData.created_at || tx.date || tx.created_at).toLocaleString()}</p>
+                <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
+                  <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve_withdraw', 'withdraw', txData.phone || tx.phone)}>Confirm</button>
+                  <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject_withdraw', 'withdraw', txData.phone || tx.phone)}>Reject</button>
+                </div>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
     </div>

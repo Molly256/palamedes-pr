@@ -196,8 +196,8 @@ export async function GET(request) {
       const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-      .filter(t => t.type === 'referral_reward' && t.status === 'success')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+     .filter(t => t.type === 'referral_reward' && t.status === 'success')
+     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
       const balance = Number(user.balance || 0)
 
       return NextResponse.json({
@@ -279,6 +279,7 @@ export async function POST(request) {
     const { user } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
+    // User deposit request
     if (action === 'deposit') {
       const depositAmount = Number(value)
       if (!depositAmount || depositAmount <= 0) {
@@ -309,6 +310,7 @@ export async function POST(request) {
       return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending admin approval.' })
     }
 
+    // Admin approve deposit
     if (action === 'approve_deposit') {
       if (adminPhone!== ADMIN_PHONE) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
@@ -341,6 +343,39 @@ export async function POST(request) {
       return NextResponse.json({ success: true, message: 'Deposit approved' })
     }
 
+    // Admin reject deposit
+    if (action === 'reject_deposit') {
+      if (adminPhone!== ADMIN_PHONE) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      }
+      if (!txId) {
+        return NextResponse.json({ success: false, message: 'Transaction ID required' }, { status: 400 })
+      }
+
+      const deposit = await redis.hgetall(`admin_deposit:${txId}`)
+      if (!deposit || deposit.status!== 'pending') {
+        return NextResponse.json({ success: false, message: 'Deposit not found' }, { status: 404 })
+      }
+
+      await redis.hset(`admin_deposit:${txId}`, { status: 'rejected' })
+
+      const txData = JSON.parse(deposit.data)
+      const targetPhone = txData.userPhone
+
+      const txList = await redis.lrange(`tx:${targetPhone}`, 0, 999)
+      for (let i = 0; i < txList.length; i++) {
+        const t = JSON.parse(txList[i])
+        if (t.id === txId) {
+          t.status = 'rejected'
+          await redis.lset(`tx:${targetPhone}`, i, JSON.stringify(t))
+          break
+        }
+      }
+
+      return NextResponse.json({ success: true, message: 'Deposit rejected' })
+    }
+
+    // User withdraw request
     if (action === 'withdraw') {
       const { open } = isWithdrawOpen()
       if (!open) {
@@ -386,7 +421,81 @@ export async function POST(request) {
       }
 
       await pushTransaction(phone, tx)
+      await redis.hset(`admin_withdraw:${tx.id}`, {
+        id: tx.id,
+        admin_phone: ADMIN_PHONE,
+        data: JSON.stringify(tx),
+        status: 'pending'
+      })
+
       return NextResponse.json({ success: true, tx, message: 'Withdraw request submitted. Pending approval.' })
+    }
+
+    // Admin approve withdraw
+    if (action === 'approve_withdraw') {
+      if (adminPhone!== ADMIN_PHONE) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      }
+      if (!txId) {
+        return NextResponse.json({ success: false, message: 'Transaction ID required' }, { status: 400 })
+      }
+
+      const withdraw = await redis.hgetall(`admin_withdraw:${txId}`)
+      if (!withdraw || withdraw.status!== 'pending') {
+        return NextResponse.json({ success: false, message: 'Withdraw not found' }, { status: 404 })
+      }
+
+      const txData = JSON.parse(withdraw.data)
+      const targetPhone = txData.phone
+
+      await redis.hset(`admin_withdraw:${txId}`, { status: 'success' })
+
+      const txList = await redis.lrange(`tx:${targetPhone}`, 0, 999)
+      for (let i = 0; i < txList.length; i++) {
+        const t = JSON.parse(txList[i])
+        if (t.id === txId) {
+          t.status = 'success'
+          await redis.lset(`tx:${targetPhone}`, i, JSON.stringify(t))
+          break
+        }
+      }
+
+      return NextResponse.json({ success: true, message: 'Withdraw approved' })
+    }
+
+    // Admin reject withdraw
+    if (action === 'reject_withdraw') {
+      if (adminPhone!== ADMIN_PHONE) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      }
+      if (!txId) {
+        return NextResponse.json({ success: false, message: 'Transaction ID required' }, { status: 400 })
+      }
+
+      const withdraw = await redis.hgetall(`admin_withdraw:${txId}`)
+      if (!withdraw || withdraw.status!== 'pending') {
+        return NextResponse.json({ success: false, message: 'Withdraw not found' }, { status: 404 })
+      }
+
+      const txData = JSON.parse(withdraw.data)
+      const targetPhone = txData.phone
+      const refundAmount = Math.abs(Number(txData.amount))
+
+      // Refund money back to user
+      await addBalance(targetPhone, refundAmount)
+      await redis.hset(`admin_withdraw:${txId}`, { status: 'rejected' })
+
+      const txList = await redis.lrange(`tx:${targetPhone}`, 0, 999)
+      for (let i = 0; i < txList.length; i++) {
+        const t = JSON.parse(txList[i])
+        if (t.id === txId) {
+          t.status = 'rejected'
+          await redis.lset(`tx:${targetPhone}`, i, JSON.stringify(t))
+          break
+        }
+      }
+
+      return NextResponse.json({ success: true, message: 'Withdraw rejected and refunded' })
     }
 
     if (action === 'buyvip') {
