@@ -1,4 +1,13 @@
-import { neon, NeonQueryFunction } from '@neondatabase/serverless'
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 
-// Connect to Neon using DATABASE_URL
-export const db: NeonQueryFunction<boolean, boolean> = neon(process.env.DATABASE_URL!)
+let sql: NeonQueryFunction<boolean, boolean> | null = null
+
+export const db: NeonQueryFunction<boolean, boolean> = (strings, ...values) => {
+  if (!sql) {
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL is not set in environment variables')
+    }
+    sql = neon(process.env.DATABASE_URL)
+  }
+  return sql(strings, ...values)
+}
