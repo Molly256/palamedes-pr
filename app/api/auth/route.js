@@ -20,7 +20,7 @@ function normalizeUser(user) {
   const balance = Number(user.balance?? user.available_balance?? 0)
 
   return {
-    username: user.username,
+    usernames: user.usernames,
     phone: user.phone,
     balance: balance,
     available_balance: balance,
@@ -33,7 +33,7 @@ function normalizeUser(user) {
     upline3: user.upline3 || '',
     referralPaid: user.referralPaid || 'false',
     role: user.role || 'user',
-    hasBoughtVIP: user.hasBoughtVIP === 'true' || user.hasBoughtVIP === 1,
+    hasBoughtVIP: user.hasBoughtVIP === 1 || user.hasBoughtVIP === '1',
     regDate: user.regDate || ''
   }
 }
@@ -114,9 +114,9 @@ export async function POST(request) {
       const regDate = getUGDateStr()
 
       await db.execute(
-        `INSERT INTO users(phone, username, password_hash, balance, available_balance,
-         referralCode, upline1, upline2, upline3, referralPaid, role, regDate)
-         VALUES (?,?,?,?,2500,2500,?,?,?,?, 'false', 'user',?)`,
+        `INSERT INTO users(phone, usernames, password_hash, balance, available_balance,
+         referralCode, upline1, upline2, upline3, referralPaid, role, regDate, hasBoughtVIP)
+         VALUES (?,?,?,?,2500,2500,?,?,?,?, 'user',?, 0)`,
         [phone, username, password, inviteCode, upline1, upline2, upline3, regDate]
       )
 
