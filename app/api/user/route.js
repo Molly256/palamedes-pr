@@ -30,7 +30,7 @@ const REWARD_TABLE = {
  10: { A: 0.05, B: 0.02, C: 0.01 }
 }
 
-const ADMIN_PHONE = process.env.ADMIN_PHONE
+const ADMIN_PHONE = '0753520252'
 
 function normalizePhone(phone) {
   if (!phone) return null
@@ -202,8 +202,8 @@ export async function GET(request) {
       const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-    .filter(t => t.type === 'referral_reward' && t.status === 'success')
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+   .filter(t => t.type === 'referral_reward' && t.status === 'success')
+   .reduce((sum, t) => sum + Number(t.amount || 0), 0)
       const balance = Number(user.balance || 0)
 
       return NextResponse.json({
