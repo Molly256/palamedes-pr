@@ -36,16 +36,15 @@ function normalizePhone(phone) {
 }
 
 async function getUserData(phone) {
-  const res = await db.execute('SELECT * FROM users WHERE phone =?', [phone])
-  return res.rows[0] || null
+  const res = await db`SELECT * FROM users WHERE phone = ${phone}`
+  return res[0] || null
 }
 
 async function pushTransaction(phone, tx) {
-  await db.execute(
-    `INSERT INTO transactions(id, phone, type, amount, status, date, desc)
-     VALUES (?,?,?,?,?,?,?)`,
-    [tx.id, phone, tx.type, tx.amount, tx.status, tx.date, tx.desc]
-  )
+  await db`
+    INSERT INTO transactions(id, phone, type, amount, status, date, desc)
+    VALUES (${tx.id}, ${phone}, ${tx.type}, ${tx.amount}, ${tx.status}, ${tx.date}, ${tx.desc})
+  `
 }
 
 // GET - Load user's ongoing and expired shares
@@ -59,12 +58,7 @@ export async function GET(request) {
     phone = normalizePhone(phone)
     if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
-    const res = await db.execute(
-      'SELECT * FROM shares WHERE phone =? ORDER BY buyDate DESC',
-      [phone]
-    )
-
-    let shares = res.rows
+    let shares = await db`SELECT * FROM shares WHERE phone = ${phone} ORDER BY buyDate DESC`
     const now = getUGNow()
 
     // Mark expired shares
@@ -72,7 +66,7 @@ export async function GET(request) {
       if (s.status === 'ongoing') {
         const endDate = parseKampalaDate(s.endDate)
         if (endDate &&!isNaN(endDate) && now >= endDate) {
-          await db.execute('UPDATE shares SET status =? WHERE id =?', ['expired', s.id])
+          await db`UPDATE shares SET status = 'expired' WHERE id = ${s.id}`
           s.status = 'expired'
         }
       }
@@ -117,10 +111,7 @@ export async function POST(request) {
       }
 
       const newBalance = balance - cost
-      await db.execute(
-        'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
-        [String(newBalance), String(newBalance), phone]
-      )
+      await db`UPDATE users SET balance = ${String(newBalance)}, available_balance = ${String(newBalance)} WHERE phone = ${phone}`
 
       const buyDate = getUGNow()
       const endDate = new Date(buyDate)
@@ -129,15 +120,15 @@ export async function POST(request) {
       const expectedProfit = Math.round(config.price * qty * config.daily * cycle)
       const shareIdUnique = `${shareId}_${Date.now()}`
 
-      await db.execute(
-        `INSERT INTO shares(id, phone, shareId, shareName, quantity, pricePerShare, totalInvested,
-         dailyProfit, cycleDays, expectedProfit, buyDate, endDate, status, profitReceived)
-         VALUES (?,?,?,?, 'ongoing', 0)`,
-        [
-          shareIdUnique, phone, shareId, shareName || config.name, qty, config.price, cost,
-          config.daily * 100, cycle, expectedProfit, formatKampalaDate(buyDate), formatKampalaDate(endDate)
-        ]
-      )
+      await db`
+        INSERT INTO shares(
+          id, phone, shareId, shareName, quantity, pricePerShare, totalInvested,
+          dailyProfit, cycleDays, expectedProfit, buyDate, endDate, status, profitReceived
+        ) VALUES (
+          ${shareIdUnique}, ${phone}, ${shareId}, ${shareName || config.name}, ${qty}, ${config.price}, ${cost},
+          ${config.daily * 100}, ${cycle}, ${expectedProfit}, ${formatKampalaDate(buyDate)}, ${formatKampalaDate(endDate)}, 'ongoing', 0
+        )
+      `
 
       await pushTransaction(phone, {
         id: String(Date.now()),
@@ -158,8 +149,8 @@ export async function POST(request) {
     if (action === 'collectShare') {
       if (!collectShareId) return NextResponse.json({ success: false, message: 'Share ID required' }, { status: 400 })
 
-      const res = await db.execute('SELECT * FROM shares WHERE id =? AND phone =?', [collectShareId, phone])
-      const share = res.rows[0]
+      const res = await db`SELECT * FROM shares WHERE id = ${collectShareId} AND phone = ${phone}`
+      const share = res[0]
       if (!share) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
 
       if (share.status!== 'ongoing') {
@@ -175,15 +166,15 @@ export async function POST(request) {
       const profit = share.expectedProfit
       const newBalance = Number(user.balance) + profit
 
-      await db.execute(
-        'UPDATE shares SET status =?, collectedAt =?, profitReceived =? WHERE id =?',
-        ['expired', formatKampalaDate(now), profit, collectShareId]
-      )
+      await db`
+        UPDATE shares SET status = 'expired', collectedAt = ${formatKampalaDate(now)}, profitReceived = ${profit}
+        WHERE id = ${collectShareId}
+      `
 
-      await db.execute(
-        'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
-        [String(newBalance), String(newBalance), phone]
-      )
+      await db`
+        UPDATE users SET balance = ${String(newBalance)}, available_balance = ${String(newBalance)}
+        WHERE phone = ${phone}
+      `
 
       await pushTransaction(phone, {
         id: String(Date.now()),

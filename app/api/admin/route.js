@@ -10,10 +10,10 @@ function normalizePhone(phone) {
   if (phone.startsWith('256') && phone.length === 12) {
     phone = '0' + phone.slice(3)
   }
-  if (phone.length === 9 && !phone.startsWith('0')) {
+  if (phone.length === 9 &&!phone.startsWith('0')) {
     phone = '0' + phone
   }
-  
+
   if (!/^07\d{8}$/.test(phone)) return ''
   return phone
 }
@@ -23,8 +23,8 @@ async function verifyAdmin(phone) {
 }
 
 async function getUserData(phone) {
-  const res = await db.execute('SELECT * FROM users WHERE phone = ?', [phone])
-  const user = res.rows[0] || null
+  const res = await db`SELECT * FROM users WHERE phone = ${phone}`
+  const user = res[0] || null
   return user
 }
 
@@ -39,19 +39,18 @@ export async function GET(request) {
     }
 
     if (action === 'pending') {
-      // Single query to get all pending transactions with user data
-      const res = await db.execute(`
-        SELECT t.*, u.balance, u.available_balance 
+      const res = await db`
+        SELECT t.*, u.balance, u.available_balance
         FROM transactions t
         JOIN users u ON t.phone = u.phone
         WHERE t.status = 'pending'
         ORDER BY t.date ASC
-      `)
+      `
 
       const deposits = []
       const withdraws = []
 
-      for (const tx of res.rows) {
+      for (const tx of res) {
         if (tx.type === 'deposit') deposits.push(tx)
         if (tx.type === 'withdraw') withdraws.push(tx)
       }
@@ -63,8 +62,7 @@ export async function GET(request) {
       const targetPhone = normalizePhone(searchParams.get('targetPhone'))
       const user = await getUserData(targetPhone)
       if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-      
-      // Don't send password
+
       delete user.password
       return NextResponse.json({ success: true, user })
     }
@@ -94,53 +92,54 @@ export async function POST(request) {
       const user = await getUserData(targetPhoneNorm)
       if (!user) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
 
-      await db.execute('UPDATE users SET password = ? WHERE phone = ?', [newPassword, targetPhoneNorm])
+      await db`UPDATE users SET password = ${newPassword} WHERE phone = ${targetPhoneNorm}`
       return NextResponse.json({ success: true, message: 'Password reset successfully' })
     }
 
     if (action === 'approve' || action === 'reject') {
       const targetPhoneNorm = normalizePhone(targetPhone)
 
-      const txRes = await db.execute(
-        'SELECT * FROM transactions WHERE phone = ? AND id = ? AND status = "pending"',
-        [targetPhoneNorm, txId]
-      )
-      const tx = txRes.rows[0]
+      const txRes = await db`
+        SELECT * FROM transactions
+        WHERE phone = ${targetPhoneNorm} AND id = ${txId} AND status = 'pending'
+      `
+      const tx = txRes[0]
       if (!tx) return NextResponse.json({ success: false, message: 'Transaction not found or already processed' })
 
-      const newStatus = action === 'approve' ? 'success' : 'rejected'
+      const newStatus = action === 'approve'? 'success' : 'rejected'
 
       await db.transaction(async (txDb) => {
         // Update transaction status
-        await txDb.execute(
-          'UPDATE transactions SET status = ? WHERE phone = ? AND id = ?',
-          [newStatus, targetPhoneNorm, txId]
-        )
+        await txDb`
+          UPDATE transactions
+          SET status = ${newStatus}
+          WHERE phone = ${targetPhoneNorm} AND id = ${txId}
+        `
 
         // Only update balance on approval
         if (action === 'approve') {
           if (type === 'deposit') {
-            // Atomic increment
-            await txDb.execute(
-              'UPDATE users SET balance = balance + ?, available_balance = available_balance + ? WHERE phone = ?',
-              [tx.amount, tx.amount, targetPhoneNorm]
-            )
+            await txDb`
+              UPDATE users
+              SET balance = balance + ${tx.amount}, available_balance = available_balance + ${tx.amount}
+              WHERE phone = ${targetPhoneNorm}
+            `
           }
 
           if (type === 'withdraw') {
             const withdrawAmount = Math.abs(Number(tx.amount))
-            // Check balance first
-            const userRes = await txDb.execute('SELECT balance FROM users WHERE phone = ?', [targetPhoneNorm])
-            const currentBalance = Number(userRes.rows[0]?.balance || 0)
-            
+            const userRes = await txDb`SELECT balance FROM users WHERE phone = ${targetPhoneNorm}`
+            const currentBalance = Number(userRes[0]?.balance || 0)
+
             if (currentBalance < withdrawAmount) {
               throw new Error('Insufficient balance')
             }
 
-            await txDb.execute(
-              'UPDATE users SET balance = balance - ?, available_balance = available_balance - ? WHERE phone = ?',
-              [withdrawAmount, withdrawAmount, targetPhoneNorm]
-            )
+            await txDb`
+              UPDATE users
+              SET balance = balance - ${withdrawAmount}, available_balance = available_balance - ${withdrawAmount}
+              WHERE phone = ${targetPhoneNorm}
+            `
           }
         }
       })

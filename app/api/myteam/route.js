@@ -13,32 +13,29 @@ async function buildTeams(phone) {
 
   // Get level 1, 2, 3 downlines in one query each
   const [teamA, teamB, teamC] = await Promise.all([
-    db.execute(
-      `SELECT phone, username, nickname, vip, vip_paid_at, vip
-       FROM users
-       WHERE referrer =? AND referral_level =1`,
-      [phoneNorm]
-    ),
-    db.execute(
-      `SELECT phone, username, nickname, vip, vip_paid_at, vip
-       FROM users
-       WHERE referrer IN (SELECT phone FROM users WHERE referrer =? AND referral_level =1)
-       AND referral_level =2`,
-      [phoneNorm]
-    ),
-    db.execute(
-      `SELECT phone, username, nickname, vip, vip_paid_at, vip
-       FROM users
-       WHERE referrer IN (
-         SELECT phone FROM users WHERE referrer IN (
-           SELECT phone FROM users WHERE referrer =? AND referral_level =1
-         ) AND referral_level =2
-       ) AND referral_level =3`,
-      [phoneNorm]
-    )
+    db`
+      SELECT phone, username, nickname, vip, vip_paid_at, vip
+      FROM users
+      WHERE referrer = ${phoneNorm} AND referral_level = 1
+    `,
+    db`
+      SELECT phone, username, nickname, vip, vip_paid_at, vip
+      FROM users
+      WHERE referrer IN (SELECT phone FROM users WHERE referrer = ${phoneNorm} AND referral_level = 1)
+      AND referral_level = 2
+    `,
+    db`
+      SELECT phone, username, nickname, vip, vip_paid_at, vip
+      FROM users
+      WHERE referrer IN (
+        SELECT phone FROM users WHERE referrer IN (
+          SELECT phone FROM users WHERE referrer = ${phoneNorm} AND referral_level = 1
+        ) AND referral_level = 2
+      ) AND referral_level = 3
+    `
   ])
 
-  const formatTeam = (rows) => rows.rows.map(u => ({
+  const formatTeam = (rows) => rows.map(u => ({
     phone: u.phone,
     username: u.username || '',
     nickname: u.nickname || '',
@@ -57,14 +54,13 @@ async function buildTeams(phone) {
 async function getTotalCommission(phone) {
   const phoneNorm = normalizePhone(phone)
 
-  const res = await db.execute(
-    `SELECT SUM(amount) as total
-     FROM transactions
-     WHERE phone =? AND type ='referral_reward' AND status!='rejected'`,
-    [phoneNorm]
-  )
+  const res = await db`
+    SELECT SUM(amount) as total
+    FROM transactions
+    WHERE phone = ${phoneNorm} AND type = 'referral_reward' AND status!= 'rejected'
+  `
 
-  const total = Number(res.rows[0]?.total) || 0
+  const total = Number(res[0]?.total) || 0
   console.error(`MYTEAM: Phone ${phoneNorm} total commission = ${total}`)
   return total
 }

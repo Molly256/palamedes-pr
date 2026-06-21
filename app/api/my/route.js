@@ -15,20 +15,19 @@ function normalizePhone(phone) {
 }
 
 async function getUserData(phone) {
-  const res = await db.execute('SELECT * FROM users WHERE phone =?', [phone])
-  const user = res.rows[0] || null
+  const res = await db`SELECT * FROM users WHERE phone = ${phone}`
+  const user = res[0] || null
   return { user }
 }
 
 async function getVipPurchaseInfo(phone) {
-  const res = await db.execute(
-    `SELECT date, amount FROM transactions
-     WHERE phone =? AND (type ='viptask_purchase' OR type ='vip_purchase')
-     ORDER BY date DESC LIMIT 1`,
-    [phone]
-  )
+  const res = await db`
+    SELECT date, amount FROM transactions
+    WHERE phone = ${phone} AND (type = 'viptask_purchase' OR type = 'vip_purchase')
+    ORDER BY date DESC LIMIT 1
+  `
 
-  const tx = res.rows[0]
+  const tx = res[0]
   return {
     date: tx?.date || null,
     amount: Number(tx?.amount) || 0

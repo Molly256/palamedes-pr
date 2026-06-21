@@ -1,7 +1,6 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { sql } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,50 +64,49 @@ function isWithdrawOpen() {
 
 async function getUserData(phone) {
   if (!phone) return { user: null }
-  const result = await db.execute(sql`SELECT * FROM users WHERE phone = ${phone} LIMIT 1`)
-  const user = result.rows[0] || null
+  const result = await db`SELECT * FROM users WHERE phone = ${phone} LIMIT 1`
+  const user = result[0] || null
   return { user }
 }
 
 async function addBalance(phone, amount) {
   if (!phone) return
-  await db.execute(sql`
+  await db`
     UPDATE users
     SET balance = balance + ${amount}, available_balance = available_balance + ${amount}
     WHERE phone = ${phone}
-  `)
+  `
 }
 
 async function getTransactions(phone) {
   if (!phone) return []
-  const result = await db.execute(sql`
+  const result = await db`
     SELECT * FROM transactions
     WHERE phone = ${phone}
     ORDER BY created_at DESC
     LIMIT 99
-  `)
-  return result.rows
+  `
+  return result
 }
 
 async function pushTransaction(phone, tx) {
   if (!phone) return
-  await db.execute(sql`
+  await db`
     INSERT INTO transactions (id, phone, type, amount, net_amount, fee, method, number, names, created_at, status, desc)
     VALUES (${tx.id}, ${phone}, ${tx.type}, ${tx.amount}, ${tx.netAmount || null}, ${tx.fee || null},
             ${tx.method || null}, ${tx.number || null}, ${tx.names || null}, ${tx.created_at}, ${tx.status}, ${tx.desc})
-  `)
+  `
 }
 
 async function buildTeams(phone) {
   if (!phone) return { teamA: [], teamB: [], teamC: [] }
-  const allUsers = await db.execute(sql`SELECT * FROM users`)
-  const users = allUsers.rows
+  const allUsers = await db`SELECT * FROM users`
 
-  const teamA = users.filter(u => normalizePhone(u.upline1) === phone)
+  const teamA = allUsers.filter(u => normalizePhone(u.upline1) === phone)
   const teamAPhones = new Set(teamA.map(u => u.phone))
-  const teamB = users.filter(u => teamAPhones.has(normalizePhone(u.upline1)))
+  const teamB = allUsers.filter(u => teamAPhones.has(normalizePhone(u.upline1)))
   const teamBPhones = new Set(teamB.map(u => u.phone))
-  const teamC = users.filter(u => teamBPhones.has(normalizePhone(u.upline1)))
+  const teamC = allUsers.filter(u => teamBPhones.has(normalizePhone(u.upline1)))
 
   return { teamA, teamB, teamC }
 }
@@ -116,17 +114,17 @@ async function buildTeams(phone) {
 async function requireAuth(request, phone) {
   const token = request.headers.get('x-session-token')
   if (!token ||!phone) return false
-  const result = await db.execute(sql`SELECT phone FROM sessions WHERE token = ${token} LIMIT 1`)
-  return result.rows[0]?.phone === phone
+  const result = await db`SELECT phone FROM sessions WHERE token = ${token} LIMIT 1`
+  return result[0]?.phone === phone
 }
 
 async function createSession(phone) {
   const token = crypto.randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-  await db.execute(sql`
+  await db`
     INSERT INTO sessions (token, phone, expires_at)
     VALUES (${token}, ${phone}, ${expiresAt})
-  `)
+  `
   return token
 }
 
@@ -173,7 +171,7 @@ export async function GET(request) {
         }
       }
 
-      await db.execute(sql`
+      await db`
         INSERT INTO users (
           phone, username, password, upline1, upline2, upline3,
           referral_paid, vip, balance, available_balance,
@@ -185,7 +183,7 @@ export async function GET(request) {
           'false', 0, 2500, 2500, 0, 0, 0,
           'false', 0, ${getISOTimestamp()}
         )
-      `)
+      `
 
       const token = await createSession(phone)
       return NextResponse.json({ success: true, message: 'User registered', token })
@@ -227,8 +225,8 @@ export async function GET(request) {
       const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-       .filter(t => t.type === 'referral_reward' && t.status === 'success')
-       .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+      .filter(t => t.type === 'referral_reward' && t.status === 'success')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
       const balance = Number(user.balance || 0)
 
       return NextResponse.json({
@@ -334,10 +332,10 @@ export async function POST(request) {
       }
 
       await pushTransaction(phone, tx)
-      await db.execute(sql`
+      await db`
         INSERT INTO admin_deposits (id, admin_phone, data, status)
         VALUES (${txId}, ${ADMIN_PHONE}, ${JSON.stringify(tx)}, 'pending')
-      `)
+      `
 
       return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending admin approval.' })
     }
@@ -350,10 +348,10 @@ export async function POST(request) {
         return NextResponse.json({ success: false, message: 'Transaction ID required' }, { status: 400 })
       }
 
-      const deposit = await db.execute(sql`
+      const deposit = await db`
         SELECT * FROM admin_deposits WHERE id = ${txId} AND status = 'pending' LIMIT 1
-      `)
-      const tx = deposit.rows[0]
+      `
+      const tx = deposit[0]
       if (!tx) {
         return NextResponse.json({ success: false, message: 'Deposit not found' }, { status: 404 })
       }
@@ -366,12 +364,8 @@ export async function POST(request) {
       }
 
       await addBalance(targetPhone, Number(txData.amount))
-      await db.execute(sql`
-        UPDATE admin_deposits SET status = 'success' WHERE id = ${txId}
-      `)
-      await db.execute(sql`
-        UPDATE transactions SET status = 'success' WHERE id = ${txId}
-      `)
+      await db`UPDATE admin_deposits SET status = 'success' WHERE id = ${txId}`
+      await db`UPDATE transactions SET status = 'success' WHERE id = ${txId}`
 
       return NextResponse.json({ success: true, message: 'Deposit confirmed' })
     }
@@ -444,10 +438,9 @@ export async function POST(request) {
 
       await addBalance(phone, -upgradeCost)
 
-      // Set first_vip_amount only on first purchase
       const firstVipAmount = currentPricePaid === 0? newPrice : user.first_vip_amount
 
-      await db.execute(sql`
+      await db`
         UPDATE users SET
           vip = ${vipLevelNum},
           vip_price_paid = ${newPrice},
@@ -456,7 +449,7 @@ export async function POST(request) {
           tasks_completed = 0,
           hasBoughtVIP = 1
         WHERE phone = ${phone}
-      `)
+      `
 
       const timestamp = getISOTimestamp()
 
@@ -482,13 +475,11 @@ export async function POST(request) {
         phone: phone
       })
 
-      // Pay referral rewards only on first VIP purchase - 5%, 2%, 1%
       if (currentVip === 0 && user.referral_paid!== 'true') {
         const paidPrice = Number(firstVipAmount)
         const rates = REWARD_TABLE[vipLevelNum]
 
         if (rates && paidPrice > 0) {
-          // Team A - upline1
           if (user.upline1 && user.upline1!== phone) {
             const rewardA = Math.floor(paidPrice * rates.A)
             if (rewardA > 0) {
@@ -505,7 +496,6 @@ export async function POST(request) {
             }
           }
 
-          // Team B - upline2
           if (user.upline2 && user.upline2!== phone) {
             const rewardB = Math.floor(paidPrice * rates.B)
             if (rewardB > 0) {
@@ -522,7 +512,6 @@ export async function POST(request) {
             }
           }
 
-          // Team C - upline3
           if (user.upline3 && user.upline3!== phone) {
             const rewardC = Math.floor(paidPrice * rates.C)
             if (rewardC > 0) {
@@ -540,7 +529,7 @@ export async function POST(request) {
           }
         }
 
-        await db.execute(sql`UPDATE users SET referral_paid = 'true' WHERE phone = ${phone}`)
+        await db`UPDATE users SET referral_paid = 'true' WHERE phone = ${phone}`
       }
 
       let freshUser = await getUserData(phone)
@@ -554,19 +543,19 @@ export async function POST(request) {
     if (action === 'updateProfile') {
       if (field === 'nickname') {
         if (value.length > 6) return NextResponse.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
-        await db.execute(sql`UPDATE users SET nickname = ${value} WHERE phone = ${phone}`)
+        await db`UPDATE users SET nickname = ${value} WHERE phone = ${phone}`
         return NextResponse.json({ success: true, message: 'Nickname saved' })
       }
       if (field === 'bankMTN') {
-        await db.execute(sql`UPDATE users SET bank_mtn = ${JSON.stringify(value)} WHERE phone = ${phone}`)
+        await db`UPDATE users SET bank_mtn = ${JSON.stringify(value)} WHERE phone = ${phone}`
         return NextResponse.json({ success: true, message: 'MTN bank saved' })
       }
       if (field === 'bankAirtel') {
-        await db.execute(sql`UPDATE users SET bank_airtel = ${JSON.stringify(value)} WHERE phone = ${phone}`)
+        await db`UPDATE users SET bank_airtel = ${JSON.stringify(value)} WHERE phone = ${phone}`
         return NextResponse.json({ success: true, message: 'Airtel bank saved' })
       }
       if (field === 'avatar') {
-        await db.execute(sql`UPDATE users SET avatar = ${value} WHERE phone = ${phone}`)
+        await db`UPDATE users SET avatar = ${value} WHERE phone = ${phone}`
         return NextResponse.json({ success: true, message: 'Avatar updated' })
       }
     }
@@ -578,7 +567,7 @@ export async function POST(request) {
       if (newPass.length < 6) {
         return NextResponse.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
       }
-      await db.execute(sql`UPDATE users SET password = ${newPass} WHERE phone = ${phone}`)
+      await db`UPDATE users SET password = ${newPass} WHERE phone = ${phone}`
       return NextResponse.json({ success: true, message: 'Password changed' })
     }
 

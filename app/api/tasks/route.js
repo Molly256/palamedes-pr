@@ -24,7 +24,7 @@ function getUGDateStr(date = new Date()) {
 
 async function getBooksData() {
   const baseUrl = process.env.VERCEL_URL
-   ? `https://${process.env.VERCEL_URL}`
+  ? `https://${process.env.VERCEL_URL}`
     : 'http://localhost:3000'
 
   const res = await fetch(`${baseUrl}/data/books.json`, { cache: 'no-store' })
@@ -48,17 +48,13 @@ export async function GET(req) {
     const today = getUGDateStr()
 
     // Get task status, user data + books in parallel
-    const [taskRes, userRes, booksData] = await Promise.all([
-      db.execute(
-        'SELECT bookId, status FROM daily_tasks WHERE phone =? AND date =?',
-        [phone, today]
-      ),
-      db.execute('SELECT * FROM users WHERE phone =?', [phone]),
+    const [tasks, userRes, booksData] = await Promise.all([
+      db`SELECT bookId, status FROM daily_tasks WHERE phone = ${phone} AND date = ${today}`,
+      db`SELECT * FROM users WHERE phone = ${phone}`,
       getBooksData()
     ])
 
-    const tasks = taskRes.rows
-    const user = userRes.rows[0] || null
+    const user = userRes[0] || null
 
     if (!tasks.length) {
       return NextResponse.json({ success: true, books: [], user, date: today })

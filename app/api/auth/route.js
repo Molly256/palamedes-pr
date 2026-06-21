@@ -39,10 +39,7 @@ function normalizeUser(user) {
 }
 
 async function syncBalanceFields(phone, amount) {
-  await db.execute(
-    'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
-    [amount, amount, phone]
-  )
+  await db`UPDATE users SET balance = ${amount}, available_balance = ${amount} WHERE phone = ${phone}`
 }
 
 export async function POST(request) {
@@ -68,13 +65,13 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Password must be 6 letters or digits' })
       }
 
-      const existingUser = await db.execute('SELECT phone FROM users WHERE phone =?', [phone])
-      if (existingUser.rows.length > 0) {
+      const existingUser = await db`SELECT phone FROM users WHERE phone = ${phone}`
+      if (existingUser.length > 0) {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
 
-      const existingUsername = await db.execute('SELECT id FROM users WHERE username =?', [username])
-      if (existingUsername.rows.length > 0) {
+      const existingUsername = await db`SELECT id FROM users WHERE username = ${username}`
+      if (existingUsername.length > 0) {
         return Response.json({ success: false, message: 'Username taken' })
       }
 
@@ -83,11 +80,11 @@ export async function POST(request) {
         if (!isValidInviteCode(referral)) {
           return Response.json({ success: false, message: 'Invalid referral code format' })
         }
-        const refRes = await db.execute('SELECT phone FROM users WHERE invite_code =?', [referral])
-        if (refRes.rows.length === 0) {
+        const refRes = await db`SELECT phone FROM users WHERE invite_code = ${referral}`
+        if (refRes.length === 0) {
           return Response.json({ success: false, message: 'Referral code not found' })
         }
-        invited_by = refRes.rows[0].phone
+        invited_by = refRes[0].phone
         if (invited_by === phone) {
           return Response.json({ success: false, message: 'Cannot use your own referral code' })
         }
@@ -96,14 +93,17 @@ export async function POST(request) {
       const invite_code = getUserInviteCode(phone)
       const created_at = getUGDateStr()
 
-      await db.execute(
-        `INSERT INTO users (
+      await db`
+        INSERT INTO users (
           username, phone, password, invite_code, invited_by,
           balance, available_balance, created_at,
           hasBoughtVIP, vip_level, vip_deposit, first_vip_amount, vip_paid
-        ) VALUES (?,?, 2500, 2500,?, 0, 0, 0, 0, 0)`,
-        [username, phone, password, invite_code, invited_by, created_at]
-      )
+        ) VALUES (
+          ${username}, ${phone}, ${password}, ${invite_code}, ${invited_by},
+          2500, 2500, ${created_at},
+          0, 0, 0, 0, 0
+        )
+      `
 
       return Response.json({
         success: true,
@@ -118,8 +118,8 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      const res = await db.execute('SELECT * FROM users WHERE phone =?', [phone])
-      const user = res.rows[0]
+      const res = await db`SELECT * FROM users WHERE phone = ${phone}`
+      const user = res[0]
 
       if (!user) {
         return Response.json({ success: false, message: 'User not found' })

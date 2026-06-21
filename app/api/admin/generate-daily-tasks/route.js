@@ -35,16 +35,15 @@ export async function POST(request) {
     const today = getTodayDate()
 
     // Get users with hasBoughtVIP=true AND no daily_tasks for today
-    const usersRes = await db.execute(`
+    const users = await db`
       SELECT u.phone, u.vip
       FROM users u
-      LEFT JOIN daily_tasks dt ON u.phone = dt.phone AND dt.date =?
+      LEFT JOIN daily_tasks dt ON u.phone = dt.phone AND dt.date = ${today}
       WHERE u.hasBoughtVIP = 'true'
         AND u.vip > 0
         AND dt.phone IS NULL
-    `, [today])
+    `
 
-    const users = usersRes.rows
     if (users.length === 0) {
       return NextResponse.json({
         success: true,
@@ -61,26 +60,28 @@ export async function POST(request) {
       if (!config) continue
 
       for (let i = 0; i < config.tasks; i++) {
-        tasksToInsert.push([
-          generateId(),
-          user.phone,
-          vipLevel,
-          config.perBook,
-          'pending', // status
-          today,
-          JSON.stringify({ bookIndex: i + 1 }),
-          new Date().toISOString()
-        ])
+        tasksToInsert.push({
+          id: generateId(),
+          phone: user.phone,
+          vip_level: vipLevel,
+          reward: config.perBook,
+          status: 'pending',
+          date: today,
+          meta: JSON.stringify({ bookIndex: i + 1 }),
+          created_at: new Date().toISOString()
+        })
       }
       totalTasks += config.tasks
     }
 
     if (tasksToInsert.length > 0) {
-      const placeholders = tasksToInsert.map(() => '(?,?,?,?,?,?,?,?)').join(',')
-      await db.execute(
-        `INSERT INTO daily_tasks (id, phone, vip_level, reward, status, date, meta, created_at)
-         VALUES ${placeholders}`,
-        tasksToInsert.flat()
+      // Neon doesn't support bulk INSERT with array of arrays directly
+      // Use Promise.all for batch insert
+      await Promise.all(
+        tasksToInsert.map(t => db`
+          INSERT INTO daily_tasks (id, phone, vip_level, reward, status, date, meta, created_at)
+          VALUES (${t.id}, ${t.phone}, ${t.vip_level}, ${t.reward}, ${t.status}, ${t.date}, ${t.meta}, ${t.created_at})
+        `)
       )
     }
 

@@ -56,8 +56,8 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
     }
 
-    const userRes = await db.execute('SELECT * FROM users WHERE phone =?', [normalizedPhone])
-    const user = userRes.rows[0]
+    const userRes = await db`SELECT * FROM users WHERE phone = ${normalizedPhone}`
+    const user = userRes[0]
     if (!user) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
@@ -65,11 +65,11 @@ export async function POST(request) {
     const vipLevel = Number(user.vip) || Number(user.vip_level) || 0
     const reward = VIP_CONFIG[vipLevel]?.perBook || 0
 
-    const taskRes = await db.execute(
-      'SELECT status FROM daily_tasks WHERE phone =? AND date =? AND bookId =?',
-      [normalizedPhone, today, String(bookId)]
-    )
-    const task = taskRes.rows[0]
+    const taskRes = await db`
+      SELECT status FROM daily_tasks
+      WHERE phone = ${normalizedPhone} AND date = ${today} AND bookId = ${String(bookId)}
+    `
+    const task = taskRes[0]
 
     if (!task) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
@@ -79,7 +79,6 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
     }
 
-    // Only allow submit if still pending
     if (task.status!== 'pending') {
       return NextResponse.json({ success: false, message: 'Invalid task status' }, { status: 400 })
     }
@@ -89,46 +88,49 @@ export async function POST(request) {
 
     await db.transaction(async (tx) => {
       // Mark as submitted
-      await tx.execute(
-        'UPDATE daily_tasks SET status =? WHERE phone =? AND date =? AND bookId =?',
-        ['submitted', normalizedPhone, today, String(bookId)]
-      )
+      await tx`
+        UPDATE daily_tasks
+        SET status = 'submitted'
+        WHERE phone = ${normalizedPhone} AND date = ${today} AND bookId = ${String(bookId)}
+      `
 
       // Update balance
-      await tx.execute(
-        'UPDATE users SET balance =?, available_balance =? WHERE phone =?',
-        [String(newBalance), String(newBalance), normalizedPhone]
-      )
+      await tx`
+        UPDATE users
+        SET balance = ${String(newBalance)}, available_balance = ${String(newBalance)}
+        WHERE phone = ${normalizedPhone}
+      `
 
       // Log transaction
-      await tx.execute(
-        `INSERT INTO transactions(id, phone, type, amount, date, status, desc)
-         VALUES (?,?,?,?,?,?,?)`,
-        [
-          String(Date.now()),
-          normalizedPhone,
+      await tx`
+        INSERT INTO transactions(id, phone, type, amount, date, status, desc)
+        VALUES (
+          ${String(Date.now())},
+          ${normalizedPhone},
           'daily_income',
-          reward,
-          new Date().toISOString(),
+          ${reward},
+          ${new Date().toISOString()},
           'success',
-          `Book ${bookId} completed`
-        ]
-      )
+          ${`Book ${bookId} completed`}
+        )
+      `
 
       // Check if all tasks done for today
-      const allTasksRes = await tx.execute(
-        'SELECT status FROM daily_tasks WHERE phone =? AND date =?',
-        [normalizedPhone, today]
-      )
-      const allTasks = allTasksRes.rows
+      const allTasksRes = await tx`
+        SELECT status FROM daily_tasks
+        WHERE phone = ${normalizedPhone} AND date = ${today}
+      `
+
+      const allTasks = allTasksRes
       const totalTasks = allTasks.length
       const doneTasks = allTasks.filter(t => t.status === 'submitted').length
 
       if (doneTasks >= totalTasks && totalTasks > 0) {
-        await tx.execute(
-          'UPDATE users SET tasksCompleted =?, vipLocked =? WHERE phone =?',
-          [String(totalTasks), 'true', normalizedPhone]
-        )
+        await tx`
+          UPDATE users
+          SET tasksCompleted = ${String(totalTasks)}, vipLocked = 'true'
+          WHERE phone = ${normalizedPhone}
+        `
       }
     })
 
