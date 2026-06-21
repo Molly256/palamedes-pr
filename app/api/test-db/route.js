@@ -5,6 +5,9 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET() {
+  console.log('DB URL loaded:',!!process.env.DATABASE_URL)
+  console.log('DB URL length:', process.env.DATABASE_URL?.length || 0)
+
   try {
     const result = await db`SELECT 1 as ok, NOW() as time`
     return NextResponse.json({
