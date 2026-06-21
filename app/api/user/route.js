@@ -18,6 +18,20 @@ const VIP_CONFIG = {
  10: { price: 8000000, books: 5, perBook: 60000 },
 }
 
+// 5% Team A, 2% Team B, 1% Team C for all VIP levels
+const REWARD_TABLE = {
+ 1: { A: 0.05, B: 0.02, C: 0.01 },
+ 2: { A: 0.05, B: 0.02, C: 0.01 },
+ 3: { A: 0.05, B: 0.02, C: 0.01 },
+ 4: { A: 0.05, B: 0.02, C: 0.01 },
+ 5: { A: 0.05, B: 0.02, C: 0.01 },
+ 6: { A: 0.05, B: 0.02, C: 0.01 },
+ 7: { A: 0.05, B: 0.02, C: 0.01 },
+ 8: { A: 0.05, B: 0.02, C: 0.01 },
+ 9: { A: 0.05, B: 0.02, C: 0.01 },
+ 10: { A: 0.05, B: 0.02, C: 0.01 }
+}
+
 const ADMIN_PHONE = '0753520252'
 
 function normalizePhone(phone) {
@@ -147,18 +161,30 @@ export async function GET(request) {
       }
 
       let upline1 = null
+      let upline2 = null
+      let upline3 = null
       if (inviteCode) {
         const inviterPhone = normalizePhone(inviteCode.replace('PM', ''))
         const { user: inviter } = await getUserData(inviterPhone)
-        if (inviter) upline1 = inviterPhone
+        if (inviter) {
+          upline1 = inviterPhone
+          upline2 = inviter.upline1 || null
+          upline3 = inviter.upline2 || null
+        }
       }
 
       await db.execute(sql`
-        INSERT INTO users (phone, username, password, upline1, upline2, upline3, referral_paid, vip,
-                          balance, available_balance, vip_price_paid, tasks_completed, vip_locked,
-                          has_bought_vip, created_at)
-        VALUES (${phone}, ${username}, ${password}, ${upline1}, null, null, 'false', 0, 0, 0, 0, 0, 'false',
-                'false', ${getISOTimestamp()})
+        INSERT INTO users (
+          phone, username, password, upline1, upline2, upline3,
+          referral_paid, vip, balance, available_balance,
+          vip_price_paid, first_vip_amount, tasks_completed,
+          vip_locked, hasBoughtVIP, created_at
+        )
+        VALUES (
+          ${phone}, ${username}, ${password}, ${upline1}, ${upline2}, ${upline3},
+          'false', 0, 2500, 2500, 0, 0, 0,
+          'false', 0, ${getISOTimestamp()}
+        )
       `)
 
       const token = await createSession(phone)
@@ -201,9 +227,9 @@ export async function GET(request) {
       const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-     .filter(t => t.type === 'referral_reward' && t.status === 'success')
-     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
-      const balance = Number(user.balance || user.available_balance || 0)
+       .filter(t => t.type === 'referral_reward' && t.status === 'success')
+       .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+      const balance = Number(user.balance || 0)
 
       return NextResponse.json({
         success: true,
@@ -216,13 +242,13 @@ export async function GET(request) {
           avatar: user.avatar || '',
           nickname: user.nickname || '',
           vipLocked: user.vip_locked === 'true',
-          hasBoughtVIP: user.has_bought_vip === 'true',
+          hasBoughtVIP: user.hasBoughtVIP === 1,
           tasksCompleted: Number(user.tasks_completed) || 0,
           vipPricePaid: Number(user.vip_price_paid) || 0,
+          firstVipAmount: Number(user.first_vip_amount) || 0,
           bankMTN: user.bank_mtn? JSON.parse(user.bank_mtn) : null,
           bankAirtel: user.bank_airtel? JSON.parse(user.bank_airtel) : null,
-          referralPaid: user.referral_paid || 'false',
-          vip_commission_paid: user.vip_commission_paid || 'false',
+          referralPaid: user.referral_paid === 'true',
           upline1: user.upline1 || '',
           upline2: user.upline2 || '',
           upline3: user.upline3 || '',
@@ -240,7 +266,7 @@ export async function GET(request) {
       })
     }
 
-    const balance = Number(user.balance || user.available_balance || 0)
+    const balance = Number(user.balance || 0)
     return NextResponse.json({
       success: true,
       user: {
@@ -254,11 +280,11 @@ export async function GET(request) {
         bankMTN: user.bank_mtn? JSON.parse(user.bank_mtn) : null,
         bankAirtel: user.bank_airtel? JSON.parse(user.bank_airtel) : null,
         vipLocked: user.vip_locked === 'true',
-        hasBoughtVIP: user.has_bought_vip === 'true',
+        hasBoughtVIP: user.hasBoughtVIP === 1,
         tasksCompleted: Number(user.tasks_completed) || 0,
         vipPricePaid: Number(user.vip_price_paid) || 0,
-        referralPaid: user.referral_paid || 'false',
-        vip_commission_paid: user.vip_commission_paid || 'false',
+        firstVipAmount: Number(user.first_vip_amount) || 0,
+        referralPaid: user.referral_paid === 'true',
         upline1: user.upline1 || '',
         upline2: user.upline2 || '',
         upline3: user.upline3 || '',
@@ -274,7 +300,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    let { action, phone, field, value, oldPass, newPass, number, method, names, amount, txId, adminPhone } = body
+    let { action, phone, field, value, oldPass, newPass, number, method, names, amount, txId, adminPhone, vipLevel } = body
 
     phone = normalizePhone(phone)
     adminPhone = normalizePhone(adminPhone)
@@ -360,7 +386,7 @@ export async function POST(request) {
       }
 
       const amount = Number(value)
-      const balance = Number(user.balance || user.available_balance || 0)
+      const balance = Number(user.balance || 0)
       if (!amount || amount <= 0) {
         return NextResponse.json({ success: false, message: 'Invalid withdraw amount' }, { status: 400 })
       }
@@ -401,15 +427,15 @@ export async function POST(request) {
     if (action === 'buyvip') {
       const currentVip = Number(user.vip) || 0
       const currentPricePaid = Number(user.vip_price_paid) || 0
-      const vipLevel = Number(body.vipLevel)
-      const config = VIP_CONFIG[vipLevel]
+      const vipLevelNum = Number(vipLevel)
+      const config = VIP_CONFIG[vipLevelNum]
       if (!config) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
-      if (vipLevel <= currentVip) {
+      if (vipLevelNum <= currentVip) {
         return NextResponse.json({ success: false, message: 'Cannot downgrade VIP' }, { status: 400 })
       }
 
       const newPrice = Number(config.price)
-      const balance = Number(user.balance || user.available_balance || 0)
+      const balance = Number(user.balance || 0)
       const upgradeCost = newPrice - currentPricePaid
 
       if (balance < upgradeCost) {
@@ -417,13 +443,18 @@ export async function POST(request) {
       }
 
       await addBalance(phone, -upgradeCost)
+
+      // Set first_vip_amount only on first purchase
+      const firstVipAmount = currentPricePaid === 0? newPrice : user.first_vip_amount
+
       await db.execute(sql`
         UPDATE users SET
-          vip = ${vipLevel},
+          vip = ${vipLevelNum},
           vip_price_paid = ${newPrice},
+          first_vip_amount = ${firstVipAmount},
           vip_locked = 'false',
           tasks_completed = 0,
-          has_bought_vip = 'true'
+          hasBoughtVIP = 1
         WHERE phone = ${phone}
       `)
 
@@ -436,7 +467,7 @@ export async function POST(request) {
           amount: currentPricePaid,
           created_at: timestamp,
           status: 'success',
-          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevel}`,
+          desc: `Refund VIP${currentVip} on upgrade to VIP${vipLevelNum}`,
           phone: phone
         })
       }
@@ -447,17 +478,19 @@ export async function POST(request) {
         amount: -newPrice,
         created_at: timestamp,
         status: 'success',
-        desc: `Bought VIP${vipLevel}`,
+        desc: `Bought VIP${vipLevelNum}`,
         phone: phone
       })
 
+      // Pay referral rewards only on first VIP purchase - 5%, 2%, 1%
       if (currentVip === 0 && user.referral_paid!== 'true') {
-        const paidPrice = Number(config.price)
+        const paidPrice = Number(firstVipAmount)
+        const rates = REWARD_TABLE[vipLevelNum]
 
-        if (user.upline1 && user.upline1!== phone) {
-          const { user: upline1 } = await getUserData(user.upline1)
-          if (upline1) {
-            const rewardA = Math.floor(paidPrice * 0.05)
+        if (rates && paidPrice > 0) {
+          // Team A - upline1
+          if (user.upline1 && user.upline1!== phone) {
+            const rewardA = Math.floor(paidPrice * rates.A)
             if (rewardA > 0) {
               await addBalance(user.upline1, rewardA)
               await pushTransaction(user.upline1, {
@@ -466,8 +499,42 @@ export async function POST(request) {
                 amount: rewardA,
                 created_at: timestamp,
                 status: 'success',
-                desc: `Team A reward from ${user.username || phone} buying VIP${vipLevel}`,
+                desc: `Team A 5% from ${user.username || phone} buying VIP${vipLevelNum}`,
                 phone: user.upline1
+              })
+            }
+          }
+
+          // Team B - upline2
+          if (user.upline2 && user.upline2!== phone) {
+            const rewardB = Math.floor(paidPrice * rates.B)
+            if (rewardB > 0) {
+              await addBalance(user.upline2, rewardB)
+              await pushTransaction(user.upline2, {
+                id: generateId(),
+                type: 'referral_reward',
+                amount: rewardB,
+                created_at: timestamp,
+                status: 'success',
+                desc: `Team B 2% from ${user.username || phone} buying VIP${vipLevelNum}`,
+                phone: user.upline2
+              })
+            }
+          }
+
+          // Team C - upline3
+          if (user.upline3 && user.upline3!== phone) {
+            const rewardC = Math.floor(paidPrice * rates.C)
+            if (rewardC > 0) {
+              await addBalance(user.upline3, rewardC)
+              await pushTransaction(user.upline3, {
+                id: generateId(),
+                type: 'referral_reward',
+                amount: rewardC,
+                created_at: timestamp,
+                status: 'success',
+                desc: `Team C 1% from ${user.username || phone} buying VIP${vipLevelNum}`,
+                phone: user.upline3
               })
             }
           }
@@ -480,7 +547,7 @@ export async function POST(request) {
       return NextResponse.json({
         success: true,
         user: freshUser.user,
-        message: `VIP${vipLevel} activated! Paid ${upgradeCost}shs`
+        message: `VIP${vipLevelNum} activated! Paid ${upgradeCost}shs`
       })
     }
 
