@@ -1,6 +1,5 @@
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 const redis = Redis.fromEnv()
@@ -31,7 +30,7 @@ const REWARD_TABLE = {
  10: { A: 0.05, B: 0.02, C: 0.01 }
 }
 
-const ADMIN_PHONE = '0753520252'
+const ADMIN_PHONE = process.env.ADMIN_PHONE
 
 function normalizePhone(phone) {
   if (!phone) return null
@@ -48,7 +47,7 @@ function getISOTimestamp() {
 }
 
 function generateId() {
-  return `${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
 function isWithdrawOpen() {
@@ -79,7 +78,13 @@ async function addBalance(phone, amount) {
 async function getTransactions(phone) {
   if (!phone) return []
   const txList = await redis.lrange(`tx:${phone}`, 0, 999)
-  return txList.map(t => JSON.parse(t))
+  return txList.map(t => {
+    try {
+      return JSON.parse(t)
+    } catch {
+      return null
+    }
+  }).filter(Boolean)
 }
 
 async function pushTransaction(phone, tx) {
@@ -186,6 +191,7 @@ export async function GET(request) {
       if (type!== 'all') {
         filtered = transactions.filter(t => t.type === type)
       }
+      filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       return NextResponse.json({ success: true, transactions: filtered })
     }
 
@@ -196,8 +202,8 @@ export async function GET(request) {
       const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-     .filter(t => t.type === 'referral_reward' && t.status === 'success')
-     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+    .filter(t => t.type === 'referral_reward' && t.status === 'success')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
       const balance = Number(user.balance || 0)
 
       return NextResponse.json({
@@ -325,7 +331,7 @@ export async function POST(request) {
       }
 
       const txData = JSON.parse(deposit.data)
-      const targetPhone = txData.userPhone
+      const targetPhone = normalizePhone(txData.userPhone)
 
       await addBalance(targetPhone, Number(txData.amount))
       await redis.hset(`admin_deposit:${txId}`, { status: 'success' })
@@ -360,7 +366,7 @@ export async function POST(request) {
       await redis.hset(`admin_deposit:${txId}`, { status: 'rejected' })
 
       const txData = JSON.parse(deposit.data)
-      const targetPhone = txData.userPhone
+      const targetPhone = normalizePhone(txData.userPhone)
 
       const txList = await redis.lrange(`tx:${targetPhone}`, 0, 999)
       for (let i = 0; i < txList.length; i++) {
@@ -446,7 +452,7 @@ export async function POST(request) {
       }
 
       const txData = JSON.parse(withdraw.data)
-      const targetPhone = txData.phone
+      const targetPhone = normalizePhone(txData.phone)
 
       await redis.hset(`admin_withdraw:${txId}`, { status: 'success' })
 
@@ -478,10 +484,9 @@ export async function POST(request) {
       }
 
       const txData = JSON.parse(withdraw.data)
-      const targetPhone = txData.phone
+      const targetPhone = normalizePhone(txData.phone)
       const refundAmount = Math.abs(Number(txData.amount))
 
-      // Refund money back to user
       await addBalance(targetPhone, refundAmount)
       await redis.hset(`admin_withdraw:${txId}`, { status: 'rejected' })
 
