@@ -1,8 +1,8 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
-
+const redis = Redis.fromEnv()
 const TZ = 'Africa/Kampala'
 
 const VIP_CONFIG = {
@@ -24,15 +24,13 @@ function getUGDateStr(date = new Date()) {
 
 async function getBooksData() {
   const baseUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
+    ? `https://${process.env.VERCEL_URL}`
     : 'http://localhost:3000'
 
   const res = await fetch(`${baseUrl}/data/books.json`, { cache: 'no-store' })
-
   if (!res.ok) {
     throw new Error(`Failed to fetch books.json: ${res.status}`)
   }
-
   return res.json()
 }
 
@@ -47,18 +45,21 @@ export async function GET(req) {
 
     const today = getUGDateStr()
 
-    // Get task status, user data + books in parallel
-    const [tasks, userRes, booksData] = await Promise.all([
-      db`SELECT bookId, status FROM daily_tasks WHERE phone = ${phone} AND date = ${today}`,
-      db`SELECT * FROM users WHERE phone = ${phone}`,
+    // Get task IDs, user data + books in parallel
+    const [taskIds, user, booksData] = await Promise.all([
+      redis.smembers(`tasks:${phone}:${today}`),
+      redis.hgetall(`user:${phone}`),
       getBooksData()
     ])
 
-    const user = userRes[0] || null
-
-    if (!tasks.length) {
-      return NextResponse.json({ success: true, books: [], user, date: today })
+    if (!taskIds.length) {
+      return NextResponse.json({ success: true, books: [], user: user || null, date: today })
     }
+
+    // Get all task statuses
+    const tasks = await Promise.all(
+      taskIds.map(id => redis.hgetall(`task:${phone}:${today}:${id}`))
+    )
 
     // Get user VIP level for reward amount
     const vip = Number(user?.vip) || Number(user?.vip_level) || 0
@@ -71,7 +72,9 @@ export async function GET(req) {
     }, {})
 
     // Merge book IDs with full book data
-    const books = tasks.map(({ bookId, status }) => {
+    const books = tasks.map((task) => {
+      const bookId = task.bookId
+      const status = task.status
       const book = booksMap[bookId]
 
       if (!book) {
@@ -101,7 +104,7 @@ export async function GET(req) {
     return NextResponse.json({
       success: true,
       books,
-      user,
+      user: user || null,
       date: today
     })
 

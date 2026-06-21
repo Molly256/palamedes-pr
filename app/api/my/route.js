@@ -1,6 +1,7 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
+const redis = Redis.fromEnv()
 const TZ = 'Africa/Kampala'
 
 function normalizePhone(phone) {
@@ -15,22 +16,25 @@ function normalizePhone(phone) {
 }
 
 async function getUserData(phone) {
-  const res = await db`SELECT * FROM users WHERE phone = ${phone}`
-  const user = res[0] || null
-  return { user }
+  const user = await redis.hgetall(`user:${phone}`)
+  return { user: user && Object.keys(user).length > 0 ? user : null }
 }
 
 async function getVipPurchaseInfo(phone) {
-  const res = await db`
-    SELECT date, amount FROM transactions
-    WHERE phone = ${phone} AND (type = 'viptask_purchase' OR type = 'vip_purchase')
-    ORDER BY date DESC LIMIT 1
-  `
+  const txList = await redis.lrange(`tx:${phone}`, 0, 99) // check last 100 tx
+  let latestVipTx = null
 
-  const tx = res[0]
+  for (const txStr of txList) {
+    const tx = JSON.parse(txStr)
+    if (tx.type === 'viptask_purchase' || tx.type === 'vip_purchase') {
+      latestVipTx = tx
+      break
+    }
+  }
+
   return {
-    date: tx?.date || null,
-    amount: Number(tx?.amount) || 0
+    date: latestVipTx?.date || null,
+    amount: Number(latestVipTx?.amount) || 0
   }
 }
 

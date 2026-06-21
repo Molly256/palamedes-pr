@@ -1,6 +1,7 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
+const redis = Redis.fromEnv()
 const ADMIN_PHONES = ['0753520252']
 
 function normalizePhone(phone) {
@@ -23,9 +24,8 @@ async function verifyAdmin(phone) {
 }
 
 async function getUserData(phone) {
-  const res = await db`SELECT * FROM users WHERE phone = ${phone}`
-  const user = res[0] || null
-  return user
+  const user = await redis.hgetall(`user:${phone}`)
+  return user && Object.keys(user).length > 0? user : null
 }
 
 export async function GET(request) {
@@ -39,21 +39,27 @@ export async function GET(request) {
     }
 
     if (action === 'pending') {
-      const res = await db`
-        SELECT t.*, u.balance, u.available_balance
-        FROM transactions t
-        JOIN users u ON t.phone = u.phone
-        WHERE t.status = 'pending'
-        ORDER BY t.date ASC
-      `
-
+      const allPhones = await redis.smembers('users:phones')
       const deposits = []
       const withdraws = []
 
-      for (const tx of res) {
-        if (tx.type === 'deposit') deposits.push(tx)
-        if (tx.type === 'withdraw') withdraws.push(tx)
+      for (const p of allPhones) {
+        const txList = await redis.lrange(`tx:${p}`, 0, 999)
+        for (const txStr of txList) {
+          const tx = JSON.parse(txStr)
+          if (tx.status === 'pending') {
+            const user = await redis.hgetall(`user:${p}`)
+            tx.balance = user.balance
+            tx.available_balance = user.available_balance
+
+            if (tx.type === 'deposit') deposits.push(tx)
+            if (tx.type === 'withdraw') withdraws.push(tx)
+          }
+        }
       }
+
+      deposits.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      withdraws.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
 
       return NextResponse.json({ success: true, deposits, withdraws })
     }
@@ -92,57 +98,54 @@ export async function POST(request) {
       const user = await getUserData(targetPhoneNorm)
       if (!user) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
 
-      await db`UPDATE users SET password = ${newPassword} WHERE phone = ${targetPhoneNorm}`
+      await redis.hset(`user:${targetPhoneNorm}`, { password: newPassword })
       return NextResponse.json({ success: true, message: 'Password reset successfully' })
     }
 
     if (action === 'approve' || action === 'reject') {
       const targetPhoneNorm = normalizePhone(targetPhone)
 
-      const txRes = await db`
-        SELECT * FROM transactions
-        WHERE phone = ${targetPhoneNorm} AND id = ${txId} AND status = 'pending'
-      `
-      const tx = txRes[0]
+      const txList = await redis.lrange(`tx:${targetPhoneNorm}`, 0, 999)
+      let txIndex = -1
+      let tx = null
+
+      for (let i = 0; i < txList.length; i++) {
+        const t = JSON.parse(txList[i])
+        if (t.id === txId && t.status === 'pending') {
+          txIndex = i
+          tx = t
+          break
+        }
+      }
+
       if (!tx) return NextResponse.json({ success: false, message: 'Transaction not found or already processed' })
 
       const newStatus = action === 'approve'? 'success' : 'rejected'
+      tx.status = newStatus
 
-      await db.transaction(async (txDb) => {
-        // Update transaction status
-        await txDb`
-          UPDATE transactions
-          SET status = ${newStatus}
-          WHERE phone = ${targetPhoneNorm} AND id = ${txId}
-        `
+      await redis.lset(`tx:${targetPhoneNorm}`, txIndex, JSON.stringify(tx))
 
-        // Only update balance on approval
-        if (action === 'approve') {
-          if (type === 'deposit') {
-            await txDb`
-              UPDATE users
-              SET balance = balance + ${tx.amount}, available_balance = available_balance + ${tx.amount}
-              WHERE phone = ${targetPhoneNorm}
-            `
-          }
-
-          if (type === 'withdraw') {
-            const withdrawAmount = Math.abs(Number(tx.amount))
-            const userRes = await txDb`SELECT balance FROM users WHERE phone = ${targetPhoneNorm}`
-            const currentBalance = Number(userRes[0]?.balance || 0)
-
-            if (currentBalance < withdrawAmount) {
-              throw new Error('Insufficient balance')
-            }
-
-            await txDb`
-              UPDATE users
-              SET balance = balance - ${withdrawAmount}, available_balance = available_balance - ${withdrawAmount}
-              WHERE phone = ${targetPhoneNorm}
-            `
-          }
+      if (action === 'approve') {
+        if (type === 'deposit') {
+          const user = await redis.hgetall(`user:${targetPhoneNorm}`)
+          const current = Number(user.balance || 0)
+          const newBal = current + Number(tx.amount)
+          await redis.hset(`user:${targetPhoneNorm}`, { balance: newBal, available_balance: newBal })
         }
-      })
+
+        if (type === 'withdraw') {
+          const withdrawAmount = Math.abs(Number(tx.amount))
+          const user = await redis.hgetall(`user:${targetPhoneNorm}`)
+          const currentBalance = Number(user.balance || 0)
+
+          if (currentBalance < withdrawAmount) {
+            throw new Error('Insufficient balance')
+          }
+
+          const newBal = currentBalance - withdrawAmount
+          await redis.hset(`user:${targetPhoneNorm}`, { balance: newBal, available_balance: newBal })
+        }
+      }
 
       return NextResponse.json({ success: true, message: `Transaction ${action}d` })
     }

@@ -1,5 +1,6 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 
+const redis = Redis.fromEnv()
 const TZ = 'Africa/Kampala'
 
 function getUGDateStr(date = new Date()) {
@@ -16,18 +17,18 @@ function getUserInviteCode(phone) {
 
 function normalizeUser(user) {
   if (!user) return null
-  const bal = Number(user.balance?? user.available_balance?? 0)
+  const bal = Number(user.balance ?? user.available_balance ?? 0)
   return {
     id: user.id,
     username: user.username,
     phone: user.phone,
     balance: bal,
     available_balance: bal,
-    hasBoughtVIP: user.hasBoughtVIP === 1,
+    hasBoughtVIP: user.hasBoughtVIP === 1 || user.hasBoughtVIP === '1',
     vip_level: Number(user.vip_level) || 0,
     vip_deposit: Number(user.vip_deposit) || 0,
     first_vip_amount: Number(user.first_vip_amount) || 0,
-    vip_paid: user.vip_paid === 1,
+    vip_paid: user.vip_paid === 1 || user.vip_paid === '1',
     invite_code: user.invite_code || '',
     invited_by: user.invited_by || '',
     airtel_number: user.airtel_number || '',
@@ -39,7 +40,7 @@ function normalizeUser(user) {
 }
 
 async function syncBalanceFields(phone, amount) {
-  await db`UPDATE users SET balance = ${amount}, available_balance = ${amount} WHERE phone = ${phone}`
+  await redis.hset(`user:${phone}`, { balance: amount, available_balance: amount })
 }
 
 export async function POST(request) {
@@ -49,7 +50,7 @@ export async function POST(request) {
 
     // REGISTER
     if (action === 'register') {
-      if (!username ||!password ||!phone) {
+      if (!username || !password || !phone) {
         return Response.json({ success: false, message: 'All fields required' })
       }
 
@@ -65,14 +66,18 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Password must be 6 letters or digits' })
       }
 
-      const existingUser = await db`SELECT phone FROM users WHERE phone = ${phone}`
-      if (existingUser.length > 0) {
+      const existingUser = await redis.hgetall(`user:${phone}`)
+      if (existingUser && Object.keys(existingUser).length > 0) {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
 
-      const existingUsername = await db`SELECT id FROM users WHERE username = ${username}`
-      if (existingUsername.length > 0) {
-        return Response.json({ success: false, message: 'Username taken' })
+      // Check username uniqueness
+      const allUsers = await redis.smembers('users:phones')
+      for (const p of allUsers || []) {
+        const u = await redis.hgetall(`user:${p}`)
+        if (u.username === username) {
+          return Response.json({ success: false, message: 'Username taken' })
+        }
       }
 
       let invited_by = ''
@@ -80,11 +85,11 @@ export async function POST(request) {
         if (!isValidInviteCode(referral)) {
           return Response.json({ success: false, message: 'Invalid referral code format' })
         }
-        const refRes = await db`SELECT phone FROM users WHERE invite_code = ${referral}`
-        if (refRes.length === 0) {
+        const refPhone = await redis.get(`invite:${referral}`)
+        if (!refPhone) {
           return Response.json({ success: false, message: 'Referral code not found' })
         }
-        invited_by = refRes[0].phone
+        invited_by = refPhone
         if (invited_by === phone) {
           return Response.json({ success: false, message: 'Cannot use your own referral code' })
         }
@@ -93,17 +98,30 @@ export async function POST(request) {
       const invite_code = getUserInviteCode(phone)
       const created_at = getUGDateStr()
 
-      await db`
-        INSERT INTO users (
-          username, phone, password, invite_code, invited_by,
-          balance, available_balance, created_at,
-          hasBoughtVIP, vip_level, vip_deposit, first_vip_amount, vip_paid
-        ) VALUES (
-          ${username}, ${phone}, ${password}, ${invite_code}, ${invited_by},
-          2500, 2500, ${created_at},
-          0, 0, 0, 0, 0
-        )
-      `
+      const userData = {
+        id: phone,
+        username,
+        phone,
+        password,
+        invite_code,
+        invited_by,
+        balance: 2500,
+        available_balance: 2500,
+        created_at,
+        hasBoughtVIP: 0,
+        vip_level: 0,
+        vip_deposit: 0,
+        first_vip_amount: 0,
+        vip_paid: 0,
+        airtel_number: '',
+        airtel_name: '',
+        mtn_number: '',
+        mtn_name: ''
+      }
+
+      await redis.hset(`user:${phone}`, userData)
+      await redis.sadd('users:phones', phone)
+      await redis.set(`invite:${invite_code}`, phone)
 
       return Response.json({
         success: true,
@@ -114,23 +132,21 @@ export async function POST(request) {
 
     // LOGIN
     if (action === 'login') {
-      if (!phone ||!password) {
+      if (!phone || !password) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
-      const res = await db`SELECT * FROM users WHERE phone = ${phone}`
-      const user = res[0]
-
-      if (!user) {
+      const user = await redis.hgetall(`user:${phone}`)
+      if (!user || Object.keys(user).length === 0) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (user.password!== password) {
+      if (user.password !== password) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
-      const currentBalance = Number(user.balance?? user.available_balance?? 0)
-      if (user.balance!== currentBalance || user.available_balance!== currentBalance) {
+      const currentBalance = Number(user.balance ?? user.available_balance ?? 0)
+      if (user.balance != currentBalance || user.available_balance != currentBalance) {
         await syncBalanceFields(phone, currentBalance)
       }
 

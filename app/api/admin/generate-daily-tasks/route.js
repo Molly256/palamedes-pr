@@ -1,7 +1,8 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 
+const redis = Redis.fromEnv()
 const ADMIN_KEY = process.env.ADMIN_TASK_KEY
 
 const VIP_CONFIG = {
@@ -34,35 +35,47 @@ export async function POST(request) {
 
     const today = getTodayDate()
 
-    // Get users with hasBoughtVIP=true AND no daily_tasks for today
-    const users = await db`
-      SELECT u.phone, u.vip
-      FROM users u
-      LEFT JOIN daily_tasks dt ON u.phone = dt.phone AND dt.date = ${today}
-      WHERE u.hasBoughtVIP = 'true'
-        AND u.vip > 0
-        AND dt.phone IS NULL
-    `
+    // Get all phones with VIP
+    const allPhones = await redis.smembers('users:phones')
+    const usersNeedingTasks = []
 
-    if (users.length === 0) {
+    for (const phone of allPhones) {
+      const user = await redis.hgetall(`user:${phone}`)
+      if (!user || Object.keys(user).length === 0) continue
+
+      const hasBoughtVIP = Number(user.hasBoughtVIP) === 1
+      const vipLevel = Number(user.vip) || 0
+
+      if (!hasBoughtVIP || vipLevel === 0) continue
+
+      // Check if tasks already exist for today
+      const existingTasks = await redis.smembers(`tasks:${phone}:${today}`)
+      if (existingTasks.length === 0) {
+        usersNeedingTasks.push({ phone, vipLevel })
+      }
+    }
+
+    if (usersNeedingTasks.length === 0) {
       return NextResponse.json({
         success: true,
         message: `No users need daily tasks for ${today}. All active VIP users already have tasks.`
       })
     }
 
-    const tasksToInsert = []
     let totalTasks = 0
 
-    for (const user of users) {
-      const vipLevel = Number(user.vip)
+    for (const { phone, vipLevel } of usersNeedingTasks) {
       const config = VIP_CONFIG[vipLevel]
       if (!config) continue
 
       for (let i = 0; i < config.tasks; i++) {
-        tasksToInsert.push({
-          id: generateId(),
-          phone: user.phone,
+        const bookId = `book_${i + 1}`
+        const taskId = generateId()
+
+        await redis.hset(`task:${phone}:${today}:${bookId}`, {
+          id: taskId,
+          bookId,
+          phone,
           vip_level: vipLevel,
           reward: config.perBook,
           status: 'pending',
@@ -70,25 +83,16 @@ export async function POST(request) {
           meta: JSON.stringify({ bookIndex: i + 1 }),
           created_at: new Date().toISOString()
         })
+
+        await redis.sadd(`tasks:${phone}:${today}`, bookId)
       }
       totalTasks += config.tasks
     }
 
-    if (tasksToInsert.length > 0) {
-      // Neon doesn't support bulk INSERT with array of arrays directly
-      // Use Promise.all for batch insert
-      await Promise.all(
-        tasksToInsert.map(t => db`
-          INSERT INTO daily_tasks (id, phone, vip_level, reward, status, date, meta, created_at)
-          VALUES (${t.id}, ${t.phone}, ${t.vip_level}, ${t.reward}, ${t.status}, ${t.date}, ${t.meta}, ${t.created_at})
-        `)
-      )
-    }
-
     return NextResponse.json({
       success: true,
-      message: `Generated ${totalTasks} daily tasks for ${users.length} users for ${today}`,
-      users: users.map(u => u.phone)
+      message: `Generated ${totalTasks} daily tasks for ${usersNeedingTasks.length} users for ${today}`,
+      users: usersNeedingTasks.map(u => u.phone)
     })
 
   } catch (err) {

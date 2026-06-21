@@ -1,7 +1,9 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
+const redis = Redis.fromEnv()
 const TZ = 'Africa/Kampala'
+
 const SHARE_CONFIG = {
   pride: { name: 'PRIDE AND PREJUDICE', price: 50000, daily: 0.01, cycle: 30 },
   hegel: { name: 'Hegel lectures', price: 50000, daily: 0.03, cycle: 120 },
@@ -36,15 +38,13 @@ function normalizePhone(phone) {
 }
 
 async function getUserData(phone) {
-  const res = await db`SELECT * FROM users WHERE phone = ${phone}`
-  return res[0] || null
+  const user = await redis.hgetall(`user:${phone}`)
+  return user && Object.keys(user).length > 0? user : null
 }
 
 async function pushTransaction(phone, tx) {
-  await db`
-    INSERT INTO transactions(id, phone, type, amount, status, date, desc)
-    VALUES (${tx.id}, ${phone}, ${tx.type}, ${tx.amount}, ${tx.status}, ${tx.date}, ${tx.desc})
-  `
+  await redis.lpush(`tx:${phone}`, JSON.stringify(tx))
+  await redis.ltrim(`tx:${phone}`, 0, 999) // keep last 1000 tx
 }
 
 // GET - Load user's ongoing and expired shares
@@ -58,7 +58,16 @@ export async function GET(request) {
     phone = normalizePhone(phone)
     if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone format' }, { status: 400 })
 
-    let shares = await db`SELECT * FROM shares WHERE phone = ${phone} ORDER BY buyDate DESC`
+    const shareIds = await redis.lrange(`shares:${phone}`, 0, -1)
+    let shares = []
+
+    for (const id of shareIds) {
+      const s = await redis.hgetall(`share:${id}`)
+      if (s && Object.keys(s).length > 0) shares.push(s)
+    }
+
+    shares.sort((a, b) => parseKampalaDate(b.buyDate) - parseKampalaDate(a.buyDate))
+
     const now = getUGNow()
 
     // Mark expired shares
@@ -66,7 +75,7 @@ export async function GET(request) {
       if (s.status === 'ongoing') {
         const endDate = parseKampalaDate(s.endDate)
         if (endDate &&!isNaN(endDate) && now >= endDate) {
-          await db`UPDATE shares SET status = 'expired' WHERE id = ${s.id}`
+          await redis.hset(`share:${s.id}`, { status: 'expired' })
           s.status = 'expired'
         }
       }
@@ -111,7 +120,7 @@ export async function POST(request) {
       }
 
       const newBalance = balance - cost
-      await db`UPDATE users SET balance = ${String(newBalance)}, available_balance = ${String(newBalance)} WHERE phone = ${phone}`
+      await redis.hset(`user:${phone}`, { balance: newBalance, available_balance: newBalance })
 
       const buyDate = getUGNow()
       const endDate = new Date(buyDate)
@@ -120,15 +129,25 @@ export async function POST(request) {
       const expectedProfit = Math.round(config.price * qty * config.daily * cycle)
       const shareIdUnique = `${shareId}_${Date.now()}`
 
-      await db`
-        INSERT INTO shares(
-          id, phone, shareId, shareName, quantity, pricePerShare, totalInvested,
-          dailyProfit, cycleDays, expectedProfit, buyDate, endDate, status, profitReceived
-        ) VALUES (
-          ${shareIdUnique}, ${phone}, ${shareId}, ${shareName || config.name}, ${qty}, ${config.price}, ${cost},
-          ${config.daily * 100}, ${cycle}, ${expectedProfit}, ${formatKampalaDate(buyDate)}, ${formatKampalaDate(endDate)}, 'ongoing', 0
-        )
-      `
+      const shareData = {
+        id: shareIdUnique,
+        phone,
+        shareId,
+        shareName: shareName || config.name,
+        quantity: qty,
+        pricePerShare: config.price,
+        totalInvested: cost,
+        dailyProfit: config.daily * 100,
+        cycleDays: cycle,
+        expectedProfit,
+        buyDate: formatKampalaDate(buyDate),
+        endDate: formatKampalaDate(endDate),
+        status: 'ongoing',
+        profitReceived: 0
+      }
+
+      await redis.hset(`share:${shareIdUnique}`, shareData)
+      await redis.lpush(`shares:${phone}`, shareIdUnique)
 
       await pushTransaction(phone, {
         id: String(Date.now()),
@@ -149,9 +168,14 @@ export async function POST(request) {
     if (action === 'collectShare') {
       if (!collectShareId) return NextResponse.json({ success: false, message: 'Share ID required' }, { status: 400 })
 
-      const res = await db`SELECT * FROM shares WHERE id = ${collectShareId} AND phone = ${phone}`
-      const share = res[0]
-      if (!share) return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
+      const share = await redis.hgetall(`share:${collectShareId}`)
+      if (!share || Object.keys(share).length === 0) {
+        return NextResponse.json({ success: false, message: 'Share not found' }, { status: 404 })
+      }
+
+      if (share.phone!== phone) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      }
 
       if (share.status!== 'ongoing') {
         return NextResponse.json({ success: false, message: 'Share already collected' }, { status: 400 })
@@ -163,18 +187,19 @@ export async function POST(request) {
         return NextResponse.json({ success: false, message: 'Share not matured yet' }, { status: 400 })
       }
 
-      const profit = share.expectedProfit
+      const profit = Number(share.expectedProfit)
       const newBalance = Number(user.balance) + profit
 
-      await db`
-        UPDATE shares SET status = 'expired', collectedAt = ${formatKampalaDate(now)}, profitReceived = ${profit}
-        WHERE id = ${collectShareId}
-      `
+      await redis.hset(`share:${collectShareId}`, {
+        status: 'expired',
+        collectedAt: formatKampalaDate(now),
+        profitReceived: profit
+      })
 
-      await db`
-        UPDATE users SET balance = ${String(newBalance)}, available_balance = ${String(newBalance)}
-        WHERE phone = ${phone}
-      `
+      await redis.hset(`user:${phone}`, {
+        balance: newBalance,
+        available_balance: newBalance
+      })
 
       await pushTransaction(phone, {
         id: String(Date.now()),

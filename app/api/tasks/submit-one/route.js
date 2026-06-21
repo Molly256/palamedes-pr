@@ -1,6 +1,7 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
+const redis = Redis.fromEnv()
 const TZ = 'Africa/Kampala'
 
 function getUGDateStr(date = new Date()) {
@@ -56,22 +57,16 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'No tasks on weekends' }, { status: 400 })
     }
 
-    const userRes = await db`SELECT * FROM users WHERE phone = ${normalizedPhone}`
-    const user = userRes[0]
-    if (!user) {
+    const user = await redis.hgetall(`user:${normalizedPhone}`)
+    if (!user || Object.keys(user).length === 0) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
 
     const vipLevel = Number(user.vip) || Number(user.vip_level) || 0
     const reward = VIP_CONFIG[vipLevel]?.perBook || 0
 
-    const taskRes = await db`
-      SELECT status FROM daily_tasks
-      WHERE phone = ${normalizedPhone} AND date = ${today} AND bookId = ${String(bookId)}
-    `
-    const task = taskRes[0]
-
-    if (!task) {
+    const task = await redis.hgetall(`task:${normalizedPhone}:${today}:${bookId}`)
+    if (!task || Object.keys(task).length === 0) {
       return NextResponse.json({ success: false, message: 'Task not found for today' }, { status: 404 })
     }
 
@@ -86,53 +81,43 @@ export async function POST(request) {
     const currentBalance = Number(user.balance || user.available_balance || 0)
     const newBalance = currentBalance + reward
 
-    await db.transaction(async (tx) => {
-      // Mark as submitted
-      await tx`
-        UPDATE daily_tasks
-        SET status = 'submitted'
-        WHERE phone = ${normalizedPhone} AND date = ${today} AND bookId = ${String(bookId)}
-      `
+    // Mark as submitted
+    await redis.hset(`task:${normalizedPhone}:${today}:${bookId}`, { status: 'submitted' })
 
-      // Update balance
-      await tx`
-        UPDATE users
-        SET balance = ${String(newBalance)}, available_balance = ${String(newBalance)}
-        WHERE phone = ${normalizedPhone}
-      `
-
-      // Log transaction
-      await tx`
-        INSERT INTO transactions(id, phone, type, amount, date, status, desc)
-        VALUES (
-          ${String(Date.now())},
-          ${normalizedPhone},
-          'daily_income',
-          ${reward},
-          ${new Date().toISOString()},
-          'success',
-          ${`Book ${bookId} completed`}
-        )
-      `
-
-      // Check if all tasks done for today
-      const allTasksRes = await tx`
-        SELECT status FROM daily_tasks
-        WHERE phone = ${normalizedPhone} AND date = ${today}
-      `
-
-      const allTasks = allTasksRes
-      const totalTasks = allTasks.length
-      const doneTasks = allTasks.filter(t => t.status === 'submitted').length
-
-      if (doneTasks >= totalTasks && totalTasks > 0) {
-        await tx`
-          UPDATE users
-          SET tasksCompleted = ${String(totalTasks)}, vipLocked = 'true'
-          WHERE phone = ${normalizedPhone}
-        `
-      }
+    // Update balance
+    await redis.hset(`user:${normalizedPhone}`, {
+      balance: newBalance,
+      available_balance: newBalance
     })
+
+    // Log transaction
+    const txId = String(Date.now())
+    await redis.lpush(`tx:${normalizedPhone}`, JSON.stringify({
+      id: txId,
+      phone: normalizedPhone,
+      type: 'daily_income',
+      amount: reward,
+      date: new Date().toISOString(),
+      status: 'success',
+      desc: `Book ${bookId} completed`
+    }))
+
+    // Check if all tasks done for today
+    const taskIds = await redis.smembers(`tasks:${normalizedPhone}:${today}`)
+    let doneTasks = 0
+    let totalTasks = taskIds.length
+
+    for (const tid of taskIds) {
+      const t = await redis.hgetall(`task:${normalizedPhone}:${today}:${tid}`)
+      if (t.status === 'submitted') doneTasks++
+    }
+
+    if (doneTasks >= totalTasks && totalTasks > 0) {
+      await redis.hset(`user:${normalizedPhone}`, {
+        tasksCompleted: totalTasks,
+        vipLocked: 'true'
+      })
+    }
 
     return NextResponse.json({
       success: true,

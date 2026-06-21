@@ -1,8 +1,9 @@
-import { db } from '@/lib/db'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
+const redis = Redis.fromEnv()
 
 const VIP_CONFIG = {
  1: { price: 80000, books: 4, perBook: 625 },
@@ -64,67 +65,69 @@ function isWithdrawOpen() {
 
 async function getUserData(phone) {
   if (!phone) return { user: null }
-  const result = await db`SELECT * FROM users WHERE phone = ${phone} LIMIT 1`
-  const user = result[0] || null
-  return { user }
+  const user = await redis.hgetall(`user:${phone}`)
+  return { user: user && Object.keys(user).length > 0? user : null }
 }
 
 async function addBalance(phone, amount) {
   if (!phone) return
-  await db`
-    UPDATE users
-    SET balance = balance + ${amount}, available_balance = available_balance + ${amount}
-    WHERE phone = ${phone}
-  `
+  const user = await redis.hgetall(`user:${phone}`)
+  const current = Number(user.balance || 0)
+  const newBal = current + Number(amount)
+  await redis.hset(`user:${phone}`, { balance: newBal, available_balance: newBal })
 }
 
 async function getTransactions(phone) {
   if (!phone) return []
-  const result = await db`
-    SELECT * FROM transactions
-    WHERE phone = ${phone}
-    ORDER BY created_at DESC
-    LIMIT 99
-  `
-  return result
+  const txList = await redis.lrange(`tx:${phone}`, 0, 98)
+  return txList.map(t => JSON.parse(t))
 }
 
 async function pushTransaction(phone, tx) {
   if (!phone) return
-  await db`
-    INSERT INTO transactions (id, phone, type, amount, net_amount, fee, method, number, names, created_at, status, desc)
-    VALUES (${tx.id}, ${phone}, ${tx.type}, ${tx.amount}, ${tx.netAmount || null}, ${tx.fee || null},
-            ${tx.method || null}, ${tx.number || null}, ${tx.names || null}, ${tx.created_at}, ${tx.status}, ${tx.desc})
-  `
+  await redis.lpush(`tx:${phone}`, JSON.stringify(tx))
+  await redis.ltrim(`tx:${phone}`, 0, 999)
 }
 
 async function buildTeams(phone) {
   if (!phone) return { teamA: [], teamB: [], teamC: [] }
-  const allUsers = await db`SELECT * FROM users`
 
-  const teamA = allUsers.filter(u => normalizePhone(u.upline1) === phone)
-  const teamAPhones = new Set(teamA.map(u => u.phone))
-  const teamB = allUsers.filter(u => teamAPhones.has(normalizePhone(u.upline1)))
-  const teamBPhones = new Set(teamB.map(u => u.phone))
-  const teamC = allUsers.filter(u => teamBPhones.has(normalizePhone(u.upline1)))
+  const teamAPhones = await redis.smembers(`downlines:${phone}:1`)
+  const teamBPhones = new Set()
+  for (const p of teamAPhones) {
+    const phones = await redis.smembers(`downlines:${p}:1`)
+    phones.forEach(x => teamBPhones.add(x))
+  }
+  const teamCPhones = new Set()
+  for (const p of teamBPhones) {
+    const phones = await redis.smembers(`downlines:${p}:1`)
+    phones.forEach(x => teamCPhones.add(x))
+  }
 
-  return { teamA, teamB, teamC }
+  const [teamA, teamB, teamC] = await Promise.all([
+    Promise.all([...teamAPhones].map(p => redis.hgetall(`user:${p}`))),
+    Promise.all([...teamBPhones].map(p => redis.hgetall(`user:${p}`))),
+    Promise.all([...teamCPhones].map(p => redis.hgetall(`user:${p}`)))
+  ])
+
+  return {
+    teamA: teamA.filter(u => u && Object.keys(u).length > 0),
+    teamB: teamB.filter(u => u && Object.keys(u).length > 0),
+    teamC: teamC.filter(u => u && Object.keys(u).length > 0)
+  }
 }
 
 async function requireAuth(request, phone) {
   const token = request.headers.get('x-session-token')
   if (!token ||!phone) return false
-  const result = await db`SELECT phone FROM sessions WHERE token = ${token} LIMIT 1`
-  return result[0]?.phone === phone
+  const sessionPhone = await redis.get(`session:${token}`)
+  return sessionPhone === phone
 }
 
 async function createSession(phone) {
   const token = crypto.randomBytes(32).toString('hex')
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-  await db`
-    INSERT INTO sessions (token, phone, expires_at)
-    VALUES (${token}, ${phone}, ${expiresAt})
-  `
+  const expiresAt = 7 * 24 * 60 * 60 // 7 days in seconds
+  await redis.setex(`session:${token}`, expiresAt, phone)
   return token
 }
 
@@ -171,19 +174,17 @@ export async function GET(request) {
         }
       }
 
-      await db`
-        INSERT INTO users (
-          phone, username, password, upline1, upline2, upline3,
-          referral_paid, vip, balance, available_balance,
-          vip_price_paid, first_vip_amount, tasks_completed,
-          vip_locked, hasBoughtVIP, created_at
-        )
-        VALUES (
-          ${phone}, ${username}, ${password}, ${upline1}, ${upline2}, ${upline3},
-          'false', 0, 2500, 2500, 0, 0, 0,
-          'false', 0, ${getISOTimestamp()}
-        )
-      `
+      const userData = {
+        phone, username, password, upline1, upline2, upline3,
+        referral_paid: 'false', vip: 0, balance: 2500, available_balance: 2500,
+        vip_price_paid: 0, first_vip_amount: 0, tasks_completed: 0,
+        vip_locked: 'false', hasBoughtVIP: 0, created_at: getISOTimestamp(),
+        nickname: '', avatar: '', bank_mtn: '', bank_airtel: ''
+      }
+
+      await redis.hset(`user:${phone}`, userData)
+      await redis.sadd('users:phones', phone)
+      if (upline1) await redis.sadd(`downlines:${upline1}:1`, phone)
 
       const token = await createSession(phone)
       return NextResponse.json({ success: true, message: 'User registered', token })
@@ -225,8 +226,8 @@ export async function GET(request) {
       const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-      .filter(t => t.type === 'referral_reward' && t.status === 'success')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+       .filter(t => t.type === 'referral_reward' && t.status === 'success')
+       .reduce((sum, t) => sum + Number(t.amount || 0), 0)
       const balance = Number(user.balance || 0)
 
       return NextResponse.json({
@@ -240,7 +241,7 @@ export async function GET(request) {
           avatar: user.avatar || '',
           nickname: user.nickname || '',
           vipLocked: user.vip_locked === 'true',
-          hasBoughtVIP: user.hasBoughtVIP === 1,
+          hasBoughtVIP: Number(user.hasBoughtVIP) === 1,
           tasksCompleted: Number(user.tasks_completed) || 0,
           vipPricePaid: Number(user.vip_price_paid) || 0,
           firstVipAmount: Number(user.first_vip_amount) || 0,
@@ -278,7 +279,7 @@ export async function GET(request) {
         bankMTN: user.bank_mtn? JSON.parse(user.bank_mtn) : null,
         bankAirtel: user.bank_airtel? JSON.parse(user.bank_airtel) : null,
         vipLocked: user.vip_locked === 'true',
-        hasBoughtVIP: user.hasBoughtVIP === 1,
+        hasBoughtVIP: Number(user.hasBoughtVIP) === 1,
         tasksCompleted: Number(user.tasks_completed) || 0,
         vipPricePaid: Number(user.vip_price_paid) || 0,
         firstVipAmount: Number(user.first_vip_amount) || 0,
@@ -332,10 +333,12 @@ export async function POST(request) {
       }
 
       await pushTransaction(phone, tx)
-      await db`
-        INSERT INTO admin_deposits (id, admin_phone, data, status)
-        VALUES (${txId}, ${ADMIN_PHONE}, ${JSON.stringify(tx)}, 'pending')
-      `
+      await redis.hset(`admin_deposit:${txId}`, {
+        id: txId,
+        admin_phone: ADMIN_PHONE,
+        data: JSON.stringify(tx),
+        status: 'pending'
+      })
 
       return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending admin approval.' })
     }
@@ -348,15 +351,12 @@ export async function POST(request) {
         return NextResponse.json({ success: false, message: 'Transaction ID required' }, { status: 400 })
       }
 
-      const deposit = await db`
-        SELECT * FROM admin_deposits WHERE id = ${txId} AND status = 'pending' LIMIT 1
-      `
-      const tx = deposit[0]
-      if (!tx) {
+      const deposit = await redis.hgetall(`admin_deposit:${txId}`)
+      if (!deposit || deposit.status!== 'pending') {
         return NextResponse.json({ success: false, message: 'Deposit not found' }, { status: 404 })
       }
 
-      const txData = JSON.parse(tx.data)
+      const txData = JSON.parse(deposit.data)
       const targetPhone = txData.userPhone
       const { user: targetUser } = await getUserData(targetPhone)
       if (!targetUser) {
@@ -364,8 +364,17 @@ export async function POST(request) {
       }
 
       await addBalance(targetPhone, Number(txData.amount))
-      await db`UPDATE admin_deposits SET status = 'success' WHERE id = ${txId}`
-      await db`UPDATE transactions SET status = 'success' WHERE id = ${txId}`
+      await redis.hset(`admin_deposit:${txId}`, { status: 'success' })
+
+      const txList = await redis.lrange(`tx:${targetPhone}`, 0, 999)
+      for (let i = 0; i < txList.length; i++) {
+        const t = JSON.parse(txList[i])
+        if (t.id === txId) {
+          t.status = 'success'
+          await redis.lset(`tx:${targetPhone}`, i, JSON.stringify(t))
+          break
+        }
+      }
 
       return NextResponse.json({ success: true, message: 'Deposit confirmed' })
     }
@@ -440,16 +449,14 @@ export async function POST(request) {
 
       const firstVipAmount = currentPricePaid === 0? newPrice : user.first_vip_amount
 
-      await db`
-        UPDATE users SET
-          vip = ${vipLevelNum},
-          vip_price_paid = ${newPrice},
-          first_vip_amount = ${firstVipAmount},
-          vip_locked = 'false',
-          tasks_completed = 0,
-          hasBoughtVIP = 1
-        WHERE phone = ${phone}
-      `
+      await redis.hset(`user:${phone}`, {
+        vip: vipLevelNum,
+        vip_price_paid: newPrice,
+        first_vip_amount: firstVipAmount,
+        vip_locked: 'false',
+        tasks_completed: 0,
+        hasBoughtVIP: 1
+      })
 
       const timestamp = getISOTimestamp()
 
@@ -529,7 +536,7 @@ export async function POST(request) {
           }
         }
 
-        await db`UPDATE users SET referral_paid = 'true' WHERE phone = ${phone}`
+        await redis.hset(`user:${phone}`, { referral_paid: 'true' })
       }
 
       let freshUser = await getUserData(phone)
@@ -543,19 +550,19 @@ export async function POST(request) {
     if (action === 'updateProfile') {
       if (field === 'nickname') {
         if (value.length > 6) return NextResponse.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
-        await db`UPDATE users SET nickname = ${value} WHERE phone = ${phone}`
+        await redis.hset(`user:${phone}`, { nickname: value })
         return NextResponse.json({ success: true, message: 'Nickname saved' })
       }
       if (field === 'bankMTN') {
-        await db`UPDATE users SET bank_mtn = ${JSON.stringify(value)} WHERE phone = ${phone}`
+        await redis.hset(`user:${phone}`, { bank_mtn: JSON.stringify(value) })
         return NextResponse.json({ success: true, message: 'MTN bank saved' })
       }
       if (field === 'bankAirtel') {
-        await db`UPDATE users SET bank_airtel = ${JSON.stringify(value)} WHERE phone = ${phone}`
+        await redis.hset(`user:${phone}`, { bank_airtel: JSON.stringify(value) })
         return NextResponse.json({ success: true, message: 'Airtel bank saved' })
       }
       if (field === 'avatar') {
-        await db`UPDATE users SET avatar = ${value} WHERE phone = ${phone}`
+        await redis.hset(`user:${phone}`, { avatar: value })
         return NextResponse.json({ success: true, message: 'Avatar updated' })
       }
     }
@@ -567,7 +574,7 @@ export async function POST(request) {
       if (newPass.length < 6) {
         return NextResponse.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
       }
-      await db`UPDATE users SET password = ${newPass} WHERE phone = ${phone}`
+      await redis.hset(`user:${phone}`, { password: newPass })
       return NextResponse.json({ success: true, message: 'Password changed' })
     }
 
