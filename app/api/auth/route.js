@@ -24,11 +24,11 @@ function normalizeUser(user) {
     phone: user.phone,
     balance: bal,
     available_balance: bal,
-    hasBoughtVIP: user.hasBoughtVIP === 1 || user.hasBoughtVIP === '1',
+    hasBoughtVIP: user.vip_paid === '1' || user.vip_paid === 1,
     vip_level: Number(user.vip_level) || 0,
     vip_deposit: Number(user.vip_deposit) || 0,
     first_vip_amount: Number(user.first_vip_amount) || 0,
-    vip_paid: user.vip_paid === 1 || user.vip_paid === '1',
+    vip_paid: user.vip_paid === '1' || user.vip_paid === 1,
     invite_code: user.invite_code || '',
     invited_by: user.invited_by || '',
     airtel_number: user.airtel_number || '',
@@ -108,11 +108,10 @@ export async function POST(request) {
         balance: 2500,
         available_balance: 2500,
         created_at,
-        hasBoughtVIP: 0,
+        vip_paid: 0,
         vip_level: 0,
         vip_deposit: 0,
         first_vip_amount: 0,
-        vip_paid: 0,
         airtel_number: '',
         airtel_name: '',
         mtn_number: '',
@@ -141,7 +140,8 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (user.password !== password) {
+      // Fix: compare as strings and trim whitespace
+      if (String(user.password).trim() !== String(password).trim()) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
