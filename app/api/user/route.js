@@ -18,7 +18,6 @@ const VIP_CONFIG = {
  10: { price: 8000000, books: 5, perBook: 60000 },
 }
 
-// 5% Team A, 2% Team B, 1% Team C for all VIP levels
 const REWARD_TABLE = {
  1: { A: 0.05, B: 0.02, C: 0.01 },
  2: { A: 0.05, B: 0.02, C: 0.01 },
@@ -79,7 +78,7 @@ async function addBalance(phone, amount) {
 
 async function getTransactions(phone) {
   if (!phone) return []
-  const txList = await redis.lrange(`tx:${phone}`, 0, 98)
+  const txList = await redis.lrange(`tx:${phone}`, 0, 999)
   return txList.map(t => JSON.parse(t))
 }
 
@@ -117,32 +116,11 @@ async function buildTeams(phone) {
   }
 }
 
-async function requireAuth(request, phone) {
-  const token = request.headers.get('x-session-token')
-  if (!token ||!phone) return false
-  const sessionPhone = await redis.get(`session:${token}`)
-  return sessionPhone === phone
-}
-
-async function createSession(phone) {
-  const token = crypto.randomBytes(32).toString('hex')
-  const expiresAt = 7 * 24 * 60 * 60 // 7 days in seconds
-  await redis.setex(`session:${token}`, expiresAt, phone)
-  return token
-}
-
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
     let phone = searchParams.get('phone')
     const action = searchParams.get('action')
-
-    if (!phone) {
-      const authHeader = request.headers.get('authorization')
-      if (authHeader?.startsWith('Bearer ')) {
-        phone = authHeader.replace('Bearer ', '')
-      }
-    }
 
     phone = normalizePhone(phone)
 
@@ -186,8 +164,7 @@ export async function GET(request) {
       await redis.sadd('users:phones', phone)
       if (upline1) await redis.sadd(`downlines:${upline1}:1`, phone)
 
-      const token = await createSession(phone)
-      return NextResponse.json({ success: true, message: 'User registered', token })
+      return NextResponse.json({ success: true, message: 'User registered' })
     }
 
     if (action === 'login') {
@@ -196,18 +173,11 @@ export async function GET(request) {
       if (!user || user.password!== password) {
         return NextResponse.json({ success: false, message: 'Invalid credentials' }, { status: 401 })
       }
-      const token = await createSession(phone)
-      return NextResponse.json({ success: true, token })
+      return NextResponse.json({ success: true, user })
     }
 
     const { user } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-
-    if (action!== 'getDashboard' && action!== 'getTransactions') {
-      if (!(await requireAuth(request, phone))) {
-        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
-      }
-    }
 
     if (action === 'getTransactions') {
       const transactions = await getTransactions(phone)
@@ -226,8 +196,8 @@ export async function GET(request) {
       const vipPurchaseDate = vipTx? vipTx.created_at : null
       const { teamA, teamB, teamC } = await buildTeams(phone)
       const totalEarnings = transactions
-       .filter(t => t.type === 'referral_reward' && t.status === 'success')
-       .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+      .filter(t => t.type === 'referral_reward' && t.status === 'success')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
       const balance = Number(user.balance || 0)
 
       return NextResponse.json({
@@ -309,10 +279,6 @@ export async function POST(request) {
     const { user } = await getUserData(phone)
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
-    if (!(await requireAuth(request, phone))) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
-    }
-
     if (action === 'deposit') {
       const depositAmount = Number(value)
       if (!depositAmount || depositAmount <= 0) {
@@ -343,7 +309,7 @@ export async function POST(request) {
       return NextResponse.json({ success: true, tx, message: 'Deposit request submitted. Pending admin approval.' })
     }
 
-    if (action === 'confirmDeposit') {
+    if (action === 'approve_deposit') {
       if (adminPhone!== ADMIN_PHONE) {
         return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
       }
@@ -358,10 +324,6 @@ export async function POST(request) {
 
       const txData = JSON.parse(deposit.data)
       const targetPhone = txData.userPhone
-      const { user: targetUser } = await getUserData(targetPhone)
-      if (!targetUser) {
-        return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-      }
 
       await addBalance(targetPhone, Number(txData.amount))
       await redis.hset(`admin_deposit:${txId}`, { status: 'success' })
@@ -376,7 +338,7 @@ export async function POST(request) {
         }
       }
 
-      return NextResponse.json({ success: true, message: 'Deposit confirmed' })
+      return NextResponse.json({ success: true, message: 'Deposit approved' })
     }
 
     if (action === 'withdraw') {

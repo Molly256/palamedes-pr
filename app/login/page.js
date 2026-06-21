@@ -33,13 +33,13 @@ export default function Login() {
       const data = await res.json()
       
       if (data.success && data.user) {
-        // Save both token and user data
-        localStorage.setItem('token', data.token)
+        // Save user only. No token.
         localStorage.setItem('palamedes_user', JSON.stringify({
           name: data.user.name || data.user.username,
           username: data.user.username,
           phone: data.user.phone,
           balance: data.user.balance || 0,
+          available_balance: data.user.available_balance || data.user.balance || 0,
           vip: data.user.vip || 0,
           avatar: data.user.avatar || ''
         }))

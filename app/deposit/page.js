@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 
 export default function Deposit() {
   const [user, setUser] = useState(null)
-  const [token, setToken] = useState(null)
   const [selectedMethod, setSelectedMethod] = useState(null)
   const [amount, setAmount] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,15 +21,11 @@ export default function Deposit() {
 
   useEffect(() => {
     const userData = localStorage.getItem('palamedes_user')
-    const userToken = localStorage.getItem('token')
-    
-    if (!userData || !userToken) {
+    if (!userData) {
       router.push('/login')
       return
     }
-    
     setUser(JSON.parse(userData))
-    setToken(userToken)
   }, [router])
 
   const methods = [
@@ -54,11 +49,6 @@ export default function Deposit() {
       router.push('/login')
       return
     }
-    if (!token) {
-      alert('Session expired. Please login again')
-      router.push('/login')
-      return
-    }
 
     setLoading(true)
 
@@ -74,8 +64,7 @@ export default function Deposit() {
       const res = await fetch('/api/user', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
-          'x-session-token': token
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           action: 'deposit',
@@ -90,12 +79,6 @@ export default function Deposit() {
       if (!res.ok || !data.success) {
         alert(data.message || 'Deposit failed')
         setLoading(false)
-        
-        if (res.status === 401) {
-          localStorage.removeItem('token')
-          localStorage.removeItem('palamedes_user')
-          router.push('/login')
-        }
         return
       }
 
