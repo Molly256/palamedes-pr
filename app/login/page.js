@@ -12,7 +12,10 @@ export default function Login() {
     e.preventDefault()
     setError('')
     
-    if (!/^07\d{8}$/.test(form.phone)) {
+    const cleanPhone = form.phone.trim()
+    const cleanPass = form.password.trim()
+    
+    if (!/^07\d{8}$/.test(cleanPhone)) {
       setError('Phone must be 10 digits starting with 07')
       return
     }
@@ -20,20 +23,22 @@ export default function Login() {
     setLoading(true)
     
     try {
+      console.log('Logging in with:', { phone: cleanPhone }) // debug line
+      
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'login',
-          phone: form.phone,
-          password: form.password
+          phone: cleanPhone,
+          password: cleanPass
         })
       })
 
       const data = await res.json()
+      console.log('Login response:', data) // debug line
       
       if (data.success && data.user) {
-        // Save user only. No token.
         localStorage.setItem('palamedes_user', JSON.stringify({
           name: data.user.name || data.user.username,
           username: data.user.username,
@@ -49,6 +54,7 @@ export default function Login() {
         setError(data.message || 'Invalid phone or password')
       }
     } catch (err) {
+      console.error('Login error:', err)
       setError('Network error. Try again')
     } finally {
       setLoading(false)
