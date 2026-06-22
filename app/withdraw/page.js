@@ -3,296 +3,253 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Withdraw() {
-  const [user, setUser] = useState(null)
-  const [selectedMethod, setSelectedMethod] = useState(null)
-  const [amount, setAmount] = useState('')
-  const [withdrawNumber, setWithdrawNumber] = useState('')
-  const [names, setNames] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
-  const [timeMessage, setTimeMessage] = useState('')
   const router = useRouter()
-
-  const presetAmounts = [10000, 50000, 250000, 500000, 1000000, 2000000, 5000000, 10000000]
+  const [user, setUser] = useState(null)
+  const [method, setMethod] = useState('') 
+  const [form, setForm] = useState({ phoneNumber: '', accountName: '', amount: '' })
+  const [loading, setLoading] = useState(false)
+  const [canWithdraw, setCanWithdraw] = useState(false)
+  const [timeMsg, setTimeMsg] = useState('')
 
   useEffect(() => {
-    const userData = localStorage.getItem('palamedes_user')
-    if (!userData) {
+    const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    if (!localUser.phone) {
       router.push('/login')
       return
     }
+    setUser(localUser)
 
-    const localUser = JSON.parse(userData)
-    loadUser(localUser.phone)
+    // Check Uganda time every minute
+    const checkTime = () => {
+      const now = new Date()
+      
+      // Get Uganda time
+      const ugTime = new Intl.DateTimeFormat('en-UG', {
+        timeZone: 'Africa/Kampala',
+        hour: '2-digit',
+        minute: '2-digit',
+        weekday: 'short',
+        hour12: false
+      }).formatToParts(now)
 
-    const bankInfo = JSON.parse(localStorage.getItem('palamedes_bank_info') || 'null')
-    if (bankInfo && bankInfo.number && bankInfo.names) {
-      setWithdrawNumber(bankInfo.number)
-      setNames(bankInfo.names)
-    }
+      const parts = {}
+      ugTime.forEach(p => parts[p.type] = p.value)
+      
+      const day = parts.weekday // Mon, Tue, Wed, Thu, Fri, Sat, Sun
+      const hour = parseInt(parts.hour)
+      const minute = parseInt(parts.minute)
 
-    checkWithdrawWindow()
-  }, [router])
+      const isWeekend = day === 'Sat' || day === 'Sun'
+      const isWithinHours = hour >= 10 && (hour < 17 || (hour === 17 && minute === 0))
 
-  const loadUser = async (phone) => {
-    try {
-      const res = await fetch(`/api/user?action=getDashboard&phone=${phone}&t=${Date.now()}`)
-      const data = await res.json()
-      if (data.success && data.user) {
-        setUser(data.user)
-        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      if (isWeekend) {
+        setCanWithdraw(false)
+        setTimeMsg('Withdrawals only available Monday - Friday')
+      } else if (!isWithinHours) {
+        setCanWithdraw(false)
+        if (hour < 10) {
+          setTimeMsg('Withdrawals open at 10:00am Uganda time')
+        } else {
+          setTimeMsg('Withdrawals closed. Reopens Monday-Friday at 10:00am')
+        }
+      } else {
+        setCanWithdraw(true)
+        setTimeMsg('Withdrawals open: Mon-Fri 10:00am - 5:00pm Uganda time')
       }
-    } catch (e) {
-      console.log('Failed to fetch user:', e)
     }
-  }
 
-  const checkWithdrawWindow = () => {
-    const now = new Date()
-    const ugandaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Africa/Kampala' }))
-
-    const day = ugandaTime.getDay()
-    const hour = ugandaTime.getHours()
-    const minute = ugandaTime.getMinutes()
-
-    const isWeekday = day >= 1 && day <= 5
-    const isOpenTime = (hour > 10 || (hour === 10 && minute >= 0)) && (hour < 17 || (hour === 17 && minute === 0))
-
-    setIsWithdrawOpen(isWeekday && isOpenTime)
-
-    if (!isWeekday) {
-      setTimeMessage('Withdrawals are only available Monday to Friday')
-    } else if (!isOpenTime) {
-      setTimeMessage('Withdrawals are available 10:00 AM - 5:00 PM EAT only')
-    }
-  }
-
-  const methods = [
-    { name: 'MTN Mobile money' },
-    { name: 'Airtel mobile money' }
-  ]
+    checkTime()
+    const interval = setInterval(checkTime, 60000) // check every minute
+    
+    return () => clearInterval(interval)
+  }, [])
 
   const handleWithdraw = async () => {
-    if (!isWithdrawOpen) {
-      alert(timeMessage)
+    if (!canWithdraw) {
+      alert(timeMsg)
       return
     }
-
-    const withdrawAmount = Number(amount)
-    const fee = Math.floor(withdrawAmount * 0.1)
-    const netAmount = withdrawAmount - fee
-
-    if (!selectedMethod) {
-      alert('Please select withdraw method')
+    // ... rest of your existing handleWithdraw code
+    const amt = Number(form.amount)
+    
+    if (!method) {
+      alert('Select a method first')
       return
     }
-
-    if (!presetAmounts.includes(withdrawAmount)) {
-      alert('enter any amount from above list')
+    if (!/^07\d{8}$/.test(form.phoneNumber)) {
+      alert('Enter valid phone number')
       return
     }
-
-    if (withdrawAmount > user.available_balance) {
+    if (!form.accountName.trim()) {
+      alert('Enter names')
+      return
+    }
+    if (!amt || amt < 10000) {
+      alert('Minimum withdraw is 10,000 shs')
+      return
+    }
+    if (amt > Number(user.balance || 0)) {
       alert('Insufficient balance')
       return
     }
 
-    if (!withdrawNumber ||!names) {
-      alert('Please enter phone number and names')
-      return
-    }
-
     setLoading(true)
-
+    
     try {
-      const res = await fetch('/api/user', {
+      const res = await fetch('/api/transaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'withdraw',
+          type: 'withdraw',
           phone: user.phone,
-          value: withdrawAmount,
-          method: selectedMethod,
-          number: withdrawNumber,
-          names: names
+          amount: amt,
+          method: method === 'MTN' ? 'MTN MOBILE MONEY' : 'AIRTEL MOBILE MONEY',
+          withdrawPhone: form.phoneNumber,
+          withdrawName: form.accountName
         })
       })
 
       const data = await res.json()
-      if (!data.success) {
-        alert(data.message || 'Withdraw failed')
+
+      if (!res.ok) {
+        alert(data.error)
         setLoading(false)
         return
       }
 
-      alert(`Withdraw request sent. You receive: ${netAmount.toLocaleString()}shs after 10% fee. Pending approval.`)
+      alert('Withdraw request submitted. Wait for admin approval.')
       router.push('/transactions')
-
+      
     } catch (err) {
-      console.error(err)
       alert('Something went wrong')
+      setLoading(false)
     } finally {
       setLoading(false)
     }
   }
 
-  if (!user) return <div style={{ textAlign: 'center', padding: '100px' }}>Loading...</div>
+  const selectMethod = (m) => {
+    setMethod(m)
+    setForm({ phoneNumber: '', accountName: '', amount: '' })
+  }
+
+  if (!user) return <div className="p-4 text-black">Loading...</div>
 
   return (
-    <main style={{ minHeight: '100vh', background: '#f5f5f5', padding: '40px 20px' }}>
-      <div style={{ maxWidth: '650px', margin: '0 auto' }}>
+    <div className="min-h-screen bg-white p-4">
+      <h1 className="text-2xl font-bold text-black mb-4">Withdraw</h1>
 
-        <button onClick={() => router.back()} style={{ background: 'none', border: 'none', fontSize: '16px', color: '#87CEEB', cursor: 'pointer', marginBottom: '20px', fontWeight: '500' }}>
-          ← Back
-        </button>
+      <p className="text-black mb-2">Available Balance: <b>{Number(user.balance || 0).toLocaleString()} shs</b></p>
+      
+      {/* Time status */}
+      <p className={`text-sm mb-4 ${canWithdraw ? 'text-green-600' : 'text-red-600'}`}>
+        {timeMsg}
+      </p>
 
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '2px solid #87CEEB', marginBottom: '25px', textAlign: 'center' }}>
-          <p style={{ color: '#999', fontSize: '14px', marginBottom: '5px' }}>Available Balance</p>
-          <h2 style={{ fontSize: '32px', color: '#87CEEB', fontWeight: '900' }}>
-            UGX {user.available_balance.toLocaleString()}
-          </h2>
+      <label className="text-black font-bold block mb-2">Select Method</label>
+      
+      <div className="flex flex-col gap-3">
+        
+        {/* MTN MOBILE MONEY */}
+        <div>
+          <button
+            onClick={() => selectMethod('MTN')}
+            disabled={!canWithdraw}
+            className={`w-full border-2 rounded p-3 text-left font-bold ${method === 'MTN' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 text-black'} ${!canWithdraw ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            MTN MOBILE MONEY
+          </button>
+
+          {method === 'MTN' && canWithdraw && (
+            <div className="flex flex-col gap-3 mt-3">
+              <input
+                type="tel"
+                placeholder="Phone number......"
+                value={form.phoneNumber}
+                onChange={(e) => setForm({ ...form, phoneNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                maxLength={10}
+                className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white"
+              />
+              <input
+                type="text"
+                placeholder="Names......."
+                value={form.accountName}
+                onChange={(e) => setForm({ ...form, accountName: e.target.value })}
+                className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white"
+              />
+              <input
+                type="number"
+                placeholder="Input amount......"
+                value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white"
+              />
+            </div>
+          )}
         </div>
 
-        {!isWithdrawOpen && (
-          <div style={{
-            background: '#fef3c7',
-            padding: '15px',
-            borderRadius: '12px',
-            border: '2px solid #f59e0b',
-            marginBottom: '20px',
-            textAlign: 'center',
-            color: '#92400e',
-            fontWeight: '600'
-          }}>
-            {timeMessage}
-          </div>
-        )}
+        {/* AIRTEL MOBILE MONEY */}
+        <div>
+          <button
+            onClick={() => selectMethod('AIRTEL')}
+            disabled={!canWithdraw}
+            className={`w-full border-2 rounded p-3 text-left font-bold ${method === 'AIRTEL' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-black'} ${!canWithdraw ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            AIRTEL MOBILE MONEY
+          </button>
 
-        <h1 style={{ fontSize: '26px', color: '#000', marginBottom: '15px', fontWeight: '600' }}>
-          Choose withdraw method
-        </h1>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
-          {methods.map((method) => (
-            <button
-              key={method.name}
-              onClick={() => setSelectedMethod(method.name)}
-              disabled={!isWithdrawOpen}
-              style={{
-                width: '100%',
-                padding: '18px',
-                background:!isWithdrawOpen? '#e5e7eb' : selectedMethod === method.name? '#87CEEB' : '#E0F6FF',
-                border: '2px solid #87CEEB',
-                borderRadius: '12px',
-                fontSize: '17px',
-                fontWeight: '500',
-                cursor:!isWithdrawOpen? 'not-allowed' : 'pointer',
-                color: '#000',
-                opacity:!isWithdrawOpen? 0.6 : 1,
-                transition: 'all 0.2s'
-              }}
-            >
-              {method.name}
-            </button>
-          ))}
+          {method === 'AIRTEL' && canWithdraw && (
+            <div className="flex flex-col gap-3 mt-3">
+              <input
+                type="tel"
+                placeholder="Phone number....."
+                value={form.phoneNumber}
+                onChange={(e) => setForm({ ...form, phoneNumber: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                maxLength={10}
+                className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white"
+              />
+              <input
+                type="text"
+                placeholder="Names ....."
+                value={form.accountName}
+                onChange={(e) => setForm({ ...form, accountName: e.target.value })}
+                className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white"
+              />
+              <input
+                type="number"
+                placeholder="Input amount ........."
+                value={form.amount}
+                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white"
+              />
+            </div>
+          )}
         </div>
-
-        {selectedMethod && isWithdrawOpen && (
-          <>
-            <input
-              type="tel"
-              placeholder="Number........"
-              value={withdrawNumber}
-              onChange={(e) => setWithdrawNumber(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '18px',
-                border: '2px solid #87CEEB',
-                borderRadius: '12px',
-                fontSize: '16px',
-                outline: 'none',
-                marginBottom: '15px',
-                background: '#fff'
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Names........."
-              value={names}
-              onChange={(e) => setNames(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '18px',
-                border: '2px solid #87CEEB',
-                borderRadius: '12px',
-                fontSize: '16px',
-                outline: 'none',
-                marginBottom: '15px',
-                background: '#fff'
-              }}
-            />
-
-            <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px', fontWeight: '500' }}>
-              Input one of the amount below depending on your account balance.
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '15px' }}>
-              {presetAmounts.map((amt) => (
-                <div
-                  key={amt}
-                  style={{
-                    padding: '14px',
-                    background: '#87CEEB',
-                    border: '2px solid #87CEEB',
-                    borderRadius: '10px',
-                    fontSize: '15px',
-                    fontWeight: '300',
-                    color: '#000',
-                    textAlign: 'center',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => setAmount(String(amt))}
-                >
-                  {amt.toLocaleString()}shs
-                </div>
-              ))}
-            </div>
-
-            <input
-              type="number"
-              placeholder="Input amount........"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              style={{ width: '100%', padding: '18px', border: '2px solid #87CEEB', borderRadius: '12px', fontSize: '16px', outline: 'none', marginBottom: '20px' }}
-            />
-
-            <div style={{ background: '#fff', padding: '15px', borderRadius: '12px', border: '2px solid #87CEEB', marginBottom: '20px', fontSize: '13px', color: '#666', lineHeight: '1.6' }}>
-              <p>Note:</p>
-              <p>Withdraw fee: 10%</p>
-              <p>Withdraws available: Mon-Fri 10:00 AM - 5:00 PM EAT</p>
-            </div>
-
-            <button
-              onClick={handleWithdraw}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '18px',
-                background: loading? '#666' : '#87CEEB',
-                border: 'none',
-                borderRadius: '12px',
-                fontSize: '17px',
-                fontWeight: '300',
-                color: '#000',
-                cursor: loading? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s'
-              }}
-            >
-              {loading? 'Processing...' : 'Withdraw'}
-            </button>
-          </>
-        )}
       </div>
-    </main>
+
+      {/* Withdraw Button */}
+      {method && (
+        <button
+          onClick={handleWithdraw}
+          disabled={loading || !canWithdraw}
+          className={`w-full py-3 mt-4 rounded font-bold text-lg ${
+            canWithdraw && !loading 
+              ? 'bg-red-500 text-white' 
+              : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+          }`}
+        >
+          {loading ? 'Processing...' : 'Withdraw'}
+        </button>
+      )}
+
+      {/* Note */}
+      <div className="mt-6 p-3 bg-gray-100 rounded">
+        <p className="text-black font-bold mb-1">NOTE:</p>
+        <p className="text-black text-sm">minimum withdraw: 10,000shs</p>
+        <p className="text-black text-sm">withdraw days: Monday - Friday</p>
+        <p className="text-black text-sm">withdraw time: 10:00am - 5:00pm</p>
+        <p className="text-black text-sm">money will arrive in your mobile money wallet within 30 minutes to 24hrs max.</p>
+      </div>
+    </div>
   )
 }

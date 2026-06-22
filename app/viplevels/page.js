@@ -3,49 +3,12 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 
-/**
- * @typedef {Object} User
- * @property {string} username
- * @property {string} phone
- * @property {number} balance
- * @property {number} vip
- * @property {number} vipPricePaid
- * @property {boolean} vipLocked
- * @property {number} tasksCompleted
- * @property {string=} nickname
- * @property {string=} avatar
- * @property {any=} bankMTN
- * @property {any=} bankAirtel
- * @property {string=} password
- * @property {string=} vipExpiry
- * @property {number=} tasks_read_today
- */
-
-/**
- * @typedef {Object} Vip
- * @property {number} level
- * @property {string} name
- * @property {number} price
- * @property {number} books
- * @property {number} perBook
- */
-
-/**
- * @typedef {Object} ApiResponse
- * @property {boolean} success
- * @property {string=} message
- * @property {User=} user
- */
-
-export default function VipTask() {
-  /** @type {[User | null, Function]} */
+export default function VipLevels() {
   const [user, setUser] = useState(null)
   const [showBuyPopup, setShowBuyPopup] = useState(false)
-  /** @type {[Vip | null, Function]} */
   const [selectedVip, setSelectedVip] = useState(null)
   const [loading, setLoading] = useState(false)
 
-  /** @type {Vip[]} */
   const vips = [
     { level: 1, name: 'VIP 1', price: 80000, books: 4, perBook: 625 },
     { level: 2, name: 'VIP 2', price: 250000, books: 4, perBook: 2000 },
@@ -59,27 +22,37 @@ export default function VipTask() {
     { level: 10, name: 'VIP 10', price: 8000000, books: 5, perBook: 60000 },
   ]
 
-  /** @type {Record<number, string>} */
   const hotColors = {
     1: '#00BFFF', 2: '#FFD700', 3: '#FF00FF', 4: '#FF1493',
     5: '#FF4500', 6: '#32CD32', 7: '#FF69B4', 8: '#DC143C', 9: '#9400D3', 10: '#FF8C00'
   }
 
   useEffect(() => {
-    /** @type {User} */
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!userData.phone) return
+
+    const today = new Date().toISOString().split('T')[0]
+    const lastReset = userData.lastResetDate || ''
+
+    // Reset daily limits at midnight
+    if (lastReset!== today) {
+      userData.books_read_today = 0
+      userData.dailyIncome = 0
+      userData.lastResetDate = today
+    }
+
     userData.vip = Number(userData.vip || 0)
-    userData.balance = Number(userData.balance || 0)
+    userData.availableBalance = Number(userData.availableBalance || 0)
     userData.vipPricePaid = Number(userData.vipPricePaid || 0)
-    if (!userData.tasks_read_today) userData.tasks_read_today = 0
+    userData.dailyIncome = Number(userData.dailyIncome || 0)
+    userData.books_read_today = Number(userData.books_read_today || 0)
+    userData.unlockedBooks = userData.unlockedBooks || []
+    userData.completedBooks = userData.completedBooks || []
+
     localStorage.setItem('palamedes_user', JSON.stringify(userData))
     setUser(userData)
   }, [])
 
-  /**
-   * @param {Vip} vip
-   */
   const handleBuyVip = (vip) => {
     if (!user) return
     if (vip.level <= Number(user.vip)) {
@@ -93,28 +66,25 @@ export default function VipTask() {
   const confirmBuy = async () => {
     if (!user ||!selectedVip) return
 
-    const newPrice = selectedVip.price
     const currentPricePaid = Number(user.vipPricePaid || 0)
-    const upgradeCost = newPrice - currentPricePaid
+    const upgradeCost = selectedVip.price - currentPricePaid
 
-    if ((user.balance || 0) < upgradeCost) {
+    if ((user.availableBalance || 0) < upgradeCost) {
       alert(`Insufficient balance. You need ${upgradeCost.toLocaleString()}shs more to upgrade`)
       return
     }
 
     setLoading(true)
     try {
-      const res = await fetch('/api/user', {
+      const res = await fetch('/api/viplevels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'buyvip',
           phone: user.phone,
           vipLevel: selectedVip.level
         })
       })
 
-      /** @type {ApiResponse} */
       const data = await res.json()
 
       if (!data.success ||!data.user) {
@@ -126,7 +96,7 @@ export default function VipTask() {
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
       setShowBuyPopup(false)
-      alert(data.message)
+      alert(`${data.message}\n${selectedVip.books} books assigned to your BOOKS tab`)
 
     } catch (err) {
       alert('Error: ' + err.message)
@@ -150,11 +120,11 @@ export default function VipTask() {
             username={user.username}
             vipLevel={currentVipLevel}
             size={60}
-            key={currentVipLevel + '-' + user.balance}
+            key={currentVipLevel + '-' + user.availableBalance}
           />
           <div style={{ marginTop: '8px', textAlign: 'left' }}>
             <p style={{ margin: 0, fontWeight: '900', color: '#000', fontSize: '15px' }}>
-              Balance: {user.balance?.toLocaleString() || 0} shs
+              Available Balance: {user.availableBalance?.toLocaleString() || 0} shs
             </p>
             <p style={{ margin: '2px 0 0', fontSize: '13px', fontWeight: '700', color: '#000' }}>
               {vips.find(v => v.level === currentVipLevel)?.name || 'No VIP'}
@@ -174,8 +144,8 @@ export default function VipTask() {
         {vips.map(vip => {
           const isCurrent = currentVipLevel === vip.level
           const isOwned = currentVipLevel >= vip.level
-          const showBuyButton = vip.level <= 3 && vip.level > currentVipLevel
-          const showLock = vip.level >= 4 && vip.level > currentVipLevel
+          const showBuyButton = vip.level > currentVipLevel
+          const showLock = vip.level > currentVipLevel && vip.level >= 4
 
           return (
             <div key={vip.level} style={{
@@ -186,7 +156,7 @@ export default function VipTask() {
               <div style={{ color: '#000' }}>
                 <p style={{ margin: 0, fontWeight: '900', fontSize: '16px', color: '#000' }}>{vip.name}</p>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', fontWeight: '800', color: '#000' }}>
-                  Daily tasks: {vip.books} books @ {vip.perBook.toLocaleString()}shs
+                  Daily books: {vip.books} books @ {vip.perBook.toLocaleString()}shs
                 </p>
                 <p style={{ margin: '4px 0 0', fontWeight: '900', color: '#000' }}>{vip.price.toLocaleString()}shs</p>
               </div>

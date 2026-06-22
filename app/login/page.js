@@ -1,117 +1,125 @@
 'use client'
 import { useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function Login() {
-  const [form, setForm] = useState({ phone: '', password: '' })
-  const [showPass, setShowPass] = useState(false)
-  const [error, setError] = useState('')
+  const router = useRouter()
+  const [form, setForm] = useState({
+    phone: '',
+    password: ''
+  })
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  const handlePhoneChange = (val) => {
+    const cleaned = val.replace(/\D/g, '').slice(0, 10)
+    setForm({ ...form, phone: cleaned })
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
     
-    const cleanPhone = form.phone.trim()
-    const cleanPass = form.password.trim()
-    
-    if (!/^07\d{8}$/.test(cleanPhone)) {
-      setError('Phone must be 10 digits starting with 07')
+    if (!/^07\d{8}$/.test(form.phone)) {
+      alert('Phone must start with 07 and be 10 digits')
+      return
+    }
+    if (!form.password) {
+      alert('Enter your password')
       return
     }
 
     setLoading(true)
     
     try {
-      console.log('Logging in with:', { phone: cleanPhone }) // debug line
-      
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'login',
-          phone: cleanPhone,
-          password: cleanPass
+          phone: form.phone,
+          password: form.password
         })
       })
 
       const data = await res.json()
-      console.log('Login response:', data) // debug line
-      
-      if (data.success && data.user) {
-        localStorage.setItem('palamedes_user', JSON.stringify({
-          name: data.user.name || data.user.username,
-          username: data.user.username,
-          phone: data.user.phone,
-          balance: data.user.balance || 0,
-          available_balance: data.user.available_balance || data.user.balance || 0,
-          vip: data.user.vip || 0,
-          avatar: data.user.avatar || ''
-        }))
-        
-        window.location.href = '/dashboard'
-      } else {
-        setError(data.message || 'Invalid phone or password')
+
+      if (!res.ok) {
+        alert(data.error)
+        setLoading(false)
+        return
       }
+
+      // Login success → go to dashboard
+      router.push('/dashboard')
+      
     } catch (err) {
-      console.error('Login error:', err)
-      setError('Network error. Try again')
-    } finally {
+      alert('Something went wrong. Try again.')
       setLoading(false)
     }
   }
 
   return (
-    <main style={{ minHeight: '100vh', background: '#ffffff', padding: '40px 20px' }}>
-      <h1 style={{ textAlign: 'center', fontSize: '28px', color: '#000', marginBottom: '20px' }}>PALAMEDES PR</h1>
-      <h2 style={{ color: '#000', fontSize: '24px', textAlign: 'center', marginBottom: '30px' }}>Login</h2>
-      {error && <p style={{ color: 'red', textAlign: 'center', marginBottom: '20px' }}>{error}</p>}
-      <form onSubmit={handleSubmit} style={{ maxWidth: '400px', margin: '0 auto' }}>
-        <div style={{marginBottom: '15px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Phone Number</label>
-          <input 
-            type="tel" 
-            required 
-            value={form.phone} 
-            onChange={(e) => setForm({...form, phone: e.target.value})} 
-            pattern="07[0-9]{8}"
-            minLength={10}
-            maxLength={10}
-            placeholder="07xxxxxxxx" 
-            title="Enter 10 digits starting with 07"
-            style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
-          />
-        </div>
-        <div style={{marginBottom: '20px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Password</label>
-          <div style={{ position: 'relative' }}>
-            <input 
-              type={showPass ? 'text' : 'password'} 
-              required 
-              value={form.password} 
-              onChange={(e) => setForm({...form, password: e.target.value})} 
-              style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
+    <div className="min-h-screen bg-white flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <h1 className="text-2xl font-bold text-center mb-6 text-black">Login</h1>
+        
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          
+          {/* Phone */}
+          <div>
+            <label className="text-sm text-black block mb-1">Phone Number</label>
+            <input
+              type="tel"
+              placeholder="07XXXXXXXX"
+              value={form.phone}
+              onChange={(e) => handlePhoneChange(e.target.value)}
+              maxLength={10}
+              className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white focus:outline-none focus:border-blue-500"
+              required
             />
-            <button 
-              type="button" 
-              onClick={() => setShowPass(!showPass)} 
-              style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}
-            >
-              {showPass ? '🙈' : '👁️'}
-            </button>
           </div>
-        </div>
-        <p style={{ textAlign: 'right', marginBottom: '20px' }}>
-          <Link href="/register" style={{ color: '#000' }}>No account? Register</Link>
+
+          {/* Password */}
+          <div>
+            <label className="text-sm text-black block mb-1">Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Enter password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                maxLength={6}
+                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-black bg-white focus:outline-none focus:border-blue-500"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xl"
+              >
+                👁️
+              </button>
+            </div>
+          </div>
+
+          {/* Login Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 rounded font-medium"
+            style={{ 
+              backgroundColor: '#87CEEB', 
+              color: '#333' 
+            }}
+          >
+            {loading ? 'Logging in...' : 'Login'}
+          </button>
+        </form>
+        
+        <p className="text-center text-sm text-black mt-4">
+          Don't have an account? <a href="/register" className="text-blue-600 underline">Register</a>
         </p>
-        <button 
-          type="submit" 
-          disabled={loading} 
-          style={{width: '100%', padding: '14px', background: loading ? '#666' : '#000', color: '#fff', border: 'none', cursor: loading ? 'not-allowed' : 'pointer'}}
-        >
-          {loading ? 'Logging in...' : 'Login'}
-        </button>
-      </form>
-    </main>
+      </div>
+    </div>
   )
 }

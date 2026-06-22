@@ -1,230 +1,153 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Transactions() {
-  const [tx, setTx] = useState([])
-  const [user, setUser] = useState(null)
-  const [filter, setFilter] = useState('all')
-  const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const [user, setUser] = useState(null)
+  const [allTxs, setAllTxs] = useState([])
+  const [activeTab, setActiveTab] = useState('ALL')
+  const [loading, setLoading] = useState(true)
 
-  const normalizePhone = (phone) => {
-    if (!phone) return ''
-    phone = String(phone).replace(/\D/g, '')
-    if (!/^07\d{8}$/.test(phone)) {
-      return ''
-    }
-    return phone
-  }
-
-  const fetchTransactions = useCallback(async (phone) => {
-    setLoading(true)
-    try {
-      const cleanPhone = normalizePhone(phone)
-      if (!cleanPhone) {
-        setTx([])
-        setLoading(false)
-        return
-      }
-
-      const url = `/api/user?action=getTransactions&phone=${encodeURIComponent(cleanPhone)}`
-      console.log('[TX] Fetching:', url)
-
-      const res = await fetch(url)
-      const data = await res.json()
-
-      console.log('[TX] API response:', data)
-
-      if (data.success) {
-        setTx(data.transactions || [])
-      } else {
-        console.error('Failed to fetch transactions:', data.message)
-        setTx([])
-      }
-    } catch (err) {
-      console.error('Failed to fetch transactions:', err)
-      setTx([])
-    }
-    setLoading(false)
-  }, [])
+  const tabs = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES']
 
   useEffect(() => {
-    const u = JSON.parse(localStorage.getItem('palamedes_user') || 'null')
-    if (!u) return router.push('/login')
-
-    const cleanPhone = normalizePhone(u.phone)
-    if (!cleanPhone) {
+    const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    if (!localUser.phone) {
       router.push('/login')
       return
     }
+    setUser(localUser)
+    loadTransactions(localUser.phone)
+  }, [])
 
-    const syncedUser = {...u, phone: cleanPhone }
-    setUser(syncedUser)
-    fetchTransactions(cleanPhone)
+  const loadTransactions = async (phone) => {
+    setLoading(true)
+    const res = await fetch(`/api/user?action=transactions&phone=${phone}&t=${Date.now()}`)
+    const data = await res.json()
+    if (data.success) setAllTxs(data.transactions)
+    setLoading(false)
+  }
 
-    // Listen for refresh event from deposit/tasks page
-    const handleRefresh = () => {
-      console.log('[TX] Refresh event received')
-      fetchTransactions(cleanPhone)
-    }
-    window.addEventListener('refreshTransactions', handleRefresh)
+  const filteredTxs = activeTab === 'ALL' 
+    ? allTxs 
+    : allTxs.filter(tx => tx.type.toUpperCase() === activeTab)
 
-    // Refresh when tab becomes visible again
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('[TX] Tab visible, refreshing')
-        fetchTransactions(cleanPhone)
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      window.removeEventListener('refreshTransactions', handleRefresh)
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
-  }, [router, fetchTransactions])
-
-  if (!user) return null
-
-  const formatDate = (iso) => {
-    if (!iso) return 'invalid date'
-    const d = new Date(iso)
-    const day = d.toLocaleDateString('en-GB', { timeZone: 'Africa/Kampala', day: '2-digit' })
-    const month = d.toLocaleDateString('en-GB', { timeZone: 'Africa/Kampala', month: '2-digit' })
-    const year = d.toLocaleDateString('en-GB', { timeZone: 'Africa/Kampala', year: 'numeric' })
-    const time = d.toLocaleTimeString('en-US', {
+  const formatUgandaTime = (timestamp) => {
+    const date = new Date(Number(timestamp))
+    return new Intl.DateTimeFormat('en-UG', {
       timeZone: 'Africa/Kampala',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: true
-    }).toLowerCase()
-    return `${day}/${month}/${year} ${time}`
+      hour12: false
+    }).format(date)
   }
 
-  const filteredTx = filter === 'all'? tx : tx.filter(t => t.type === filter)
+  const renderTx = (tx) => {
+    const isDepositWithdraw = tx.type === 'deposit' || tx.type === 'withdraw'
+    
+    if (isDepositWithdraw) {
+      return (
+        <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
+          <div className="flex justify-between items-start">
+            
+            {/* Left side */}
+            <div className="flex flex-col">
+              <p className="text-black text-sm font-light capitalize">{tx.type}</p>
+              <p className="text-gray-600 text-base font-light mt-1">
+                {Number(tx.amount).toLocaleString()}shs
+              </p>
+              <p className="text-black text-xs font-light mt-1">
+                {formatUgandaTime(tx.createdAt)}
+              </p>
+            </div>
 
-  const tabs = [
-    { key: 'all', label: 'All' },
-    { key: 'deposit', label: 'Deposit' },
-    { key: 'withdraw', label: 'Withdraw' },
-    { key: 'daily_income', label: 'Daily income' },
-    { key: 'viptask_purchase', label: 'VIP Purchase' },
-    { key: 'referral_reward', label: 'Referral Reward' },
-    { key: 'share_purchase', label: 'Share Purchase' },
-    { key: 'share_profit', label: 'Share Profit' },
-    { key: 'refund', label: 'Refund' }
-  ]
-
-  const txName = (type) => {
-    const names = {
-      deposit: 'Deposit',
-      withdraw: 'Withdraw',
-      daily_income: 'Daily income',
-      viptask_purchase: 'VIP Purchase',
-      referral_reward: 'Referral Reward',
-      share_purchase: 'Share Purchase',
-      share_profit: 'Share Profit',
-      refund: 'Refund'
+            {/* Right side - status */}
+            <p className={`text-sm font-light ${
+              tx.status === 'success' ? 'text-green-500' : 'text-red-400'
+            }`}>
+              {tx.status}
+            </p>
+          </div>
+        </div>
+      )
     }
-    return names[type] || type.replace(/_/g, ' ')
-  }
 
-  const getStatus = (status) => {
-    if (status === 'pending') return { text: 'Pending', color: '#f59e0b' }
-    if (status === 'rejected') return { text: 'Rejected', color: '#ef4444' }
-    return { text: 'Success', color: '#22c55e' }
-  }
-
-  return (
-    <main style={{ minHeight: '100vh', background: '#f5f5f5', padding: '20px' }}>
-      <div style={{ maxWidth: '650px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px' }}>
-          <button
-            onClick={() => router.back()}
-            style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', marginRight: '15px' }}
-          >
-            ←
-          </button>
-          <h1 style={{ fontSize: '22px', fontWeight: '600', color: '#000' }}>Transactions</h1>
+    // For DAILY INCOME, VIPLEVEL PURCHASE, REFUND, SHARES
+    return (
+      <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
+        <div className="flex justify-between items-start">
+          
+          {/* Left side - header */}
+          <p className="text-black text-sm font-light capitalize">{tx.type}</p>
+          
+          {/* Right side - amount */}
+          <p className="text-black text-base font-light">
+            {Number(tx.amount).toLocaleString()}shs
+          </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', overflowX: 'auto', paddingBottom: '8px' }}>
+        {/* Date under amount */}
+        <div className="flex justify-end">
+          <p className="text-black text-xs font-light mt-1">
+            {formatUgandaTime(tx.createdAt)}
+          </p>
+        </div>
+
+        {/* Extra info */}
+        {tx.type === 'daily income' && tx.bookTitle && (
+          <p className="text-black text-xs font-light mt-1">Book: {tx.bookTitle}</p>
+        )}
+        {tx.type === 'viplevel purchase' && tx.vipLevel && (
+          <p className="text-black text-xs font-light mt-1">Level: {tx.vipLevel}</p>
+        )}
+      </div>
+    )
+  }
+
+  if (!user) return <div className="p-4 text-black">Loading...</div>
+
+  return (
+    <div className="min-h-screen bg-white">
+      
+      <div className="p-4">
+        <h1 className="text-xl font-bold text-black">Transaction History</h1>
+      </div>
+
+      {/* Tabs */}
+      <div className="overflow-x-auto px-2 pb-2">
+        <div className="flex gap-2">
           {tabs.map(tab => (
             <button
-              key={tab.key}
-              onClick={() => setFilter(tab.key)}
-              style={{
-                padding: '8px 12px',
-                borderRadius: '18px',
-                border: filter === tab.key? '2px solid #000' : '1px solid #ccc',
-                background: filter === tab.key? '#000' : '#fff',
-                color: filter === tab.key? '#87CEEB' : '#444',
-                fontSize: '12px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 rounded-lg whitespace-nowrap font-light ${
+                activeTab === tab 
+                  ? 'bg-sky-400 text-black' 
+                  : 'bg-sky-200 text-black'
+              }`}
             >
-              {tab.label}
+              {tab}
             </button>
           ))}
         </div>
-
-        <div style={{ background: '#fff', borderRadius: '12px', padding: '15px' }}>
-          {loading? (
-            <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>Loading...</p>
-          ) : filteredTx.length === 0? (
-            <p style={{ textAlign: 'center', color: '#999', padding: '40px 0' }}>No transactions yet</p>
-          ) : (
-            filteredTx.map((t) => {
-              const isCredit = t.amount > 0
-              const { text: statusText, color: statusColor } = getStatus(t.status)
-              const displayAmount = Math.abs(t.amount).toLocaleString()
-
-              return (
-                <div
-                  key={t.id || t.created_at}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '16px',
-                    borderBottom: '1px solid #eee',
-                    backgroundColor: t.status === 'pending'? '#fef3c7' : 'white',
-                    borderRadius: '8px',
-                    marginBottom: '8px'
-                  }}
-                >
-                  <div>
-                    <p style={{ fontSize: '16px', fontWeight: '500', color: '#000', marginBottom: '4px' }}>
-                      {txName(t.type)}
-                    </p>
-                    <p style={{ fontSize: '13px', color: '#777' }}>{formatDate(t.created_at)}</p>
-                    {t.method && (
-                      <p style={{ fontSize: '12px', color: '#999', marginTop: '2px' }}>{t.method}</p>
-                    )}
-                  </div>
-
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{
-                      fontSize: '16px',
-                      fontWeight: '600',
-                      color: isCredit? '#22c55e' : '#000',
-                      marginBottom: '4px'
-                    }}>
-                      {isCredit? '+' : '-'}{displayAmount}shs
-                    </p>
-                    <p style={{ fontSize: '13px', fontWeight: '600', color: statusColor }}>
-                      {statusText}
-                    </p>
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
       </div>
-    </main>
+
+      {/* Transaction List */}
+      <div className="p-4 pt-2">
+        {loading ? (
+          <p className="text-black text-center py-10">Loading...</p>
+        ) : filteredTxs.length === 0 ? (
+          <p className="text-gray-500 text-center py-10">No transactions yet</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {filteredTxs.map(renderTx)}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

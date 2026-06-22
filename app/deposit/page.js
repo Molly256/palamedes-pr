@@ -1,244 +1,126 @@
 'use client'
-import React from 'react'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Deposit() {
+  const router = useRouter()
   const [user, setUser] = useState(null)
-  const [selectedMethod, setSelectedMethod] = useState(null)
+  const [method, setMethod] = useState('MTN')
   const [amount, setAmount] = useState('')
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
-  const normalizePhone = (phone) => {
-    if (!phone) return ''
-    phone = String(phone).replace(/\D/g, '')
-    if (!/^07\d{8}$/.test(phone)) {
-      return ''
-    }
-    return phone
+  const paymentDetails = {
+    MTN: { number: '0743946046', name: 'ALLEN NAWAGI' },
+    AIRTEL: { number: '0748575505', name: 'ANTHONY OTIBOK' }
   }
 
   useEffect(() => {
-    const userData = localStorage.getItem('palamedes_user')
-    if (!userData) {
+    const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    if (!localUser.phone) {
       router.push('/login')
       return
     }
-    setUser(JSON.parse(userData))
-  }, [router])
+    setUser(localUser)
+  }, [])
 
-  const methods = [
-    { name: 'MTN Mobile money', number: '0743946046', account: 'ALLEN NAWANGI' },
-    { name: 'Airtel mobile money', number: '0748575505', account: 'ANTHONY OTIBOK' }
-  ]
-
-  const handlePaid = async () => {
-    const depositAmount = Number(amount)
-
-    if (!selectedMethod) {
-      alert('Please select a deposit method first')
-      return
-    }
-    if (!amount || depositAmount < 10000) {
-      alert('Minimum deposit is 10,000shs')
-      return
-    }
-    if (!user?.phone) {
-      alert('User phone missing. Please login again')
-      router.push('/login')
+  const handleDeposit = async () => {
+    const amt = Number(amount)
+    
+    if (!amt || amt < 10000) {
+      alert('Minimum deposit is 10,000 shs')
       return
     }
 
     setLoading(true)
-
+    
     try {
-      const cleanPhone = normalizePhone(user.phone)
-      if (!cleanPhone) {
-        alert('Invalid phone number. Please login again')
-        router.push('/login')
-        setLoading(false)
-        return
-      }
-
-      const res = await fetch('/api/user', {
+      const res = await fetch('/api/transaction', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'deposit',
-          phone: cleanPhone,
-          value: depositAmount,
-          method: selectedMethod
+          type: 'deposit',
+          phone: user.phone,
+          amount: amt,
+          method: method
         })
       })
 
       const data = await res.json()
 
-      if (!res.ok || !data.success) {
-        alert(data.message || 'Deposit failed')
+      if (!res.ok) {
+        alert(data.error)
         setLoading(false)
         return
       }
 
-      alert(`Deposit request submitted! ${depositAmount.toLocaleString()}shs pending approval.`)
-      window.dispatchEvent(new Event('refreshTransactions'))
+      alert('Deposit request submitted. Wait for admin approval.')
       router.push('/transactions')
-
+      
     } catch (err) {
-      console.error('Deposit error:', err)
-      alert('Something went wrong. Try again')
-    } finally {
+      alert('Something went wrong')
       setLoading(false)
     }
   }
 
-  if (!user) {
-    return React.createElement('div', { 
-      style: { textAlign: 'center', padding: '100px' } 
-    }, 'Loading...')
-  }
+  if (!user) return <div className="p-4 text-black">Loading...</div>
 
-  const displayBalance = Number(user?.available_balance ?? user?.balance ?? 0)
+  return (
+    <div className="min-h-screen bg-white p-4">
+      <h1 className="text-2xl font-bold text-black mb-6">Deposit</h1>
 
-  return React.createElement('main', {
-    style: { minHeight: '100vh', background: '#f5f5f5', padding: '40px 20px' }
-  }, React.createElement('div', {
-    style: { maxWidth: '650px', margin: '0 auto' }
-  }, [
-    React.createElement('button', {
-      key: 'back',
-      onClick: () => router.back(),
-      style: { 
-        background: 'none', 
-        border: 'none', 
-        fontSize: '16px', 
-        color: '#87CEEB', 
-        cursor: 'pointer', 
-        marginBottom: '20px', 
-        fontWeight: '500' 
-      }
-    }, '← Back'),
+      {/* Payment Method Select */}
+      <div className="mb-6">
+        <label className="text-black font-bold block mb-2">Select Payment Method:</label>
+        
+        <div className="flex flex-col gap-3">
+          
+          {/* MTN */}
+          <div 
+            onClick={() => setMethod('MTN')}
+            className={`border-2 rounded p-3 cursor-pointer ${method === 'MTN' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
+          >
+            <p className="text-black font-bold">MTN MOBILE MONEY</p>
+            <p className="text-black">{paymentDetails.MTN.number} {paymentDetails.MTN.name}</p>
+          </div>
 
-    React.createElement('div', {
-      key: 'balance',
-      style: { 
-        background: '#fff', 
-        padding: '20px', 
-        borderRadius: '12px', 
-        border: '2px solid #87CEEB', 
-        marginBottom: '25px', 
-        textAlign: 'center' 
-      }
-    }, [
-      React.createElement('p', {
-        key: 'label',
-        style: { color: '#999', fontSize: '14px', marginBottom: '5px' }
-      }, 'Available Balance'),
-      React.createElement('h2', {
-        key: 'amount',
-        style: { fontSize: '32px', color: '#87CEEB', fontWeight: '900' }
-      }, `shs ${displayBalance.toLocaleString()}`)
-    ]),
+          {/* AIRTEL */}
+          <div 
+            onClick={() => setMethod('AIRTEL')}
+            className={`border-2 rounded p-3 cursor-pointer ${method === 'AIRTEL' ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+          >
+            <p className="text-black font-bold">AIRTEL MOBILE MONEY</p>
+            <p className="text-black">{paymentDetails.AIRTEL.number} {paymentDetails.AIRTEL.name}</p>
+          </div>
+        </div>
+      </div>
 
-    React.createElement('h1', {
-      key: 'title',
-      style: { fontSize: '26px', color: '#000', marginBottom: '25px', fontWeight: '600' }
-    }, 'Choose deposit method'),
+      {/* Minimum Deposit */}
+      <p className="text-black font-bold mb-3">Minimum deposit 10,000shs</p>
 
-    React.createElement('div', {
-      key: 'methods',
-      style: { display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }
-    }, methods.map((method) => 
-      React.createElement('div', { key: method.name }, [
-        React.createElement('button', {
-          key: 'btn',
-          onClick: () => setSelectedMethod(method.name),
-          style: {
-            width: '100%', 
-            padding: '18px', 
-            background: selectedMethod === method.name ? '#87CEEB' : '#E0F6FF',
-            border: '2px solid #87CEEB', 
-            borderRadius: '12px', 
-            fontSize: '17px', 
-            fontWeight: '500',
-            cursor: 'pointer', 
-            color: '#000', 
-            transition: 'all 0.2s'
-          }
-        }, method.name),
+      {/* Amount Input */}
+      <div className="mb-4">
+        <label className="text-black font-bold block mb-2">Amount:</label>
+        <input
+          type="number"
+          placeholder="Input amount......."
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white"
+        />
+      </div>
 
-        selectedMethod === method.name && React.createElement('div', {
-          key: 'details',
-          style: { 
-            background: '#fff', 
-            border: '2px solid #87CEEB', 
-            borderTop: 'none', 
-            borderRadius: '0 0 12px 12px', 
-            padding: '20px', 
-            textAlign: 'center' 
-          }
-        }, [
-          React.createElement('p', {
-            key: 'number',
-            style: { fontSize: '32px', fontWeight: '900', color: '#000', marginBottom: '5px' }
-          }, method.number),
-          React.createElement('p', {
-            key: 'account',
-            style: { fontSize: '16px', color: '#666', marginBottom: '15px' }
-          }, method.account),
-          React.createElement('p', {
-            key: 'note',
-            style: { fontSize: '14px', color: '#999', fontStyle: 'italic' }
-          }, 'NOTE: Go pay come back tap button below')
-        ])
-      ])
-    )),
+      {/* Submit Button */}
+      <button
+        onClick={handleDeposit}
+        disabled={loading}
+        className="w-full py-3 bg-green-500 text-white rounded font-bold text-lg"
+      >
+        {loading ? 'Processing...' : 'I HAVE PAID THE MONEY'}
+      </button>
 
-    selectedMethod && React.createElement('div', { key: 'deposit-form' }, [
-      React.createElement('div', {
-        key: 'input-wrap',
-        style: { marginBottom: '20px' }
-      }, [
-        React.createElement('input', {
-          key: 'input',
-          type: 'number',
-          placeholder: 'Input amount.............',
-          value: amount,
-          onChange: (e) => setAmount(e.target.value),
-          style: {
-            width: '100%',
-            padding: '18px',
-            border: '2px solid #87CEEB',
-            borderRadius: '12px',
-            fontSize: '16px',
-            outline: 'none'
-          }
-        }),
-        React.createElement('p', {
-          key: 'hint',
-          style: { color: '#666', fontSize: '13px', marginTop: '8px', marginLeft: '5px' }
-        }, 'Minimum deposit is 10,000shs')
-      ]),
-
-      React.createElement('button', {
-        key: 'submit',
-        onClick: handlePaid,
-        disabled: loading,
-        style: {
-          width: '100%',
-          padding: '18px',
-          background: loading ? '#666' : '#000',
-          border: 'none',
-          borderRadius: '12px',
-          fontSize: '17px',
-          fontWeight: '700',
-          color: '#87CEEB',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          transition: 'all 0.2s'
-        }
-      }, loading ? 'Processing...' : 'I HAVE PAID MONEY')
-    ])
-  ]))
+      <p className="text-gray-600 text-sm mt-3 text-center">
+        After paying, tap the button. Admin will approve and balance will update.
+      </p>
+    </div>
+  )
 }

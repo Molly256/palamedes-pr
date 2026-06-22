@@ -1,235 +1,194 @@
 'use client'
-import { useState, useEffect, Suspense } from 'react'
-import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
-function RegisterForm() {
+export default function Register() {
+  const router = useRouter()
   const [form, setForm] = useState({
     username: '',
     phone: '',
     password: '',
-    confirmPassword: '',
-    referral: ''
+    repeatPassword: '',
+    inviteCode: ''
   })
-  const [showPass, setShowPass] = useState(false)
-  const [showConfirm, setShowConfirm] = useState(false)
-  const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showRepeatPassword, setShowRepeatPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [referralLocked, setReferralLocked] = useState(false)
-  const searchParams = useSearchParams()
 
-  // Auto-fill referral from URL?ref=CODE or localStorage
-  useEffect(() => {
-    const refFromUrl = searchParams.get('ref')
-    const refFromStorage = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
-    const ref = refFromUrl || refFromStorage
-
-    if (ref) {
-      setForm(prev => ({...prev, referral: ref}))
-      setReferralLocked(true)
+  const handlePhoneChange = (val) => {
+    const cleaned = val.replace(/\D/g, '').slice(0, 10)
+    setForm({ ...form, phone: cleaned })
+    
+    if (/^07\d{8}$/.test(cleaned)) {
+      setForm(prev => ({ ...prev, phone: cleaned, inviteCode: `PM${cleaned.slice(-6)}` }))
+    } else {
+      setForm(prev => ({ ...prev, phone: cleaned, inviteCode: '' }))
     }
-  }, [searchParams])
-
-  const handleChange = (e) => {
-    if (e.target.name === 'referral' && referralLocked) return
-    setForm({...form, [e.target.name]: e.target.value})
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
-
-    // Username: exactly 6 letters/digits
-    if(!/^[a-zA-Z0-9]{6}$/.test(form.username)) {
-      setError('Username must be exactly 6 letters or digits')
+    
+    // Validation
+    if (!/^[a-zA-Z0-9]{6}$/.test(form.username)) {
+      alert('Username must be 6 letters and numbers combined')
       return
     }
-
-    // Phone: 07 + 8 digits = 10 total
-    if(!/^07\d{8}$/.test(form.phone)) {
-      setError('Phone must be 10 digits starting with 07')
+    if (!/^07\d{8}$/.test(form.phone)) {
+      alert('Phone must start with 07 and be 10 digits')
       return
     }
-
-    // Password: exactly 6 chars
-    if(!/^[a-zA-Z0-9]{6}$/.test(form.password)) {
-      setError('Password must be exactly 6 letters or digits')
+    if (!/^[a-zA-Z0-9]{6}$/.test(form.password)) {
+      alert('Password must be 6 letters and numbers')
       return
     }
-
-    if(form.password!== form.confirmPassword) {
-      setError('Passwords do not match')
+    if (form.password !== form.repeatPassword) {
+      alert('Passwords do not match')
       return
     }
 
     setLoading(true)
+    
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'register',
           username: form.username,
           phone: form.phone,
-          password: form.password,
-          referral: form.referral
+          password: form.password
         })
       })
+
       const data = await res.json()
 
-      if(data.success) {
-        localStorage.setItem('palamedes_user', JSON.stringify({
-          name: form.username,
-          phone: form.phone,
-          username: form.username,
-          balance: 0,
-          vip: 0
-        }))
-        localStorage.removeItem('referrer_code')
-        sessionStorage.removeItem('referrer_code')
-        window.location.href = '/login'
-      } else {
-        setError(data.message || 'Registration failed')
+      if (!res.ok) {
+        alert(data.error)
+        setLoading(false)
+        return
       }
-    } catch(err) {
-      setError('Network error. Try again')
+
+      alert('Registered successfully! Your invite code: ' + data.inviteCode)
+      router.push('/login')
+      
+    } catch (err) {
+      alert('Something went wrong. Try again.')
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
-    <>
-      {error && <p style={{color: 'red', textAlign: 'center', marginBottom: '20px'}}>{error}</p>}
-
-      <form onSubmit={handleSubmit} style={{maxWidth: '400px', margin: '0 auto'}}>
-        <div style={{marginBottom: '15px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Username</label>
-          <input
-            type="text"
-            name="username"
-            value={form.username}
-            onChange={handleChange}
-            required
-            maxLength={6}
-            pattern="[a-zA-Z0-9]{6}"
-            title="Exactly 6 letters or digits"
-            style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
-          />
-        </div>
-
-        <div style={{marginBottom: '15px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Phone Number</label>
-          <input
-            type="tel"
-            name="phone"
-            value={form.phone}
-            onChange={handleChange}
-            required
-            maxLength={10}
-            pattern="07[0-9]{8}"
-            placeholder="07xxxxxxxx"
-            title="10 digits starting with 07"
-            style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
-          />
-        </div>
-
-        <div style={{marginBottom: '15px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Password</label>
-          <div style={{position: 'relative'}}>
+    <div className="min-h-screen bg-white flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <h1 className="text-2xl font-bold text-center mb-6 text-black">Register</h1>
+        
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          
+          {/* Username */}
+          <div>
+            <label className="text-sm text-black block mb-1">Username</label>
             <input
-              type={showPass? 'text' : 'password'}
-              name="password"
-              value={form.password}
-              onChange={handleChange}
-              required
+              type="text"
+              placeholder="6 letters/numbers"
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
               maxLength={6}
-              pattern="[a-zA-Z0-9]{6}"
-              title="Exactly 6 letters or digits"
-              style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
+              className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white focus:outline-none focus:border-blue-500"
+              required
             />
-            <button type="button" onClick={() => setShowPass(!showPass)} style={{position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0'}}>
-              {showPass? '🙈' : '👁️'}
-            </button>
           </div>
-        </div>
 
-        <div style={{marginBottom: '15px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>Confirm Password</label>
-          <div style={{position: 'relative'}}>
+          {/* Phone */}
+          <div>
+            <label className="text-sm text-black block mb-1">Phone Number</label>
             <input
-              type={showConfirm? 'text' : 'password'}
-              name="confirmPassword"
-              value={form.confirmPassword}
-              onChange={handleChange}
+              type="tel"
+              placeholder="07XXXXXXXX"
+              value={form.phone}
+              onChange={(e) => handlePhoneChange(e.target.value)}
+              maxLength={10}
+              className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white focus:outline-none focus:border-blue-500"
               required
-              maxLength={6}
-              pattern="[a-zA-Z0-9]{6}"
-              style={{width: '100%', padding: '12px', border: '1px solid #ccc', background: '#fff', color: '#000'}}
             />
-            <button type="button" onClick={() => setShowConfirm(!showConfirm)} style={{position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '0'}}>
-              {showConfirm? '🙈' : '👁️'}
-            </button>
           </div>
-        </div>
 
-        <div style={{marginBottom: '20px'}}>
-          <label style={{display: 'block', marginBottom: '5px', color: '#000'}}>
-            Referral Code {referralLocked && <span style={{color: '#00BFFF', fontSize: '12px'}}>(Auto-filled)</span>}
-          </label>
-          <input
-            type="text"
-            name="referral"
-            value={form.referral}
-            onChange={handleChange}
-            readOnly={referralLocked}
-            placeholder="PM20252"
-            style={{
-              width: '100%',
-              padding: '12px',
-              border: '1px solid #ccc',
-              background: referralLocked? '#f3f4f6' : '#fff',
-              color: '#000',
-              cursor: referralLocked? 'not-allowed' : 'text'
+          {/* Password */}
+          <div>
+            <label className="text-sm text-black block mb-1">Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="6 letters/numbers"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                maxLength={6}
+                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-black bg-white focus:outline-none focus:border-blue-500"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xl"
+              >
+                👁️
+              </button>
+            </div>
+          </div>
+
+          {/* Repeat Password */}
+          <div>
+            <label className="text-sm text-black block mb-1">Repeat Password</label>
+            <div className="relative">
+              <input
+                type={showRepeatPassword ? 'text' : 'password'}
+                placeholder="Repeat password"
+                value={form.repeatPassword}
+                onChange={(e) => setForm({ ...form, repeatPassword: e.target.value })}
+                maxLength={6}
+                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-black bg-white focus:outline-none focus:border-blue-500"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowRepeatPassword(!showRepeatPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xl"
+              >
+                👁️
+              </button>
+            </div>
+          </div>
+
+          {/* Invite Code - auto filled */}
+          <div>
+            <label className="text-sm text-black block mb-1">Invite Code</label>
+            <input
+              type="text"
+              value={form.inviteCode}
+              readOnly
+              placeholder="Auto generated after phone"
+              className="w-full border-gray-300 rounded px-3 py-2 text-gray-600 bg-gray-100"
+            />
+          </div>
+
+          {/* Register Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 rounded font-medium"
+            style={{ 
+              backgroundColor: '#87CEEB', 
+              color: '#333' 
             }}
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '14px',
-            background: loading? '#666' : '#000',
-            color: '#fff',
-            border: 'none',
-            cursor: loading? 'not-allowed' : 'pointer'
-          }}
-        >
-          {loading? 'Creating...' : 'Register'}
-        </button>
-      </form>
-    </>
-  )
-}
-
-export default function Register() {
-  return (
-    <main style={{minHeight: '100vh', background: '#ffffff', padding: '40px 20px'}}>
-      <h1 style={{textAlign: 'center', marginBottom: '20px', color: '#000', fontSize: '28px'}}>
-        PALAMEDES PR
-      </h1>
-      <p style={{textAlign: 'center', color: '#000', marginBottom: '30px'}}>
-        Create your account
-      </p>
-
-      <Suspense fallback={<div style={{textAlign: 'center'}}>Loading...</div>}>
-        <RegisterForm />
-      </Suspense>
-
-      <p style={{textAlign: 'center', marginTop: '20px'}}>
-        <Link href="/login" style={{color: '#000'}}>Already have an account? Login</Link>
-      </p>
-    </main>
+          >
+            {loading ? 'Registering...' : 'Register'}
+          </button>
+        </form>
+        
+        <p className="text-center text-sm text-black mt-4">
+          Already have an account? <a href="/login" className="text-blue-600 underline">Login</a>
+        </p>
+      </div>
+    </div>
   )
 }

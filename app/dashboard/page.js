@@ -37,13 +37,15 @@ export default function Dashboard() {
       const data = await res.json()
       
       if (data.success && data.user) {
+        // Force field to availableBalance for consistency
+        data.user.availableBalance = Number(data.user.availableBalance || 0)
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
         setUser(data.user)
       } else {
         setUser(localUser)
       }
     } catch (e) {
-      console.log('KV fetch failed:', e)
+      console.log('Redis fetch failed:', e)
       setUser(localUser)
     }
     setLoading(false)
@@ -58,7 +60,7 @@ export default function Dashboard() {
   const menuItems = [
     { icon: '💳', label: 'Deposit', href: '/deposit' },
     { icon: '🏧', label: 'Withdraw', href: '/withdraw' },
-    { icon: '💼', label: 'Viptask', href: '/viptasks' },
+    { icon: '💼', label: 'VIP Levels', href: '/viplevels' },
     { icon: '📜', label: 'Transactions', href: '/transactions' },
     { icon: '👥', label: 'Invite', href: '/invite' },
     { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
@@ -67,7 +69,7 @@ export default function Dashboard() {
     { icon: '🎧', label: 'Manager', href: '/manager' }
   ]
 
-  const displayBalance = Number(user?.available_balance ?? user?.balance ?? 0)
+  const displayBalance = Number(user?.availableBalance || 0)
   const vipLevel = Number(user?.vip || 0)
   const vipName = vipLevel > 0 ? `VIP ${vipLevel}` : 'Internship'
 

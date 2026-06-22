@@ -1,174 +1,70 @@
 import { Redis } from '@upstash/redis'
+import { NextResponse } from 'next/server'
 
-const redis = Redis.fromEnv()
-const TZ = 'Africa/Kampala'
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+})
 
-function getUGDateStr(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(date)
-}
-
-function isValidInviteCode(code) {
-  return /^PM\d{6}$/.test(code)
-}
-
-function getUserInviteCode(phone) {
-  return `PM${phone.slice(-6)}`
-}
-
-function normalizeUser(user) {
-  if (!user) return null
-  const bal = Number(user.balance ?? user.available_balance ?? 0)
-  return {
-    id: user.id,
-    username: user.username,
-    phone: user.phone,
-    balance: bal,
-    available_balance: bal,
-    hasBoughtVIP: user.vip_paid === '1' || user.vip_paid === 1,
-    vip_level: Number(user.vip_level) || 0,
-    vip_deposit: Number(user.vip_deposit) || 0,
-    first_vip_amount: Number(user.first_vip_amount) || 0,
-    vip_paid: user.vip_paid === '1' || user.vip_paid === 1,
-    invite_code: user.invite_code || '',
-    invited_by: user.invited_by || '',
-    airtel_number: user.airtel_number || '',
-    airtel_name: user.airtel_name || '',
-    mtn_number: user.mtn_number || '',
-    mtn_name: user.mtn_name || '',
-    created_at: user.created_at || ''
-  }
-}
-
-async function syncBalanceFields(phone, amount) {
-  await redis.hset(`user:${phone}`, { balance: amount, available_balance: amount })
-}
-
-export async function POST(request) {
+export async function POST(req) {
   try {
-    const body = await request.json()
-    console.log('Raw body received:', body)
+    const body = await req.json()
+    const { action } = body
 
-    let action = body?.action
-    let username = body?.username
-    let password = body?.password
-    let phone = String(body?.phone || '')
-    let referral = body?.referral
-
-    console.log('Parsed values:', { action, phone, phoneLen: phone.length, type: typeof phone })
-
-    // REGISTER
     if (action === 'register') {
-      if (!username || !password || !phone) {
-        return Response.json({ success: false, message: 'All fields required' })
-      }
-
-      if (!/^07\d{8}$/.test(phone)) {
-        return Response.json({ success: false, message: 'Phone must be 10 digits starting with 07' })
-      }
+      const { username, phone, password } = body
 
       if (!/^[a-zA-Z0-9]{6}$/.test(username)) {
-        return Response.json({ success: false, message: 'Username must be 6 letters or digits' })
+        return NextResponse.json({ error: 'Username must be 6 alphanumeric chars' }, { status: 400 })
       }
-
+      if (!/^07\d{8}$/.test(phone)) {
+        return NextResponse.json({ error: 'Phone must be 07XXXXXXXX' }, { status: 400 })
+      }
       if (!/^[a-zA-Z0-9]{6}$/.test(password)) {
-        return Response.json({ success: false, message: 'Password must be 6 letters or digits' })
+        return NextResponse.json({ error: 'Password must be 6 alphanumeric chars' }, { status: 400 })
       }
 
-      const existingUser = await redis.hgetall(`user:${phone}`)
-      if (existingUser && Object.keys(existingUser).length > 0) {
-        return Response.json({ success: false, message: 'Phone already registered' })
+      const exists = await redis.hgetall(`user:${phone}`)
+      if (exists && Object.keys(exists).length > 0) {
+        return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
       }
 
-      const allUsers = await redis.smembers('users:phones')
-      for (const p of allUsers || []) {
-        const u = await redis.hgetall(`user:${p}`)
-        if (u.username === username) {
-          return Response.json({ success: false, message: 'Username taken' })
-        }
-      }
+      const userInviteCode = `PM${phone.slice(-6)}`
 
-      let invited_by = ''
-      if (referral) {
-        if (!isValidInviteCode(referral)) {
-          return Response.json({ success: false, message: 'Invalid referral code format' })
-        }
-        const refPhone = await redis.get(`invite:${referral}`)
-        if (!refPhone) {
-          return Response.json({ success: false, message: 'Referral code not found' })
-        }
-        invited_by = refPhone
-        if (invited_by === phone) {
-          return Response.json({ success: false, message: 'Cannot use your own referral code' })
-        }
-      }
-
-      const invite_code = getUserInviteCode(phone)
-      const created_at = getUGDateStr()
-
-      const userData = {
-        id: phone,
+      await redis.hset(`user:${phone}`, {
         username,
         phone,
         password,
-        invite_code,
-        invited_by,
+        inviteCode: userInviteCode,
         balance: 2500,
-        available_balance: 2500,
-        created_at,
-        vip_paid: 0,
-        vip_level: 0,
-        vip_deposit: 0,
-        first_vip_amount: 0,
-        airtel_number: '',
-        airtel_name: '',
-        mtn_number: '',
-        mtn_name: ''
-      }
-
-      await redis.hset(`user:${phone}`, userData)
-      await redis.sadd('users:phones', phone)
-      await redis.set(`invite:${invite_code}`, phone)
-
-      return Response.json({
-        success: true,
-        message: 'Registered successfully',
-        invite_code
+        createdAt: Date.now()
       })
+
+      return NextResponse.json({ success: true, inviteCode: userInviteCode })
     }
 
-    // LOGIN
     if (action === 'login') {
-      if (!phone || !password) {
-        return Response.json({ success: false, message: 'Phone and password required' })
-      }
+      const { phone, password } = body
 
       if (!/^07\d{8}$/.test(phone)) {
-        return Response.json({ success: false, message: 'Invalid phone format' })
+        return NextResponse.json({ error: 'Invalid phone' }, { status: 400 })
       }
 
       const user = await redis.hgetall(`user:${phone}`)
       if (!user || Object.keys(user).length === 0) {
-        return Response.json({ success: false, message: 'User not found' })
+        return NextResponse.json({ error: 'User not found' }, { status: 404 })
       }
 
-      if (String(user.password) !== String(password)) {
-        return Response.json({ success: false, message: 'Invalid password' })
+      if (user.password !== password) {
+        return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      const currentBalance = Number(user.balance ?? user.available_balance ?? 0)
-      if (user.balance != currentBalance || user.available_balance != currentBalance) {
-        await syncBalanceFields(phone, currentBalance)
-      }
-
-      return Response.json({
-        success: true,
-        user: normalizeUser(user)
-      })
+      const { password: _, ...userData } = user
+      return NextResponse.json({ success: true, user: userData })
     }
 
-    return Response.json({ success: false, message: 'Invalid action' })
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (err) {
-    console.error('Auth error:', err)
-    return Response.json({ success: false, message: err.message }, { status: 500 })
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }

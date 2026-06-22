@@ -13,7 +13,7 @@ export default function BottomNav() {
 
   const navItems = [
     { href: '/dashboard', icon: '🏠', label: 'Home', color: '#FFB800' },
-    { href: '/tasks', icon: '📋', label: 'Tasks', color: '#00D26A' }, // FIXED: was /viptasks
+    { href: '/books', icon: '📋', label: 'BOOKS', color: '#00D26A' },
     { href: '/hot', icon: '🔥', label: 'Hot', color: '#FF2E2E' },
     { href: '/my', icon: '👤', label: 'My', color: '#007AFF' },
     { href: '/settings', icon: '⚙️', label: 'Settings', color: '#BF5AF2' },

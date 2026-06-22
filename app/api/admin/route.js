@@ -2,169 +2,88 @@ import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
 const redis = Redis.fromEnv()
-const ADMIN_PHONES = ['0753520252']
+const ADMIN_PHONE = '0753520252'
 
-function normalizePhone(phone) {
-  if (!phone) return ''
-  phone = String(phone).replace(/\D/g, '')
-
-  if (phone.startsWith('256') && phone.length === 12) {
-    phone = '0' + phone.slice(3)
-  }
-  if (phone.length === 9 &&!phone.startsWith('0')) {
-    phone = '0' + phone
-  }
-
-  if (!/^07\d{8}$/.test(phone)) return ''
-  return phone
+async function isAdmin(phone) {
+  return phone === ADMIN_PHONE
 }
 
-async function verifyAdmin(phone) {
-  return ADMIN_PHONES.includes(normalizePhone(phone))
-}
+// GET: /api/admin?action=pending
+// GET: /api/admin?action=user&phone=07XXXXXXXX
+export async function GET(req) {
+  const { searchParams } = new URL(req.url)
+  const action = searchParams.get('action')
+  const phone = searchParams.get('phone')
 
-async function getUserData(phone) {
-  const user = await redis.hgetall(`user:${phone}`)
-  return user && Object.keys(user).length > 0? user : null
-}
-
-export async function GET(request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const phone = searchParams.get('phone')
-    const action = searchParams.get('action')
-
-    if (!await verifyAdmin(phone)) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
+  if (action === 'pending') {
+    const pendingIds = await redis.lrange('pending_tx', 0, 999)
+    const pending = []
+    for (const id of pendingIds) {
+      const tx = await redis.hgetall(`tx:${id}`)
+      if (tx && tx.status === 'pending') pending.push(tx)
     }
+    return NextResponse.json({ success: true, pending })
+  }
 
-    if (action === 'pending') {
-      const allPhones = await redis.smembers('users:phones')
-      const deposits = []
-      const withdraws = []
+  if (action === 'user') {
+    if (!phone) return NextResponse.json({ success: false, error: 'Phone required' })
+    const user = await redis.hgetall(`user:${phone}`)
+    if (!user || !user.phone) return NextResponse.json({ success: false, error: 'User not found' })
+    
+    // Parse JSON fields
+    user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
+    user.completedBooks = JSON.parse(user.completedBooks || '[]')
+    user.availableBalance = Number(user.availableBalance || 0)
+    user.vip = Number(user.vip || 0)
+    
+    return NextResponse.json({ success: true, user })
+  }
 
-      for (const p of allPhones) {
-        const txList = await redis.lrange(`tx:${p}`, 0, 999)
-        for (const txStr of txList) {
-          const tx = JSON.parse(txStr)
-          if (tx.status === 'pending') {
-            const user = await redis.hgetall(`user:${p}`)
-            tx.balance = user.balance
-            tx.available_balance = user.available_balance
+  return NextResponse.json({ success: false, error: 'Invalid action' })
+}
 
-            // Wrap in data field to match frontend
-            const wrapped = {
-              id: tx.id,
-              phone: p,
-              data: tx
-            }
+// POST: updateStatus, resetPassword
+export async function POST(req) {
+  try {
+    const body = await req.json()
+    const { action, id, status, phone, password } = body
 
-            if (tx.type === 'deposit') deposits.push(wrapped)
-            if (tx.type === 'withdraw') withdraws.push(wrapped)
-          }
-        }
+    if (action === 'updateStatus') {
+      if (!id || !status) return NextResponse.json({ success: false, error: 'Missing data' })
+      
+      const tx = await redis.hgetall(`tx:${id}`)
+      if (!tx || !tx.phone) return NextResponse.json({ success: false, error: 'Transaction not found' })
+      
+      // Update tx status
+      await redis.hset(`tx:${id}`, { status })
+      
+      // Remove from pending list
+      await redis.lrem('pending_tx', 0, id)
+      
+      // If approved and it's a deposit, add to balance
+      if (status === 'success' && tx.type === 'deposit') {
+        const userKey = `user:${tx.phone}`
+        const user = await redis.hgetall(userKey)
+        const newBalance = Number(user.availableBalance || 0) + Number(tx.amount)
+        await redis.hset(userKey, { availableBalance: newBalance })
       }
-
-      deposits.sort((a, b) => new Date(a.data.created_at) - new Date(b.data.created_at))
-      withdraws.sort((a, b) => new Date(a.data.created_at) - new Date(b.data.created_at))
-
-      return NextResponse.json({ success: true, deposits, withdraws })
-    }
-
-    if (action === 'getUser') {
-      const targetPhone = normalizePhone(searchParams.get('targetPhone'))
-      const user = await getUserData(targetPhone)
-      if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-
-      delete user.password
-      return NextResponse.json({ success: true, user })
-    }
-
-    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
-  } catch (err) {
-    console.error('GET /api/admin error:', err)
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
-  }
-}
-
-export async function POST(request) {
-  try {
-    const body = await request.json()
-    const { action, phone, targetPhone, newPassword, txId, type } = body
-
-    if (!await verifyAdmin(phone)) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 403 })
+      
+      return NextResponse.json({ success: true })
     }
 
     if (action === 'resetPassword') {
-      const targetPhoneNorm = normalizePhone(targetPhone)
-      if (!newPassword || newPassword.length < 6) {
-        return NextResponse.json({ success: false, message: 'Password must be 6+ chars' }, { status: 400 })
-      }
-
-      const user = await getUserData(targetPhoneNorm)
-      if (!user) return NextResponse.json({ success: false, message: 'Target user not found' }, { status: 404 })
-
-      await redis.hset(`user:${targetPhoneNorm}`, { password: newPassword })
-      return NextResponse.json({ success: true, message: 'Password reset successfully' })
+      if (!phone || !password) return NextResponse.json({ success: false, error: 'Missing data' })
+      
+      const user = await redis.hgetall(`user:${phone}`)
+      if (!user || !user.phone) return NextResponse.json({ success: false, error: 'User not found' })
+      
+      await redis.hset(`user:${phone}`, { password })
+      return NextResponse.json({ success: true })
     }
 
-    // Handle approve/reject for both deposits and withdraws
-    if (action === 'approve_deposit' || action === 'reject_deposit' ||
-        action === 'approve_withdraw' || action === 'reject_withdraw') {
-
-      const targetPhoneNorm = normalizePhone(targetPhone)
-      const isApprove = action.startsWith('approve')
-      const txType = action.includes('deposit')? 'deposit' : 'withdraw'
-
-      const txList = await redis.lrange(`tx:${targetPhoneNorm}`, 0, 999)
-      let txIndex = -1
-      let tx = null
-
-      for (let i = 0; i < txList.length; i++) {
-        const t = JSON.parse(txList[i])
-        if (t.id === txId && t.status === 'pending') {
-          txIndex = i
-          tx = t
-          break
-        }
-      }
-
-      if (!tx) return NextResponse.json({ success: false, message: 'Transaction not found or already processed' })
-
-      const newStatus = isApprove? 'success' : 'rejected'
-      tx.status = newStatus
-
-      await redis.lset(`tx:${targetPhoneNorm}`, txIndex, JSON.stringify(tx))
-
-      if (isApprove) {
-        if (txType === 'deposit') {
-          const user = await redis.hgetall(`user:${targetPhoneNorm}`)
-          const current = Number(user.balance || 0)
-          const newBal = current + Number(tx.amount)
-          await redis.hset(`user:${targetPhoneNorm}`, { balance: newBal, available_balance: newBal })
-        }
-
-        if (txType === 'withdraw') {
-          const withdrawAmount = Math.abs(Number(tx.amount))
-          const user = await redis.hgetall(`user:${targetPhoneNorm}`)
-          const currentBalance = Number(user.balance || 0)
-
-          if (currentBalance < withdrawAmount) {
-            throw new Error('Insufficient balance')
-          }
-
-          const newBal = currentBalance - withdrawAmount
-          await redis.hset(`user:${targetPhoneNorm}`, { balance: newBal, available_balance: newBal })
-        }
-      }
-
-      return NextResponse.json({ success: true, message: `Transaction ${newStatus}` })
-    }
-
-    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
+    return NextResponse.json({ success: false, error: 'Invalid action' })
   } catch (err) {
-    console.error('POST /api/admin error:', err)
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
+    console.error(err)
+    return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 })
   }
 }

@@ -1,179 +1,89 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import Card from '../../components/Card'
 
-export default function Myteam() {
-  const [user, setUser] = useState(null)
-  const [totalCommission, setTotalCommission] = useState(0)
-  const [teamA, setTeamA] = useState([])
-  const [teamB, setTeamB] = useState([])
-  const [teamC, setTeamC] = useState([])
+export default function MyTeamPage() {
+  const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
 
   useEffect(() => {
-    const stored = localStorage.getItem('palamedes_user')
-    const userData = JSON.parse(stored || '{}')
-    setUser(userData)
-    
-    if (userData.phone) {
-      fetchTeamData(userData.phone)
-    } else {
-      setError('Not logged in')
-      setLoading(false)
+    const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    if (!userData.phone) {
+      window.location.href = '/login'
+      return
     }
+    
+    fetch(`/api/myteam/total?phone=${userData.phone}`)
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) setData(res)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
   }, [])
 
-  const fetchTeamData = async (phone) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/myteam?phone=${phone}`)
-      const data = await res.json()
-      
-      if (data.success) {
-        setTeamA(data.teamA || [])
-        setTeamB(data.teamB || [])
-        setTeamC(data.teamC || [])
-        setTotalCommission(data.totalCommission || 0)
-      } else {
-        setError(data.message || 'Failed to load team')
-        setTeamA([])
-        setTeamB([])
-        setTeamC([])
-        setTotalCommission(0)
-      }
-    } catch (err) {
-      console.error('Failed to fetch team:', err)
-      setError('Network error. Try again.')
-      setTeamA([])
-      setTeamB([])
-      setTeamC([])
-      setTotalCommission(0)
-    }
-    setLoading(false)
-  }
-
-  const TeamSection = ({ title, members, color }) => (
-    <div style={{ 
-      background: '#FFFFFF',
-      border: '1px solid #E0E0E0',
-      borderRadius: '16px',
-      padding: '15px',
-      marginBottom: '20px'
-    }}>
-      <h3 style={{ 
-        margin: '0 0 12px 0', 
-        fontSize: '18px', 
-        fontWeight: '900', 
-        color: color 
-      }}>
-        {title} - {members.length} members
-      </h3>
-      
-      {members.length === 0 ? (
-        <p style={{ color: '#999', textAlign: 'center', padding: '20px 0' }}>
-          No members yet
-        </p>
-      ) : (
-        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-          {members.map((m, i) => (
-            <div key={i} style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '12px 0',
-              borderBottom: i < members.length - 1 ? '1px solid #F0F0F0' : 'none'
-            }}>
-              <div>
-                <p style={{ margin: 0, fontWeight: '800', color: '#000' }}>
-                  {m.nickname || m.username || 'User'}
-                </p>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
-                  {m.phone} • {m.vip > 0 ? `VIP${m.vip}` : 'No VIP'}
-                </p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <p style={{ 
-                  margin: 0, 
-                  fontSize: '12px', 
-                  fontWeight: '800',
-                  color: m.vipBought ? '#00BFFF' : '#999'
-                }}>
-                  {m.vipBought ? 'Bought VIP Successful' : 'Pending VIP'}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-
-  if (loading) {
-    return <Card><p style={{ textAlign: 'center', padding: '50px' }}>Loading team...</p></Card>
-  }
-
-  if (error) {
-    return <Card><p style={{ textAlign: 'center', padding: '50px', color: 'red' }}>{error}</p></Card>
-  }
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>
+  if (!data) return null
 
   return (
-    <Card>
-      <main style={{ minHeight: 'auto', background: '#FFFFFF', padding: '15px 20px' }}>
-        
-        <Link href="/dashboard" style={{ textDecoration: 'none', color: '#00BFFF', fontWeight: '800', marginBottom: '15px', display: 'block' }}>
-          ← Back to Dashboard
-        </Link>
+    <main className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex items-center mb-6">
+          <Link href="/dashboard" className="text-[#00BFFF] font-bold mr-4">← Back</Link>
+          <h1 className="text-2xl font-bold">MyTeam</h1>
+        </div>
 
-        <h1 style={{ textAlign: 'center', marginBottom: '20px', color: '#000', fontSize: '24px' }}>
-          My Team
-        </h1>
-
-        <p style={{ textAlign: 'center', margin: '0 0 8px 0', fontSize: '16px', fontWeight: '800', color: '#666' }}>
-          Total Commission
-        </p>
-        <div style={{
-          background: '#00BFFF',
-          borderRadius: '20px',
-          padding: '25px 15px',
-          marginBottom: '30px',
-          textAlign: 'center',
-          boxShadow: '0 4px 12px rgba(0,191,255,0.3)'
-        }}>
-          <p style={{ 
-            margin: 0, 
-            fontSize: '42px', 
-            fontWeight: '900', 
-            color: '#000'
-          }}>
-            {totalCommission.toLocaleString()} shs
+        {/* Big Total Box */}
+        <div className="bg-gradient-to-r from-[#00BFFF] to-blue-600 rounded-xl shadow-lg p-6 mb-6 text-white">
+          <p className="text-sm opacity-90 mb-2">Total Team Commission</p>
+          <p className="text-4xl font-bold">
+            {data.total.toLocaleString()}shs
           </p>
-          <p style={{ margin: '8px 0 0', fontSize: '14px', color: '#000', fontWeight: '800' }}>
-            Earned from Team A/B/C
+          <p className="text-xs opacity-80 mt-2">
+            From Team A, B, and C combined
           </p>
         </div>
 
-        <TeamSection 
-          title="Team A - Direct Invites" 
-          members={teamA} 
-          color="#00BFFF" 
-        />
+        {/* Breakdown */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <p className="text-xs text-gray-600">Team A</p>
+            <p className="text-2xl font-bold text-[#00BFFF]">{data.breakdown.teamA}</p>
+            <p className="text-xs text-gray-500">5%</p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <p className="text-xs text-gray-600">Team B</p>
+            <p className="text-2xl font-bold text-[#00BFFF]">{data.breakdown.teamB}</p>
+            <p className="text-xs text-gray-500">2%</p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <p className="text-xs text-gray-600">Team C</p>
+            <p className="text-2xl font-bold text-[#00BFFF]">{data.breakdown.teamC}</p>
+            <p className="text-xs text-gray-500">1%</p>
+          </div>
+        </div>
 
-        <TeamSection 
-          title="Team B - Level 2" 
-          members={teamB} 
-          color="#FF8C00" 
-        />
-
-        <TeamSection 
-          title="Team C - Level 3" 
-          members={teamC} 
-          color="#32CD32" 
-        />
-
-      </main>
-    </Card>
+        <div className="bg-white rounded-xl shadow p-6">
+          <h2 className="text-lg font-bold mb-4">How Commission Works</h2>
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="flex justify-between">
+              <span>Team A: Direct invites</span>
+              <span className="font-semibold">5% of their first VIP amount</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Team B: Invites of Team A</span>
+              <span className="font-semibold">2% of their first VIP amount</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Team C: Invites of Team B</span>
+              <span className="font-semibold">1% of their first VIP amount</span>
+            </div>
+            <div className="pt-3 border-t text-xs text-gray-500">
+              Only counts users who have bought VIP and haven't been paid out yet
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
   )
 }

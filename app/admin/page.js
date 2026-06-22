@@ -2,226 +2,179 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-const ADMIN_PHONE = '0753520252'
-
-const cardStyle = {
-  backgroundColor: 'white',
-  padding: '16px',
-  marginBottom: '12px',
-  borderRadius: '8px',
-  border: '1px solid #e5e7eb'
-}
-const inputStyle = {
-  width: '100%',
-  height: '36px',
-  padding: '0 10px',
-  borderRadius: '6px',
-  border: '1px solid #d1d5db',
-  marginBottom: '10px'
-}
-const btnStyle = {
-  backgroundColor: '#00BFFF',
-  color: 'black',
-  padding: '6px 14px',
-  borderRadius: '6px',
-  border: 'none',
-  cursor: 'pointer',
-  fontSize: '14px'
-}
-const dangerBtn = {...btnStyle, backgroundColor: '#ef4444', color: 'white' }
-const successBtn = {...btnStyle, backgroundColor: '#22c55e', color: 'white' }
-
-export default function AdminPage() {
+export default function Admin() {
   const router = useRouter()
   const [user, setUser] = useState(null)
+  const [pending, setPending] = useState([])
+  const [loading, setLoading] = useState(true)
+  
+  // Password reset state
   const [searchPhone, setSearchPhone] = useState('')
-  const [searchedUser, setSearchedUser] = useState(null)
-  const [newPass, setNewPass] = useState('')
-  const [pendingDeposits, setPendingDeposits] = useState([])
-  const [pendingWithdraws, setPendingWithdraws] = useState([])
+  const [foundUser, setFoundUser] = useState(null)
+  const [showResetBox, setShowResetBox] = useState(false)
+  const [tempPassword, setTempPassword] = useState('')
+
+  const ADMIN_PHONE = '0753520252'
 
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    if (!saved.phone) return router.push('/login')
-
-    const cleanPhone = saved.phone.replace(/\D/g, '')
-    const cleanAdmin = ADMIN_PHONE.replace(/\D/g, '')
-
-    if (cleanPhone!== cleanAdmin) return router.push('/dashboard')
-
-    setUser({...saved, phone: cleanPhone })
-    loadPendingTransactions()
-  }, [router])
-
-  const safeParse = (data) => {
-    if (typeof data === 'string') {
-      try {
-        return JSON.parse(data)
-      } catch {
-        return data
-      }
+    const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    if (localUser.phone !== ADMIN_PHONE) {
+      router.push('/dashboard')
+      return
     }
-    return data
+    setUser(localUser)
+    loadPending()
+  }, [])
+
+  const loadPending = async () => {
+    const res = await fetch('/api/admin?action=pending')
+    const data = await res.json()
+    if (data.success) setPending(data.pending)
+    setLoading(false)
   }
 
-  const loadPendingTransactions = async () => {
-    try {
-      const res = await fetch(`/api/admin?action=pending&phone=${ADMIN_PHONE}`)
-      const data = await res.json()
-
-      if (data.success) {
-        const deposits = (data.deposits || []).map(d => ({
-         ...d,
-          data: safeParse(d.data)
-        }))
-        const withdraws = (data.withdraws || []).map(d => ({
-         ...d,
-          data: safeParse(d.data)
-        }))
-
-        setPendingDeposits(deposits)
-        setPendingWithdraws(withdraws)
-      } else {
-        alert('Failed to load pending: ' + data.message)
-      }
-    } catch (err) {
-      console.error('Error loading pending:', err)
-      alert('Failed to load pending: ' + err.message)
+  const handleAction = async (id, action) => {
+    const res = await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'updateStatus', id, status: action })
+    })
+    const data = await res.json()
+    if (data.success) {
+      alert(`Transaction ${action}`)
+      loadPending()
+    } else {
+      alert(data.error)
     }
   }
 
   const searchUser = async () => {
-    if (!searchPhone) return alert('Enter phone number')
-    if (!user) return alert('Not logged in')
-
-    const cleanPhone = searchPhone.replace(/\D/g, '')
-    const res = await fetch(`/api/admin?action=getUser&phone=${ADMIN_PHONE}&targetPhone=${cleanPhone}`)
+    if (!/^07\d{8}$/.test(searchPhone)) {
+      alert('Enter valid phone')
+      return
+    }
+    const res = await fetch(`/api/admin?action=user&phone=${searchPhone}`)
     const data = await res.json()
-
     if (data.success) {
-      setSearchedUser(data.user)
+      setFoundUser(data.user)
     } else {
-      alert(data.message)
-      setSearchedUser(null)
+      alert('User not found')
+      setFoundUser(null)
     }
   }
 
   const resetPassword = async () => {
-    if (!newPass) return alert('Enter new password')
-    if (!searchedUser) return alert('Search for a user first')
-
+    if (!/^[a-zA-Z0-9]{6}$/.test(tempPassword)) {
+      alert('Password must be 6 letters/numbers')
+      return
+    }
     const res = await fetch('/api/admin', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        action: 'resetPassword',
-        phone: ADMIN_PHONE,
-        targetPhone: searchedUser.phone,
-        newPassword: newPass
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resetPassword', phone: searchPhone, password: tempPassword })
     })
     const data = await res.json()
-    alert(data.message)
-    if (data.success) setNewPass('')
+    if (data.success) {
+      alert('Password reset. Tell user to login with: ' + tempPassword)
+      setShowResetBox(false)
+      setTempPassword('')
+    } else {
+      alert(data.error)
+    }
   }
 
-  const handleTransaction = async (txId, action, type, targetPhone) => {
-    const res = await fetch('/api/admin', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        action,
-        txId,
-        type,
-        phone: ADMIN_PHONE,
-        targetPhone: targetPhone
-      })
-    })
-    const data = await res.json()
-    alert(data.message)
-    if (data.success) loadPendingTransactions()
-  }
-
-  if (!user) return <div style={{padding: '20px'}}>Loading...</div>
+  if (!user) return <div className="p-4 text-black">Loading...</div>
 
   return (
-    <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', padding: '16px', paddingBottom: '96px'}}>
-      <h1 style={{fontSize: '22px', fontWeight: 'bold', marginBottom: '16px'}}>Admin Panel</h1>
+    <div className="min-h-screen bg-white p-4">
+      <h1 className="text-2xl font-bold text-black mb-6">Admin Panel</h1>
 
-      <div style={cardStyle}>
-        <h2 style={{fontSize: '16px', fontWeight: 'bold', marginBottom: '12px'}}>Reset User Password</h2>
-
-        <input
-          style={inputStyle}
-          placeholder="Enter user phone"
-          value={searchPhone}
-          onChange={(e) => setSearchPhone(e.target.value)}
-        />
-        <button style={btnStyle} onClick={searchUser}>Search User</button>
-
-        {searchedUser && (
-          <div style={{marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e5e7eb'}}>
-            <p><strong>Username:</strong> {searchedUser.username}</p>
-            <p><strong>Phone:</strong> {searchedUser.phone}</p>
-            <p><strong>Balance:</strong> {searchedUser.balance}shs</p>
-            <p><strong>VIP:</strong> {searchedUser.vip}</p>
-
-            <input
-              style={{...inputStyle, marginTop: '12px'}}
-              placeholder="Set temporary password"
-              value={newPass}
-              onChange={(e) => setNewPass(e.target.value)}
-            />
-            <button style={dangerBtn} onClick={resetPassword}>Reset Password</button>
+      {/* Section 1: Pending Transactions */}
+      <div className="mb-8">
+        <h2 className="text-xl font-bold text-black mb-3">Pending Transactions</h2>
+        {loading ? (
+          <p className="text-black">Loading...</p>
+        ) : pending.length === 0 ? (
+          <p className="text-gray-600">No pending transactions</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {pending.map(tx => (
+              <div key={tx.id} className="border border-gray-300 rounded p-3 bg-gray-50">
+                <p className="text-black font-bold">{tx.type.toUpperCase()} - {tx.amount} shs</p>
+                <p className="text-black">Phone: {tx.phone}</p>
+                <p className="text-black">Method: {tx.method}</p>
+                <p className="text-gray-600 text-sm">{new Date(tx.createdAt).toLocaleString()}</p>
+                <div className="flex gap-2 mt-2">
+                  <button 
+                    onClick={() => handleAction(tx.id, 'success')}
+                    className="px-4 py-1 bg-green-500 text-white rounded font-bold"
+                  >
+                    Approve
+                  </button>
+                  <button 
+                    onClick={() => handleAction(tx.id, 'failed')}
+                    className="px-4 py-1 bg-red-500 text-white rounded font-bold"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      <div style={cardStyle}>
-        <h2 style={{fontSize: '16px', fontWeight: 'bold', marginBottom: '12px'}}>Pending Deposits</h2>
-        {pendingDeposits.length === 0? (
-          <p style={{color: '#6b7280'}}>No pending deposits</p>
-        ) : (
-          pendingDeposits.map(tx => {
-            const txData = tx.data || {}
-            return (
-              <div key={tx.id} style={{borderBottom: '1px solid #e5e7eb', padding: '10px 0'}}>
-                <p><strong>Phone:</strong> {txData.phone || tx.phone}</p>
-                <p><strong>Amount:</strong> {txData.amount || tx.amount}shs</p>
-                <p><strong>Method:</strong> {txData.method || tx.method}</p>
-                <p><strong>Date:</strong> {new Date(txData.created_at || tx.date || tx.created_at).toLocaleString()}</p>
-                <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
-                  <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve_deposit', 'deposit', txData.userPhone || tx.phone)}>Confirm</button>
-                  <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject_deposit', 'deposit', txData.userPhone || tx.phone)}>Reject</button>
-                </div>
-              </div>
-            )
-          })
-        )}
-      </div>
+      {/* Section 2: Password Reset */}
+      <div>
+        <h2 className="text-xl font-bold text-black mb-3">Password Reset</h2>
+        <div className="flex gap-2 mb-3">
+          <input
+            type="tel"
+            placeholder="07XXXXXXXX"
+            value={searchPhone}
+            onChange={(e) => setSearchPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            maxLength={10}
+            className="flex-1 border-gray-300 rounded px-3 py-2 text-black bg-white"
+          />
+          <button 
+            onClick={searchUser}
+            className="px-4 py-2 bg-blue-500 text-white rounded"
+          >
+            🔍
+          </button>
+        </div>
 
-      <div style={cardStyle}>
-        <h2 style={{fontSize: '16px', fontWeight: 'bold', marginBottom: '12px'}}>Pending Withdraws</h2>
-        {pendingWithdraws.length === 0? (
-          <p style={{color: '#6b7280'}}>No pending withdraws</p>
-        ) : (
-          pendingWithdraws.map(tx => {
-            const txData = tx.data || {}
-            return (
-              <div key={tx.id} style={{borderBottom: '1px solid #e5e7eb', padding: '10px 0'}}>
-                <p><strong>Phone:</strong> {txData.phone || tx.phone}</p>
-                <p><strong>Amount:</strong> {Math.abs(txData.amount || tx.amount)}shs</p>
-                <p><strong>Net:</strong> {txData.netAmount || tx.netAmount}shs</p>
-                <p><strong>Method:</strong> {txData.method || tx.method} - {txData.number || tx.number}</p>
-                <p><strong>Names:</strong> {txData.names || tx.names}</p>
-                <p><strong>Date:</strong> {new Date(txData.created_at || tx.date || tx.created_at).toLocaleString()}</p>
-                <div style={{marginTop: '8px', display: 'flex', gap: '8px'}}>
-                  <button style={successBtn} onClick={() => handleTransaction(tx.id, 'approve_withdraw', 'withdraw', txData.phone || tx.phone)}>Confirm</button>
-                  <button style={dangerBtn} onClick={() => handleTransaction(tx.id, 'reject_withdraw', 'withdraw', txData.phone || tx.phone)}>Reject</button>
-                </div>
+        {foundUser && (
+          <div className="border border-gray-300 rounded p-3 bg-gray-50">
+            <p className="text-black"><b>Username:</b> {foundUser.username}</p>
+            <p className="text-black"><b>Phone:</b> {foundUser.phone}</p>
+            <p className="text-black"><b>Password:</b> {foundUser.password}</p>
+            <button 
+              onClick={() => setShowResetBox(true)}
+              className="mt-2 px-4 py-1 bg-yellow-500 text-black rounded font-bold"
+            >
+              Reset Password
+            </button>
+
+            {showResetBox && (
+              <div className="mt-3 p-3 bg-white border-gray-300 rounded">
+                <input
+                  type="text"
+                  placeholder="New temp password 6 chars"
+                  value={tempPassword}
+                  onChange={(e) => setTempPassword(e.target.value)}
+                  maxLength={6}
+                  className="w-full border-gray-300 rounded px-3 py-2 text-black mb-2"
+                />
+                <button 
+                  onClick={resetPassword}
+                  className="px-4 py-1 bg-green-500 text-white rounded font-bold"
+                >
+                  Confirm Reset
+                </button>
               </div>
-            )
-          })
+            )}
+          </div>
         )}
       </div>
     </div>
