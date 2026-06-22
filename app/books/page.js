@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import AvatarWithBadge from '../components/AvatarWithBadge'
+import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 export default function BooksPage() {
   const [user, setUser] = useState(null)
@@ -66,7 +66,6 @@ export default function BooksPage() {
   const unlockedIds = user.unlockedBooks || []
   const completedIds = user.completedBooks || []
 
-  // Get VIP config to know how many books to show
   const VIPS = {
     1: { books: 4 }, 2: { books: 4 }, 3: { books: 4 },
     4: { books: 5 }, 5: { books: 5 }, 6: { books: 5 },
@@ -75,7 +74,6 @@ export default function BooksPage() {
   const booksToShow = VIPS[vip]?.books || 0
   const userBooks = allBooks.filter(b => unlockedIds.includes(b.id.toString())).slice(0, booksToShow)
 
-  // Reader modal
   if (readingBook) {
     return (
       <main style={{ minHeight: '100vh', background: '#000', color: '#fff', padding: '20px', position: 'relative' }}>
