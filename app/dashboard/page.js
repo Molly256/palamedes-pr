@@ -33,12 +33,20 @@ export default function Dashboard() {
     }
     
     try {
-      const res = await fetch(`/api/user?action=getDashboard&phone=${cleanPhone}&t=${Date.now()}`)
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'getDashboard', 
+          phone: cleanPhone,
+          _t: Date.now() 
+        })
+      })
       const data = await res.json()
       
       if (data.success && data.user) {
-        // Force field to availableBalance for consistency
-        data.user.availableBalance = Number(data.user.availableBalance || 0)
+        // Map DB field 'balance' to UI field 'availableBalance'
+        data.user.availableBalance = Number(data.user.balance || 0)
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
         setUser(data.user)
       } else {

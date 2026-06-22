@@ -1,173 +1,181 @@
-import { Redis } from '@upstash/redis'
-import { NextResponse } from 'next/server'
+'use client'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import AvatarWithBadge from '../../components/AvatarWithBadge'
+import Card from '../../components/Card'
+import { useRouter } from 'next/navigation'
 
-export const dynamic = 'force-dynamic'
-const redis = Redis.fromEnv()
+export default function Dashboard() {
+  const router = useRouter()
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-function normalizePhone(phone) {
-  if (!phone) return null
-  phone = String(phone).replace(/\D/g, '')
-  if (phone.startsWith('256') && phone.length === 12) {
-    phone = '0' + phone.slice(3)
-  }
-  if (!/^07\d{8}$/.test(phone)) return null
-  return phone
-}
+  const ADMIN_PHONE = '0753520252'
 
-async function getUserData(phone) {
-  if (!phone) return { user: null }
-  const user = await redis.hgetall(`user:${phone}`)
-  return { user: user && Object.keys(user).length > 0 ? user : null }
-}
-
-async function getTransactions(phone) {
-  if (!phone) return []
-  const txList = await redis.lrange(`tx:${phone}`, 0, 49) // only recent 50
-  return txList.map(t => {
-    try { return JSON.parse(t) } catch { return null }
-  }).filter(Boolean)
-}
-
-async function buildTeams(phone) {
-  if (!phone) return { teamA: [], teamB: [], teamC: [] }
-
-  const teamAPhones = await redis.smembers(`downlines:${phone}:1`)
-  const teamBPhones = new Set()
-  for (const p of teamAPhones) {
-    const phones = await redis.smembers(`downlines:${p}:1`)
-    phones.forEach(x => teamBPhones.add(x))
-  }
-  const teamCPhones = new Set()
-  for (const p of teamBPhones) {
-    const phones = await redis.smembers(`downlines:${p}:1`)
-    phones.forEach(x => teamCPhones.add(x))
-  }
-
-  const [teamA, teamB, teamC] = await Promise.all([
-    Promise.all([...teamAPhones].map(p => redis.hgetall(`user:${p}`))),
-    Promise.all([...teamBPhones].map(p => redis.hgetall(`user:${p}`))),
-    Promise.all([...teamCPhones].map(p => redis.hgetall(`user:${p}`)))
-  ])
-
-  return {
-    teamA: teamA.filter(u => u && Object.keys(u).length > 0),
-    teamB: teamB.filter(u => u && Object.keys(u).length > 0),
-    teamC: teamC.filter(u => u && Object.keys(u).length > 0)
-  }
-}
-
-export async function GET(request) {
-  try {
-    const { searchParams } = new URL(request.url)
-    let phone = normalizePhone(searchParams.get('phone'))
-    const action = searchParams.get('action')
-
-    if (!phone) {
-      return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })
+  const normalizePhone = (phone) => {
+    if (!phone) return ''
+    phone = String(phone).replace(/\D/g, '')
+    if (!/^07\d{8}$/.test(phone)) {
+      return ''
     }
-
-    const { user } = await getUserData(phone)
-    if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-
-    // Only dashboard action remains
-    if (action === 'getDashboard') {
-      const transactions = await getTransactions(phone)
-      const vipTx = transactions.find(t => t.type === 'viptask_purchase')
-      const vipPurchaseDate = vipTx ? vipTx.created_at : null
-      const { teamA, teamB, teamC } = await buildTeams(phone)
-      const totalEarnings = transactions
-        .filter(t => t.type === 'referral_reward' && t.status === 'success')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0)
-      const balance = Number(user.balance || 0)
-
-      return NextResponse.json({
-        success: true,
-        user: {
-          username: user.username || '',
-          phone: user.phone || phone,
-          balance: balance,
-          available_balance: balance,
-          vip: Number(user.vip) || 0,
-          avatar: user.avatar || '',
-          nickname: user.nickname || '',
-          vipLocked: user.vip_locked === 'true',
-          hasBoughtVIP: Number(user.hasBoughtVIP) === 1,
-          tasksCompleted: Number(user.tasks_completed) || 0,
-          vipPricePaid: Number(user.vip_price_paid) || 0,
-          firstVipAmount: Number(user.first_vip_amount) || 0,
-          bankMTN: user.bank_mtn ? JSON.parse(user.bank_mtn) : null,
-          bankAirtel: user.bank_airtel ? JSON.parse(user.bank_airtel) : null,
-          referralPaid: user.referral_paid === 'true',
-          upline1: user.upline1 || '',
-          upline2: user.upline2 || '',
-          upline3: user.upline3 || '',
-          createdAt: user.created_at || ''
-        },
-        transactions: transactions,
-        vipPurchaseDate,
-        stats: {
-          teamA: teamA.length,
-          teamB: teamB.length,
-          teamC: teamC.length,
-          totalMembers: teamA.length + teamB.length + teamC.length,
-          totalEarnings
-        }
-      })
-    }
-
-    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
-  } catch (err) {
-    console.error('GET /api/user error:', err)
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
+    return phone
   }
-}
 
-export async function POST(request) {
-  try {
-    const body = await request.json()
-    let { action, phone, field, value, oldPass, newPass } = body
-
-    phone = normalizePhone(phone)
-    if (!phone) return NextResponse.json({ success: false, message: 'Invalid phone' }, { status: 400 })
-
-    const { user } = await getUserData(phone)
-    if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-
-    // Settings actions only
-    if (action === 'updateProfile') {
-      if (field === 'nickname') {
-        if (value.length > 6) return NextResponse.json({ success: false, message: 'Nickname max 6 letters' }, { status: 400 })
-        await redis.hset(`user:${phone}`, { nickname: value })
-        return NextResponse.json({ success: true, message: 'Nickname saved' })
-      }
-      if (field === 'bankMTN') {
-        await redis.hset(`user:${phone}`, { bank_mtn: JSON.stringify(value) })
-        return NextResponse.json({ success: true, message: 'MTN bank saved' })
-      }
-      if (field === 'bankAirtel') {
-        await redis.hset(`user:${phone}`, { bank_airtel: JSON.stringify(value) })
-        return NextResponse.json({ success: true, message: 'Airtel bank saved' })
-      }
-      if (field === 'avatar') {
-        await redis.hset(`user:${phone}`, { avatar: value })
-        return NextResponse.json({ success: true, message: 'Avatar updated' })
-      }
+  const loadUser = async () => {
+    const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+    const cleanPhone = normalizePhone(localUser.phone)
+    
+    if (!cleanPhone) {
+      setUser(localUser)
+      setLoading(false)
+      return
     }
-
-    if (action === 'changePassword') {
-      if (String(user.password) !== String(oldPass)) {
-        return NextResponse.json({ success: false, message: 'Old password incorrect' }, { status: 400 })
+    
+    try {
+      const res = await fetch(`/api/user?action=getDashboard&phone=${cleanPhone}&_t=${Date.now()}`)
+      const data = await res.json()
+      
+      if (data.success && data.user) {
+        // Map DB field 'balance' to UI field 'availableBalance'
+        data.user.availableBalance = Number(data.user.balance || 0)
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+        setUser(data.user)
+      } else {
+        setUser(localUser)
       }
-      if (newPass.length < 6) {
-        return NextResponse.json({ success: false, message: 'New password must be at least 6 characters' }, { status: 400 })
-      }
-      await redis.hset(`user:${phone}`, { password: newPass })
-      return NextResponse.json({ success: true, message: 'Password changed' })
+    } catch (e) {
+      console.log('Redis fetch failed:', e)
+      setUser(localUser)
     }
-
-    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
-  } catch (err){
-    console.error('POST /api/user error:', err)
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
+    setLoading(false)
   }
+
+  useEffect(() => {
+    loadUser()
+    window.addEventListener('focus', loadUser)
+    return () => window.removeEventListener('focus', loadUser)
+  }, [])
+
+  const menuItems = [
+    { icon: '💳', label: 'Deposit', href: '/deposit' },
+    { icon: '🏧', label: 'Withdraw', href: '/withdraw' },
+    { icon: '💼', label: 'VIP Levels', href: '/viplevels' },
+    { icon: '📜', label: 'Transactions', href: '/transactions' },
+    { icon: '👥', label: 'Invite', href: '/invite' },
+    { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
+    { icon: '📖', label: 'About', href: '/about' },
+    { icon: '📱', label: 'Download App', href: '/downloadapp' },
+    { icon: '🎧', label: 'Manager', href: '/manager' }
+  ]
+
+  const displayBalance = Number(user?.availableBalance || 0)
+  const vipLevel = Number(user?.vip || 0)
+  const vipName = vipLevel > 0 ? `VIP ${vipLevel}` : 'Internship'
+
+  return (
+    <Card>
+      <main style={{
+        minHeight: 'auto',
+        background: '#FFFFFF',
+        padding: '15px 20px 0',
+        boxSizing: 'border-box'
+      }}>
+
+        <div style={{ 
+          background: '#FFFFFF',
+          border: '1px solid #E0E0E0',
+          borderRadius: '20px',
+          padding: '20px 15px',
+          marginBottom: '25px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+          position: 'relative',
+          minHeight: '140px'
+        }}>
+          
+          <div style={{ paddingRight: '90px' }}>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
+              Welcome to PALAMEDES PR
+            </h2>
+            <p style={{ margin: '8px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
+              Username: {loading ? 'Loading...' : user?.username || 'User'}
+            </p>
+            <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
+              Phone number: {user?.phone || 'Not registered'}
+            </p>
+            <p style={{ margin: '12px 0 4px', fontSize: '14px', fontWeight: '800', color: '#000' }}>
+              Available balance
+            </p>
+            <p style={{ margin: '0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
+              {loading ? '0' : displayBalance.toLocaleString()} shs
+            </p>
+            <p style={{ margin: '6px 0 0', fontSize: '14px', fontWeight: '700', color: '#000' }}>
+              {vipName}
+            </p>
+          </div>
+
+          <div style={{ position: 'absolute', top: '20px', right: '18px' }}>
+            <AvatarWithBadge username={user?.username} vipLevel={vipLevel} size={72} avatar={user?.avatar || ''} />
+          </div>
+        </div>
+
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '18px 15px',
+          marginBottom: '18px'
+        }}>
+          {menuItems.map(item => (
+            <Link key={item.label} href={item.href} style={{ textDecoration: 'none' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ 
+                  width: '100%',
+                  height: '95px',
+                  background: '#00BFFF', 
+                  borderRadius: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '28px',
+                  color: '#000'
+                }}>
+                  {item.icon}
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: '12px', fontWeight: '900', color: '#000', lineHeight: '1.2' }}>
+                  {item.label}
+                </p>
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        {normalizePhone(user?.phone) === ADMIN_PHONE && (
+          <div 
+            onClick={() => router.push('/admin')}
+            style={{ 
+              width: '100%',
+              height: '95px',
+              background: '#FF69B4', 
+              borderRadius: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '28px',
+              color: '#000',
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(255,105,180,0.3)',
+              marginBottom: '60px'
+            }}
+          >
+            🛡️
+            <p style={{ margin: '6px 0 0', fontSize: '12px', fontWeight: '900', color: '#000', lineHeight: '1.2' }}>
+              Admin Panel
+            </p>
+          </div>
+        )}
+
+      </main>
+    </Card>
+  )
 }
