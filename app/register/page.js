@@ -81,41 +81,41 @@ export default function Register() {
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-center mb-6 text-black">Register</h1>
+        <h1 className="text-3xl font-bold text-center mb-6 text-black">Register</h1>
         
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           
           {/* Username */}
           <div>
-            <label className="text-sm text-black block mb-1">Username</label>
+            <label className="text-base text-black block mb-1">Username</label>
             <input
               type="text"
               placeholder="6 letters/numbers"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
               maxLength={6}
-              className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white focus:outline-none focus:border-blue-500"
+              className="w-full border-gray-300 rounded px-3 py-2 text-base text-black bg-white focus:outline-none focus:border-blue-500"
               required
             />
           </div>
 
           {/* Phone */}
           <div>
-            <label className="text-sm text-black block mb-1">Phone Number</label>
+            <label className="text-base text-black block mb-1">Phone Number</label>
             <input
               type="tel"
               placeholder="07XXXXXXXX"
               value={form.phone}
               onChange={(e) => handlePhoneChange(e.target.value)}
               maxLength={10}
-              className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white focus:outline-none focus:border-blue-500"
+              className="w-full border-gray-300 rounded px-3 py-2 text-base text-black bg-white focus:outline-none focus:border-blue-500"
               required
             />
           </div>
 
           {/* Password */}
           <div>
-            <label className="text-sm text-black block mb-1">Password</label>
+            <label className="text-base text-black block mb-1">Password</label>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -123,7 +123,7 @@ export default function Register() {
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 maxLength={6}
-                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-black bg-white focus:outline-none focus:border-blue-500"
+                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-base text-black bg-white focus:outline-none focus:border-blue-500"
                 required
               />
               <button
@@ -138,7 +138,7 @@ export default function Register() {
 
           {/* Repeat Password */}
           <div>
-            <label className="text-sm text-black block mb-1">Repeat Password</label>
+            <label className="text-base text-black block mb-1">Repeat Password</label>
             <div className="relative">
               <input
                 type={showRepeatPassword ? 'text' : 'password'}
@@ -146,7 +146,7 @@ export default function Register() {
                 value={form.repeatPassword}
                 onChange={(e) => setForm({ ...form, repeatPassword: e.target.value })}
                 maxLength={6}
-                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-black bg-white focus:outline-none focus:border-blue-500"
+                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-base text-black bg-white focus:outline-none focus:border-blue-500"
                 required
               />
               <button
@@ -161,13 +161,13 @@ export default function Register() {
 
           {/* Invite Code - auto filled */}
           <div>
-            <label className="text-sm text-black block mb-1">Invite Code</label>
+            <label className="text-base text-black block mb-1">Invite Code</label>
             <input
               type="text"
               value={form.inviteCode}
               readOnly
               placeholder="Auto generated after phone"
-              className="w-full border-gray-300 rounded px-3 py-2 text-gray-600 bg-gray-100"
+              className="w-full border-gray-300 rounded px-3 py-2 text-base text-gray-600 bg-gray-100"
             />
           </div>
 
@@ -175,7 +175,7 @@ export default function Register() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 rounded font-medium"
+            className="w-full py-2 rounded font-medium text-base"
             style={{ 
               backgroundColor: '#87CEEB', 
               color: '#333' 
@@ -185,7 +185,7 @@ export default function Register() {
           </button>
         </form>
         
-        <p className="text-center text-sm text-black mt-4">
+        <p className="text-center text-base text-black mt-4">
           Already have an account? <a href="/login" className="text-blue-600 underline">Login</a>
         </p>
       </div>
