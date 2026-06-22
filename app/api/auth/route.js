@@ -6,6 +6,10 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 })
 
+// Debug: check if env vars are loaded
+console.log("UPSTASH_URL:", process.env.UPSTASH_REDIS_REST_URL)
+console.log("UPSTASH_TOKEN:", process.env.UPSTASH_REDIS_REST_TOKEN ? "exists" : "missing")
+
 export async function POST(req) {
   try {
     const body = await req.json()
@@ -65,6 +69,7 @@ export async function POST(req) {
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (err) {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    console.error("Auth route error:", err)
+    return NextResponse.json({ error: 'Server error', detail: err.message }, { status: 500 })
   }
 }
