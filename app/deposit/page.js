@@ -48,7 +48,7 @@ export default function Deposit() {
       const data = await res.json()
 
       if (!res.ok) {
-        alert(data.error)
+        alert(data.error || 'Failed to submit')
         setLoading(false)
         return
       }
@@ -68,13 +68,10 @@ export default function Deposit() {
     <div className="min-h-screen bg-white p-4">
       <h1 className="text-2xl font-bold text-black mb-6">Deposit</h1>
 
-      {/* Payment Method Select */}
       <div className="mb-6">
         <label className="text-black font-bold block mb-2">Select Payment Method:</label>
         
         <div className="flex flex-col gap-3">
-          
-          {/* MTN */}
           <div 
             onClick={() => setMethod('MTN')}
             className={`border-2 rounded p-3 cursor-pointer ${method === 'MTN' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
@@ -83,7 +80,6 @@ export default function Deposit() {
             <p className="text-black">{paymentDetails.MTN.number} {paymentDetails.MTN.name}</p>
           </div>
 
-          {/* AIRTEL */}
           <div 
             onClick={() => setMethod('AIRTEL')}
             className={`border-2 rounded p-3 cursor-pointer ${method === 'AIRTEL' ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
@@ -94,10 +90,8 @@ export default function Deposit() {
         </div>
       </div>
 
-      {/* Minimum Deposit */}
       <p className="text-black font-bold mb-3">Minimum deposit 10,000shs</p>
 
-      {/* Amount Input */}
       <div className="mb-4">
         <label className="text-black font-bold block mb-2">Amount:</label>
         <input
@@ -109,11 +103,10 @@ export default function Deposit() {
         />
       </div>
 
-      {/* Submit Button */}
       <button
         onClick={handleDeposit}
         disabled={loading}
-        className="w-full py-3 bg-green-500 text-white rounded font-bold text-lg"
+        className="w-full py-3 bg-green-500 text-white rounded font-bold text-lg disabled:opacity-50"
       >
         {loading ? 'Processing...' : 'I HAVE PAID THE MONEY'}
       </button>
