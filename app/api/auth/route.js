@@ -59,6 +59,11 @@ export async function POST(req) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 })
       }
 
+      // DEBUG LOGS - check Vercel Logs after login attempt
+      console.log("DB password:", JSON.stringify(user.password))
+      console.log("Input password:", JSON.stringify(password))
+      console.log("Match:", user.password === password)
+
       if (user.password !== password) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
