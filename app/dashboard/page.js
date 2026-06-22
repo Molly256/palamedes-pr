@@ -33,15 +33,7 @@ export default function Dashboard() {
     }
     
     try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'getDashboard', 
-          phone: cleanPhone,
-          _t: Date.now() 
-        })
-      })
+      const res = await fetch(`/api/user?action=getDashboard&phone=${cleanPhone}&_t=${Date.now()}`)
       const data = await res.json()
       
       if (data.success && data.user) {
@@ -50,10 +42,11 @@ export default function Dashboard() {
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
         setUser(data.user)
       } else {
+        console.log('API error:', data.message)
         setUser(localUser)
       }
     } catch (e) {
-      console.log('Redis fetch failed:', e)
+      console.log('Fetch failed:', e)
       setUser(localUser)
     }
     setLoading(false)
