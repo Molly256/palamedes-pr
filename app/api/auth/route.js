@@ -46,13 +46,7 @@ async function syncBalanceFields(phone, amount) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    let { action, username, password, phone, referral } = body
-
-    // Clean inputs first
-    if (typeof phone === 'string') phone = phone.trim()
-    if (typeof password === 'string') password = password.trim()
-    if (typeof username === 'string') username = username.trim()
-    if (typeof referral === 'string') referral = referral.trim()
+    const { action, username, password, phone, referral } = body
 
     // REGISTER
     if (action === 'register') {
@@ -150,7 +144,7 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      if (String(user.password).trim() !== String(password).trim()) {
+      if (String(user.password) !== String(password)) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
 
