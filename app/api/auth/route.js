@@ -46,7 +46,13 @@ async function syncBalanceFields(phone, amount) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, username, password, phone, referral } = body
+    let { action, username, password, phone, referral } = body
+
+    // Clean inputs first
+    if (typeof phone === 'string') phone = phone.trim()
+    if (typeof password === 'string') password = password.trim()
+    if (typeof username === 'string') username = username.trim()
+    if (typeof referral === 'string') referral = referral.trim()
 
     // REGISTER
     if (action === 'register') {
@@ -135,12 +141,15 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone and password required' })
       }
 
+      if (!/^07\d{8}$/.test(phone)) {
+        return Response.json({ success: false, message: 'Invalid phone format' })
+      }
+
       const user = await redis.hgetall(`user:${phone}`)
       if (!user || Object.keys(user).length === 0) {
         return Response.json({ success: false, message: 'User not found' })
       }
 
-      // Fix: compare as strings and trim whitespace
       if (String(user.password).trim() !== String(password).trim()) {
         return Response.json({ success: false, message: 'Invalid password' })
       }
