@@ -46,7 +46,15 @@ async function syncBalanceFields(phone, amount) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, username, password, phone, referral } = body
+    console.log('Raw body received:', body)
+
+    let action = body?.action
+    let username = body?.username
+    let password = body?.password
+    let phone = String(body?.phone || '')
+    let referral = body?.referral
+
+    console.log('Parsed values:', { action, phone, phoneLen: phone.length, type: typeof phone })
 
     // REGISTER
     if (action === 'register') {
@@ -71,7 +79,6 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Phone already registered' })
       }
 
-      // Check username uniqueness
       const allUsers = await redis.smembers('users:phones')
       for (const p of allUsers || []) {
         const u = await redis.hgetall(`user:${p}`)
