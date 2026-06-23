@@ -39,7 +39,6 @@ export async function GET(req) {
         return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
       }
       
-      // Parse JSON fields safely
       try {
         user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
         user.completedBooks = JSON.parse(user.completedBooks || '[]')
@@ -48,7 +47,8 @@ export async function GET(req) {
         user.completedBooks = []
       }
       
-      user.availableBalance = Number(user.availableBalance || 0)
+      user.availableBalance = Number(user.availableBalance || user.balance || 0)
+      user.balance = Number(user.balance || 0)
       user.vip = Number(user.vip || 0)
       
       return NextResponse.json({ success: true, user })
@@ -77,19 +77,24 @@ export async function POST(req) {
         return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 })
       }
       
-      // Update tx status
-      await redis.hset(`tx:${id}`, { status })
-      
-      // Remove from pending list
+      await redis.hset(`tx:${id}`, { status, updatedAt: Date.now() })
       await redis.lrem('pending_tx', 0, id)
       
-      // If approved and it's a deposit, add to balance
       if (status === 'success' && tx.type === 'deposit') {
         const userKey = `user:${tx.phone}`
         const user = await redis.hgetall(userKey)
-        const currentBalance = Number(user.availableBalance || 0)
-        const newBalance = currentBalance + Number(tx.amount || 0)
-        await redis.hset(userKey, { availableBalance: newBalance })
+        
+        const amount = Number(tx.amount || 0)
+        const currentBalance = Number(user.balance || 0)
+        const currentAvail = Number(user.availableBalance || 0)
+        
+        const newBalance = currentBalance + amount
+        const newAvail = currentAvail + amount
+        
+        await redis.hset(userKey, { 
+          balance: newBalance,
+          availableBalance: newAvail 
+        })
       }
       
       return NextResponse.json({ success: true })
