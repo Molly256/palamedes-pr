@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import { VIPS } from '../../../viplevels/route' // 3 dots up because file is deeper
+import { VIPS } from '@/app/api/viplevels/route' // FIXED: absolute path
 
 const redis = Redis.fromEnv()
 
