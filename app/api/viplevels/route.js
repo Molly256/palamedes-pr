@@ -42,12 +42,20 @@ function setBalance(amount) {
   return { availableBalance: amount, balance: amount }
 }
 
-// GET: /api/viplevels - return all VIP levels
+function safeParse(str, fallback = []) {
+  try {
+    return JSON.parse(str || '[]')
+  } catch {
+    return fallback
+  }
+}
+
+// GET: /api/viplevels
 export async function GET() {
   try {
     const levels = Object.keys(VIPS).map(k => ({
       level: Number(k),
-    ...VIPS[k]
+  ...VIPS[k]
     }))
     return NextResponse.json({ success: true, levels })
   } catch (err) {
@@ -105,7 +113,7 @@ export async function POST(req) {
           phone,
           bookId,
           vipLevel: String(vipLevel),
-          reward: selectedVip.perBook, // Submit uses this for payout
+          reward: selectedVip.perBook,
           status: 'pending',
           date: today,
           createdAt: Date.now()
@@ -118,7 +126,7 @@ export async function POST(req) {
     const updateData = {
       vip: vipLevel,
       vipPricePaid: selectedVip.price,
-    ...setBalance(newBalance),
+  ...setBalance(newBalance),
       hasBoughtVip: 'true',
       vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       unlockedBooks: JSON.stringify(unlockedBooks),
@@ -132,8 +140,10 @@ export async function POST(req) {
     await payInvitationReward(phone, vipLevel)
 
     const updatedUser = await redis.hgetall(userKey)
-    updatedUser.unlockedBooks = JSON.parse(updatedUser.unlockedBooks || '[]')
-    updatedUser.completedBooks = JSON.parse(updatedUser.completedBooks || '[]')
+
+    // FIX: Use safeParse instead of JSON.parse to avoid crash
+    updatedUser.unlockedBooks = safeParse(updatedUser.unlockedBooks)
+    updatedUser.completedBooks = safeParse(updatedUser.completedBooks)
     updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
     updatedUser.balance = Number(updatedUser.balance || 0)
     updatedUser.vip = Number(updatedUser.vip || 0)
@@ -142,7 +152,7 @@ export async function POST(req) {
     updatedUser.vipPricePaid = Number(updatedUser.vipPricePaid || 0)
 
     const message = isWeekday
-    ? `Upgraded to VIP ${vipLevel} successfully. ${selectedVip.books} books assigned.`
+  ? `Upgraded to VIP ${vipLevel} successfully. ${selectedVip.books} books assigned.`
       : `Upgraded to VIP ${vipLevel} successfully. Books will be assigned on the next weekday.`
 
     return NextResponse.json({
