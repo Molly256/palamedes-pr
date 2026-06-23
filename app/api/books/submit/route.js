@@ -36,11 +36,13 @@ export async function POST(req) {
     const today = getUgandaDateString()
     const bookKey = `book:${phone}:${today}:${bookId}`
     const userKey = `user:${phone}`
+    const txKey = `tx:${phone}` // ← FIX 1: was missing
     const bookIdStr = String(bookId)
 
     // ACTION 1: User clicked "Read" button
     if (action === 'read') {
-      await redis.hset(bookKey, { status: 'read' })
+      // Create book entry if doesn't exist
+      await redis.hset(bookKey, { bookId: bookIdStr, status: 'read' }) // ← FIX 2: add bookId field
       return NextResponse.json({ success: true, status: 'read', message: 'Marked as read' })
     }
 
@@ -81,8 +83,8 @@ export async function POST(req) {
       }
 
       const bookData = await redis.hgetall(bookKey)
-      if (!bookData ||!bookData.bookId) {
-        return NextResponse.json({ success: false, message: 'Book not found' }, { status: 404 })
+      if (!bookData) {
+        return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
       }
       if (bookData.status!== 'read') {
         return NextResponse.json({ success: false, message: 'Click Read first before submitting' }, { status: 400 })
@@ -121,7 +123,7 @@ export async function POST(req) {
       updatedUser.balance = Number(updatedUser.balance || 0)
       updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
       updatedUser.vip = Number(user.vip || 0)
-      updatedUser.books_read_today = Number(updatedUser.books_read_today || 0)
+      updatedUser.books_read_today = Number(user.books_read_today || 0)
 
       return NextResponse.json({
         success: true,
