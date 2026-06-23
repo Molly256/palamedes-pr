@@ -10,7 +10,8 @@ function getUgandaDateString() {
 export default function BooksPage() {
   const [user, setUser] = useState(null)
   const [allBooksMeta, setAllBooksMeta] = useState([])
-  const [userBooks, setUserBooks] = useState([])
+  const [pendingBooks, setPendingBooks] = useState([]) // BOOKS section
+  const [completedBooks, setCompletedBooks] = useState([]) // COMPLETED TODAY'S BOOKS
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const [loading, setLoading] = useState(false)
@@ -30,7 +31,10 @@ export default function BooksPage() {
       const data = await res.json()
       if (data.success) {
         setUser(data.user)
-        setUserBooks(data.books || [])
+        // Split into 2 sections
+        const all = data.books || []
+        setPendingBooks(all.filter(b => b.status !== 'completed'))
+        setCompletedBooks(all.filter(b => b.status === 'completed'))
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
       }
     } catch (err) {
@@ -43,13 +47,13 @@ export default function BooksPage() {
     if (timer === 0) {
       setReadingBook(null)
       setTimer(10)
+      fetchUserBooks(user.phone) // refresh after timer
       return
     }
     const t = setTimeout(() => setTimer(timer - 1), 1000)
     return () => clearTimeout(t)
-  }, [readingBook, timer])
+  }, [readingBook, timer, user?.phone])
 
-  // FIX: URL changed from /api/submit to /api/books/submit
   const handleRead = async (book) => {
     if (book.status === 'completed' || book.status === 'read') return
     
@@ -62,13 +66,11 @@ export default function BooksPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
       })
-      fetchUserBooks(user.phone)
     } catch (err) {
       console.error('Save read error:', err)
     }
   }
 
-  // FIX: URL changed from /api/submit to /api/books/submit
   const handleSubmit = async (book) => {
     if (loading || book.status !== 'read') {
       if (book.status !== 'read') alert('Click Read first')
@@ -89,7 +91,7 @@ export default function BooksPage() {
       }
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      fetchUserBooks(user.phone)
+      fetchUserBooks(user.phone) // refresh to move book to completed section
       alert(`+${data.earned.toLocaleString()}shs added to your balance`)
     } catch (err) {
       alert('Error: ' + err.message)
@@ -101,7 +103,7 @@ export default function BooksPage() {
   if (!user || allBooksMeta.length === 0) return null
   const vip = Number(user.vip || 0)
 
-  const booksToShow = userBooks.map(b => {
+  const mapBookData = (b) => {
     const meta = allBooksMeta.find(m => m.id.toString() === b.bookId)
     return {
       bookId: b.bookId,
@@ -112,7 +114,10 @@ export default function BooksPage() {
       preview: meta?.preview || 'No preview available',
       cover: `/books/covers/${b.bookId}.jpg`
     }
-  })
+  }
+
+  const pendingBooksData = pendingBooks.map(mapBookData)
+  const completedBooksData = completedBooks.map(mapBookData)
 
   if (readingBook) {
     return (
@@ -143,8 +148,6 @@ export default function BooksPage() {
         </div>
       </div>
 
-      <h2 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '20px', color: '#000' }}>BOOKS</h2>
-
       {vip === 0? (
         <div style={{ textAlign: 'center', marginTop: 60 }}>
           <Link href="/viplevels">
@@ -157,67 +160,106 @@ export default function BooksPage() {
             </button>
           </Link>
         </div>
-      ) : booksToShow.length === 0? (
-        <div style={{ textAlign: 'center', marginTop: 60, color: '#666' }}>
-          <p style={{ fontSize: '16px', fontWeight: '700', marginBottom: 8, color: '#000' }}>
-            No books assigned yet
-          </p>
-          <p style={{ fontSize: '13px' }}>
-            Buy VIP to get books for today, or wait for admin to assign tomorrow
-          </p>
-        </div>
       ) : (
-        <div style={{ display: 'grid', gap: '20px' }}>
-          {booksToShow.map(book => {
-            const isCompleted = book.status === 'completed'
-            const isRead = book.status === 'read'
-            return (
-              <div key={book.bookId} style={{
-                background: '#f5f5f5', borderRadius: '12px', padding: '15px',
-                display: 'flex', gap: '15px', alignItems: 'center'
-              }}>
-                <img 
-                  src={book.cover} 
-                  alt={book.title} 
-                  style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }}
-                  onError={(e) => { e.target.src = '/books/covers/placeholder.jpg' }}
-                />
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
-                  <p style={{ margin: '4px 0 6px', fontSize: '13px', color: '#666' }}>{book.author}</p>
-                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#00BFFF', fontWeight: '700' }}>
-                    Reward: {book.reward?.toLocaleString() || 0} shs
-                  </p>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      onClick={() => handleRead(book)}
-                      disabled={isCompleted || isRead}
-                      style={{
-                        flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
-                        background: isCompleted? '#ccc' : isRead? '#10b981' : '#00BFFF', color: '#000',
-                        fontWeight: '700', cursor: (isCompleted || isRead)? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      {isCompleted? '✓ Submitted' : isRead? '✓ Read' : 'Read'}
-                    </button>
-                    <button
-                      onClick={() => handleSubmit(book)}
-                      disabled={!isRead || isCompleted || loading}
-                      style={{
-                        flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
-                        background: isCompleted? '#ccc' : '#00BFFF', color: '#000',
-                        fontWeight: '700', cursor: (!isRead || isCompleted)? 'not-allowed' : 'pointer',
-                        opacity: loading? 0.6 : 1
-                      }}
-                    >
-                      {isCompleted? 'Done' : 'Submit'}
-                    </button>
+        <>
+          {/* SECTION 1: BOOKS */}
+          <h2 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '20px', color: '#000' }}>BOOKS</h2>
+          
+          {pendingBooksData.length === 0? (
+            <div style={{ textAlign: 'center', marginTop: 40, marginBottom: 40, color: '#666' }}>
+              <p style={{ fontSize: '18px', fontWeight: '900', marginBottom: 8, color: '#000' }}>
+                TODAY'S BOOKS ARE DONE
+              </p>
+              <p style={{ fontSize: '13px' }}>
+                New books will appear tomorrow
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '20px', marginBottom: 40 }}>
+              {pendingBooksData.map(book => {
+                const isRead = book.status === 'read'
+                return (
+                  <div key={book.bookId} style={{
+                    background: '#f5f5f5', borderRadius: '12px', padding: '15px',
+                    display: 'flex', gap: '15px', alignItems: 'center'
+                  }}>
+                    <img 
+                      src={book.cover} 
+                      alt={book.title} 
+                      style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }}
+                      onError={(e) => { e.target.src = '/books/covers/placeholder.jpg' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
+                      <p style={{ margin: '4px 0 6px', fontSize: '13px', color: '#666' }}>{book.author}</p>
+                      <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#00BFFF', fontWeight: '700' }}>
+                        Reward: {book.reward?.toLocaleString() || 0} shs
+                      </p>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                          onClick={() => handleRead(book)}
+                          disabled={isRead}
+                          style={{
+                            flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
+                            background: isRead? '#10b981' : '#00BFFF', color: '#000',
+                            fontWeight: '700', cursor: isRead? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {isRead? '✓ Read' : 'Read'}
+                        </button>
+                        <button
+                          onClick={() => handleSubmit(book)}
+                          disabled={!isRead || loading}
+                          style={{
+                            flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
+                            background: '#00BFFF', color: '#000',
+                            fontWeight: '700', cursor: !isRead? 'not-allowed' : 'pointer',
+                            opacity: loading? 0.6 : 1
+                          }}
+                        >
+                          Submit
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* SECTION 2: COMPLETED TODAY'S BOOKS */}
+          {completedBooksData.length > 0 && (
+            <>
+              <h2 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '20px', color: '#000', borderTop: '2px solid #eee', paddingTop: 30 }}>
+                COMPLETED TODAY'S BOOKS
+              </h2>
+              <div style={{ display: 'grid', gap: '20px', opacity: 0.6 }}>
+                {completedBooksData.map(book => (
+                  <div key={book.bookId} style={{
+                    background: '#f5f5f5', borderRadius: '12px', padding: '15px',
+                    display: 'flex', gap: '15px', alignItems: 'center'
+                  }}>
+                    <img 
+                      src={book.cover} 
+                      alt={book.title} 
+                      style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }}
+                      onError={(e) => { e.target.src = '/books/covers/placeholder.jpg' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>
+                        {book.title} ✓
+                      </h3>
+                      <p style={{ margin: '4px 0 6px', fontSize: '13px', color: '#666' }}>{book.author}</p>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#10b981', fontWeight: '700' }}>
+                        Submitted • +{book.reward?.toLocaleString() || 0} shs
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )
-          })}
-        </div>
+            </>
+          )}
+        </>
       )}
     </main>
   )

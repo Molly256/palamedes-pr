@@ -33,7 +33,7 @@ export async function POST(req) {
   try {
     const { phone, bookId, action } = await req.json()
     if (!phone ||!bookId ||!action) {
-      return NextResponse.json({ success: false, message: 'Missing data: phone, bookId, action' }, { status: 400 })
+      return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
 
     const today = getUgandaDateString()
@@ -42,13 +42,13 @@ export async function POST(req) {
     const txKey = `tx:${phone}`
     const bookIdStr = String(bookId)
 
-    // ACTION 1: User clicked "Read" button
+    // ACTION 1: Read
     if (action === 'read') {
-      await redis.hset(bookKey, { bookId: bookIdStr, status: 'read' })
+      await redis.hset(bookKey, { bookId: bookIdStr, status: 'read', readAt: Date.now() })
       return NextResponse.json({ success: true, status: 'read', message: 'Marked as read' })
     }
 
-    // ACTION 2: User clicked "Submit" button
+    // ACTION 2: Submit
     if (action === 'submit') {
       if (!isWeekdayInUganda()) {
         return NextResponse.json({ success: false, message: 'Submissions are only allowed Monday to Friday.' }, { status: 400 })
@@ -69,55 +69,33 @@ export async function POST(req) {
         return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
       }
 
+      // Daily reset
+      if (user.lastResetDate !== today) {
+        await redis.hset(userKey, {
+          books_read_today: 0,
+          dailyIncome: 0,
+          completedBooks: '[]',
+          lastResetDate: today
+        })
+      }
+
       const booksReadToday = Number(user.books_read_today || 0)
       if (booksReadToday >= vipConfig.books) {
-        return NextResponse.json({ success: false, message: `Daily limit reached. You can submit ${vipConfig.books} books per day.` }, { status: 400 })
+        return NextResponse.json({ success: false, message: `TODAY'S BOOKS ARE DONE` }, { status: 400 })
       }
 
-      let unlocked = safeParse(user.unlockedBooks).map(String)
       const completed = safeParse(user.completedBooks).map(String)
 
-      // FALLBACK: Auto-unlock books if empty and it's a weekday
-      // Remove this block after you confirm buy route unlocks properly
-      if (unlocked.length === 0) {
-        const defaultBookIds = Array.from({length: vipConfig.books}, (_, i) => String(i + 1))
-        unlocked = defaultBookIds
-        
-        const pipeline = redis.pipeline()
-        pipeline.hset(userKey, {
-          unlockedBooks: JSON.stringify(unlocked),
-          completedBooks: '[]',
-          books_read_today: 0
-        })
-        
-        // Create book keys so "Read" works
-        defaultBookIds.forEach(id => {
-          pipeline.hset(`book:${phone}:${today}:${id}`, {
-            phone,
-            bookId: id,
-            vipLevel: String(vip),
-            reward: vipConfig.perBook,
-            status: 'pending',
-            date: today,
-            createdAt: Date.now()
-          })
-        })
-        await pipeline.exec()
-      }
-
-      if (!unlocked.includes(bookIdStr)) {
-        return NextResponse.json({ success: false, message: 'Book not unlocked' }, { status: 400 })
-      }
       if (completed.includes(bookIdStr)) {
         return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
       }
 
       const bookData = await redis.hgetall(bookKey)
       if (!bookData) {
-        return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Book not found. Refresh page.' }, { status: 400 })
       }
       if (bookData.status!== 'read') {
-        return NextResponse.json({ success: false, message: 'Click Read first before submitting' }, { status: 400 })
+        return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
       }
 
       const earned = vipConfig.perBook
@@ -138,7 +116,7 @@ export async function POST(req) {
       const pipeline = redis.pipeline()
       pipeline.hset(bookKey, { status: 'completed', submittedAt: Date.now() })
       pipeline.hset(userKey, {
-       ...setBalance(newBalance),
+     ...setBalance(newBalance),
         dailyIncome: newDailyIncome,
         completedBooks: JSON.stringify(newCompleted),
         books_read_today: booksReadToday + 1
@@ -147,12 +125,10 @@ export async function POST(req) {
       await pipeline.exec()
 
       const updatedUser = await redis.hgetall(userKey)
-      updatedUser.unlockedBooks = safeParse(updatedUser.unlockedBooks)
       updatedUser.completedBooks = safeParse(updatedUser.completedBooks)
       updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
       updatedUser.balance = Number(updatedUser.balance || 0)
       updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
-      updatedUser.vip = Number(user.vip || 0)
       updatedUser.books_read_today = Number(user.books_read_today || 0)
 
       return NextResponse.json({
@@ -160,7 +136,7 @@ export async function POST(req) {
         user: updatedUser,
         earned,
         status: 'completed',
-        message: `+${earned} UGX added to your balance`
+        message: `Book submitted successfully. +${earned} UGX added to daily income`
       })
     }
 
