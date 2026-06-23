@@ -18,28 +18,43 @@ export async function GET(req) {
     if (action === 'pending') {
       const pendingIds = await redis.lrange('pending_tx', 0, 999)
       const pending = []
+      
       for (const id of pendingIds) {
         const tx = await redis.hgetall(`tx:${id}`)
-        if (tx && tx.status === 'pending') pending.push(tx)
+        if (tx && Object.keys(tx).length > 0 && tx.status === 'pending') {
+          pending.push(tx)
+        }
       }
+      
       return NextResponse.json({ success: true, pending })
     }
 
     if (action === 'user') {
-      if (!phone) return NextResponse.json({ success: false, error: 'Phone required' })
+      if (!phone) {
+        return NextResponse.json({ success: false, error: 'Phone required' }, { status: 400 })
+      }
+      
       const user = await redis.hgetall(`user:${phone}`)
-      if (!user || !user.phone) return NextResponse.json({ success: false, error: 'User not found' })
+      if (!user || Object.keys(user).length === 0) {
+        return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
+      }
       
       // Parse JSON fields safely
-      user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
-      user.completedBooks = JSON.parse(user.completedBooks || '[]')
+      try {
+        user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
+        user.completedBooks = JSON.parse(user.completedBooks || '[]')
+      } catch {
+        user.unlockedBooks = []
+        user.completedBooks = []
+      }
+      
       user.availableBalance = Number(user.availableBalance || 0)
       user.vip = Number(user.vip || 0)
       
       return NextResponse.json({ success: true, user })
     }
 
-    return NextResponse.json({ success: false, error: 'Invalid action' })
+    return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
   } catch (err) {
     console.error('GET /api/admin error:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
@@ -53,10 +68,14 @@ export async function POST(req) {
     const { action, id, status, phone, password } = body
 
     if (action === 'updateStatus') {
-      if (!id || !status) return NextResponse.json({ success: false, error: 'Missing data' })
+      if (!id || !status) {
+        return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      }
       
       const tx = await redis.hgetall(`tx:${id}`)
-      if (!tx || !tx.phone) return NextResponse.json({ success: false, error: 'Transaction not found' })
+      if (!tx || Object.keys(tx).length === 0) {
+        return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 })
+      }
       
       // Update tx status
       await redis.hset(`tx:${id}`, { status })
@@ -68,7 +87,8 @@ export async function POST(req) {
       if (status === 'success' && tx.type === 'deposit') {
         const userKey = `user:${tx.phone}`
         const user = await redis.hgetall(userKey)
-        const newBalance = Number(user.availableBalance || 0) + Number(tx.amount)
+        const currentBalance = Number(user.availableBalance || 0)
+        const newBalance = currentBalance + Number(tx.amount || 0)
         await redis.hset(userKey, { availableBalance: newBalance })
       }
       
@@ -76,16 +96,20 @@ export async function POST(req) {
     }
 
     if (action === 'resetPassword') {
-      if (!phone || !password) return NextResponse.json({ success: false, error: 'Missing data' })
+      if (!phone || !password) {
+        return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      }
       
       const user = await redis.hgetall(`user:${phone}`)
-      if (!user || !user.phone) return NextResponse.json({ success: false, error: 'User not found' })
+      if (!user || Object.keys(user).length === 0) {
+        return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
+      }
       
       await redis.hset(`user:${phone}`, { password })
       return NextResponse.json({ success: true })
     }
 
-    return NextResponse.json({ success: false, error: 'Invalid action' })
+    return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
   } catch (err) {
     console.error('POST /api/admin error:', err)
     return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 })
