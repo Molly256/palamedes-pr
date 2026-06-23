@@ -11,35 +11,39 @@ async function isAdmin(phone) {
 // GET: /api/admin?action=pending
 // GET: /api/admin?action=user&phone=07XXXXXXXX
 export async function GET(req) {
-  const { searchParams } = new URL(req.url)
-  const action = searchParams.get('action')
-  const phone = searchParams.get('phone')
+  try {
+    const action = req.nextUrl.searchParams.get('action')
+    const phone = req.nextUrl.searchParams.get('phone')
 
-  if (action === 'pending') {
-    const pendingIds = await redis.lrange('pending_tx', 0, 999)
-    const pending = []
-    for (const id of pendingIds) {
-      const tx = await redis.hgetall(`tx:${id}`)
-      if (tx && tx.status === 'pending') pending.push(tx)
+    if (action === 'pending') {
+      const pendingIds = await redis.lrange('pending_tx', 0, 999)
+      const pending = []
+      for (const id of pendingIds) {
+        const tx = await redis.hgetall(`tx:${id}`)
+        if (tx && tx.status === 'pending') pending.push(tx)
+      }
+      return NextResponse.json({ success: true, pending })
     }
-    return NextResponse.json({ success: true, pending })
-  }
 
-  if (action === 'user') {
-    if (!phone) return NextResponse.json({ success: false, error: 'Phone required' })
-    const user = await redis.hgetall(`user:${phone}`)
-    if (!user || !user.phone) return NextResponse.json({ success: false, error: 'User not found' })
-    
-    // Parse JSON fields
-    user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
-    user.completedBooks = JSON.parse(user.completedBooks || '[]')
-    user.availableBalance = Number(user.availableBalance || 0)
-    user.vip = Number(user.vip || 0)
-    
-    return NextResponse.json({ success: true, user })
-  }
+    if (action === 'user') {
+      if (!phone) return NextResponse.json({ success: false, error: 'Phone required' })
+      const user = await redis.hgetall(`user:${phone}`)
+      if (!user || !user.phone) return NextResponse.json({ success: false, error: 'User not found' })
+      
+      // Parse JSON fields safely
+      user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
+      user.completedBooks = JSON.parse(user.completedBooks || '[]')
+      user.availableBalance = Number(user.availableBalance || 0)
+      user.vip = Number(user.vip || 0)
+      
+      return NextResponse.json({ success: true, user })
+    }
 
-  return NextResponse.json({ success: false, error: 'Invalid action' })
+    return NextResponse.json({ success: false, error: 'Invalid action' })
+  } catch (err) {
+    console.error('GET /api/admin error:', err)
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+  }
 }
 
 // POST: updateStatus, resetPassword
@@ -83,7 +87,7 @@ export async function POST(req) {
 
     return NextResponse.json({ success: false, error: 'Invalid action' })
   } catch (err) {
-    console.error(err)
+    console.error('POST /api/admin error:', err)
     return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 })
   }
 }
