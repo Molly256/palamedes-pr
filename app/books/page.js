@@ -9,8 +9,8 @@ function getUgandaDateString() {
 
 export default function BooksPage() {
   const [user, setUser] = useState(null)
-  const [allBooksMeta, setAllBooksMeta] = useState([]) // from books.json
-  const [userBooks, setUserBooks] = useState([]) // [{bookId, status, reward}] from Redis
+  const [allBooksMeta, setAllBooksMeta] = useState([])
+  const [userBooks, setUserBooks] = useState([])
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const [loading, setLoading] = useState(false)
@@ -19,11 +19,7 @@ export default function BooksPage() {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!userData.phone) return
     setUser(userData)
-    
-    // 1. Load metadata from books.json
     fetch('/data/books.json').then(r => r.json()).then(setAllBooksMeta)
-    
-    // 2. Load user's book IDs + status for today from Redis
     fetchUserBooks(userData.phone)
   }, [])
 
@@ -34,7 +30,7 @@ export default function BooksPage() {
       const data = await res.json()
       if (data.success) {
         setUser(data.user)
-        setUserBooks(data.books || []) // only IDs + status from Redis
+        setUserBooks(data.books || [])
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
       }
     } catch (err) {
@@ -53,20 +49,38 @@ export default function BooksPage() {
     return () => clearTimeout(t)
   }, [readingBook, timer])
 
-  const handleRead = (book) => {
-    if (book.status === 'completed') return
+  // FIX 1: Save read status to DB when user clicks Read
+  const handleRead = async (book) => {
+    if (book.status === 'completed' || book.status === 'read') return
+    
     setReadingBook(book)
     setTimer(10)
-  }
-
-  const handleSubmit = async (book) => {
-    if (loading) return
-    setLoading(true)
+    
+    // Save to Redis so button stays grey after refresh
     try {
-      const res = await fetch('/api/submit', { // fixed: was /api/books/submit
+      await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId })
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
+      })
+      fetchUserBooks(user.phone) // refresh status
+    } catch (err) {
+      console.error('Save read error:', err)
+    }
+  }
+
+  // FIX 2: Add action: 'submit' to body
+  const handleSubmit = async (book) => {
+    if (loading || book.status !== 'read') {
+      if (book.status !== 'read') alert('Click Read first')
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) // ← added action
       })
       const data = await res.json()
       if (!data.success) {
@@ -76,7 +90,7 @@ export default function BooksPage() {
       }
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      fetchUserBooks(user.phone) // refresh status after submit
+      fetchUserBooks(user.phone)
       alert(`+${data.earned.toLocaleString()}shs added to your balance`)
     } catch (err) {
       alert('Error: ' + err.message)
@@ -86,11 +100,8 @@ export default function BooksPage() {
   }
 
   if (!user || allBooksMeta.length === 0) return null
-
   const vip = Number(user.vip || 0)
 
-  // MERGE: Take bookId from Redis, find metadata in books.json by id
-  // Cover path: /books/covers/{id}.jpg matches ID
   const booksToShow = userBooks.map(b => {
     const meta = allBooksMeta.find(m => m.id.toString() === b.bookId)
     return {
@@ -160,6 +171,7 @@ export default function BooksPage() {
         <div style={{ display: 'grid', gap: '20px' }}>
           {booksToShow.map(book => {
             const isCompleted = book.status === 'completed'
+            const isRead = book.status === 'read'
             return (
               <div key={book.bookId} style={{
                 background: '#f5f5f5', borderRadius: '12px', padding: '15px',
@@ -180,26 +192,26 @@ export default function BooksPage() {
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button
                       onClick={() => handleRead(book)}
-                      disabled={isCompleted}
+                      disabled={isCompleted || isRead}
                       style={{
                         flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
-                        background: isCompleted? '#ccc' : '#00BFFF', color: '#000',
-                        fontWeight: '700', cursor: isCompleted? 'not-allowed' : 'pointer'
+                        background: isCompleted? '#ccc' : isRead? '#10b981' : '#00BFFF', color: '#000',
+                        fontWeight: '700', cursor: (isCompleted || isRead)? 'not-allowed' : 'pointer'
                       }}
                     >
-                      {isCompleted? '✓ Read' : 'Read'}
+                      {isCompleted? '✓ Submitted' : isRead? '✓ Read' : 'Read'}
                     </button>
                     <button
                       onClick={() => handleSubmit(book)}
-                      disabled={isCompleted || loading}
+                      disabled={!isRead || isCompleted || loading}
                       style={{
                         flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
                         background: isCompleted? '#ccc' : '#00BFFF', color: '#000',
-                        fontWeight: '700', cursor: isCompleted? 'not-allowed' : 'pointer',
+                        fontWeight: '700', cursor: (!isRead || isCompleted)? 'not-allowed' : 'pointer',
                         opacity: loading? 0.6 : 1
                       }}
                     >
-                      Submit
+                      {isCompleted? 'Done' : 'Submit'}
                     </button>
                   </div>
                 </div>
