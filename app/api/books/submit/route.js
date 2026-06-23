@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import { VIPS } from '@/app/api/viplevels/route' // FIXED: absolute path
+import { VIPS } from '@/app/api/viplevels/route'
 
 const redis = Redis.fromEnv()
 
@@ -74,8 +74,36 @@ export async function POST(req) {
         return NextResponse.json({ success: false, message: `Daily limit reached. You can submit ${vipConfig.books} books per day.` }, { status: 400 })
       }
 
-      const unlocked = safeParse(user.unlockedBooks).map(String)
+      let unlocked = safeParse(user.unlockedBooks).map(String)
       const completed = safeParse(user.completedBooks).map(String)
+
+      // FALLBACK: Auto-unlock books if empty and it's a weekday
+      // Remove this block after you confirm buy route unlocks properly
+      if (unlocked.length === 0) {
+        const defaultBookIds = Array.from({length: vipConfig.books}, (_, i) => String(i + 1))
+        unlocked = defaultBookIds
+        
+        const pipeline = redis.pipeline()
+        pipeline.hset(userKey, {
+          unlockedBooks: JSON.stringify(unlocked),
+          completedBooks: '[]',
+          books_read_today: 0
+        })
+        
+        // Create book keys so "Read" works
+        defaultBookIds.forEach(id => {
+          pipeline.hset(`book:${phone}:${today}:${id}`, {
+            phone,
+            bookId: id,
+            vipLevel: String(vip),
+            reward: vipConfig.perBook,
+            status: 'pending',
+            date: today,
+            createdAt: Date.now()
+          })
+        })
+        await pipeline.exec()
+      }
 
       if (!unlocked.includes(bookIdStr)) {
         return NextResponse.json({ success: false, message: 'Book not unlocked' }, { status: 400 })
