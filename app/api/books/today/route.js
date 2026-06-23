@@ -7,6 +7,14 @@ function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
+function safeParse(str, fallback = []) {
+  try {
+    return JSON.parse(str || '[]')
+  } catch {
+    return fallback
+  }
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)
@@ -27,13 +35,13 @@ export async function GET(req) {
     
     // Fallback to unlockedBooks if set is empty
     if (!bookKeys || bookKeys.length === 0) {
-      const unlocked = JSON.parse(user.unlockedBooks || '[]')
+      const unlocked = safeParse(user.unlockedBooks)
       bookKeys = unlocked.map(id => `book:${phone}:${date}:${id}`)
     }
     
     if (!bookKeys || bookKeys.length === 0) {
-      user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
-      user.completedBooks = JSON.parse(user.completedBooks || '[]')
+      user.unlockedBooks = safeParse(user.unlockedBooks)
+      user.completedBooks = safeParse(user.completedBooks)
       user.availableBalance = Number(user.availableBalance || 0)
       user.balance = Number(user.balance || 0)
       user.vip = Number(user.vip || 0)
@@ -46,7 +54,7 @@ export async function GET(req) {
     const booksData = await Promise.all(bookKeys.map(k => redis.hgetall(k)))
     
     const books = booksData
-      .filter(b => b && b.bookId) // skip deleted keys
+      .filter(b => b && b.bookId)
       .map(b => ({
         bookId: String(b.bookId),
         status: b.status || 'pending',
@@ -54,8 +62,8 @@ export async function GET(req) {
         submittedAt: b.submittedAt || null
       }))
 
-    user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
-    user.completedBooks = JSON.parse(user.completedBooks || '[]')
+    user.unlockedBooks = safeParse(user.unlockedBooks)
+    user.completedBooks = safeParse(user.completedBooks)
     user.availableBalance = Number(user.availableBalance || 0)
     user.balance = Number(user.balance || 0)
     user.vip = Number(user.vip || 0)
