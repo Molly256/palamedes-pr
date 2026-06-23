@@ -6,10 +6,6 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 })
 
-// Debug: check if env vars are loaded
-console.log("UPSTASH_URL:", process.env.UPSTASH_REDIS_REST_URL)
-console.log("UPSTASH_TOKEN:", process.env.UPSTASH_REDIS_REST_TOKEN ? "exists" : "missing")
-
 export async function POST(req) {
   try {
     const body = await req.json()
@@ -40,7 +36,10 @@ export async function POST(req) {
         phone,
         password,
         inviteCode: userInviteCode,
-        balance: 2500,
+        availableBalance: 2500,
+        unlockedBooks: '[]',
+        completedBooks: '[]',
+        vip: 0,
         createdAt: Date.now()
       })
 
@@ -59,19 +58,35 @@ export async function POST(req) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 })
       }
 
-      // Convert both to string to avoid number vs string mismatch
+      // Password check
       const passwordFromDB = String(user.password)
       const passwordFromInput = String(password)
-
-      console.log("DB password:", passwordFromDB)
-      console.log("Input password:", passwordFromInput)
-      console.log("Match:", passwordFromDB === passwordFromInput)
-
       if (passwordFromDB !== passwordFromInput) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      const { password: _, ...userData } = user
+      // Normalize balance fields: migrate old 'balance' to 'availableBalance'
+      const oldBalance = Number(user.balance || 0)
+      const currentBalance = Number(user.availableBalance || 0)
+      
+      if (oldBalance > 0 && currentBalance === 0) {
+        user.availableBalance = oldBalance
+        await redis.hset(`user:${phone}`, { 
+          availableBalance: oldBalance,
+          balance: 0  // zero out old field
+        })
+      } else {
+        user.availableBalance = currentBalance
+      }
+
+      // Parse JSON fields
+      user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
+      user.completedBooks = JSON.parse(user.completedBooks || '[]')
+      user.vip = Number(user.vip || 0)
+
+      // Remove password before sending to client
+      const { password: _, balance: __, ...userData } = user
+      
       return NextResponse.json({ success: true, user: userData })
     }
 
