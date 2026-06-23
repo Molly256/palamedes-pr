@@ -31,19 +31,19 @@ export async function POST(req) {
 
   } catch (err) {
     console.error('POST /api/transactions error:', err)
-    return NextResponse.json({ error: err.message, stack: err.stack }, { status: 500 })
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
 
-export async function GET(req) {
-  const { searchParams } = new URL(req.url)
-  const phone = searchParams.get('phone')
-
-  if (!phone) {
-    return NextResponse.json({ error: 'Phone required' }, { status: 400 })
-  }
-
+export async function GET(request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const phone = searchParams.get('phone')
+
+    if (!phone) {
+      return NextResponse.json({ error: 'Phone required' }, { status: 400 })
+    }
+
     const txs = await redis.lrange(`tx:${phone}`, 0, 99)
     
     const parsed = txs
@@ -59,6 +59,6 @@ export async function GET(req) {
     return NextResponse.json({ success: true, transactions: parsed })
   } catch (err) {
     console.error('GET /api/transactions error:', err)
-    return NextResponse.json({ error: err.message, stack: err.stack }, { status: 500 })
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
