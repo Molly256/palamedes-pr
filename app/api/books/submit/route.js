@@ -1,6 +1,6 @@
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import { VIPS } from '../viplevels/route'
+import { VIPS } from '../../viplevels/route' // ← changed from../ to../../
 
 const redis = Redis.fromEnv()
 
@@ -66,7 +66,7 @@ export async function POST(req) {
     const today = getUgandaDateString()
     const bookKey = `book:${phone}:${today}:${bookIdStr}`
     const bookData = await redis.hgetall(bookKey)
-    if (!bookData || !bookData.bookId) {
+    if (!bookData ||!bookData.bookId) {
       return NextResponse.json({ success: false, message: 'Book not found' }, { status: 404 })
     }
 
@@ -88,7 +88,7 @@ export async function POST(req) {
     const pipeline = redis.pipeline()
     pipeline.hset(bookKey, { status: 'completed', submittedAt: Date.now() })
     pipeline.hset(userKey, {
-     ...setBalance(newBalance),
+    ...setBalance(newBalance),
       dailyIncome: newDailyIncome,
       completedBooks: JSON.stringify(newCompleted),
       books_read_today: booksReadToday + 1
@@ -103,7 +103,7 @@ export async function POST(req) {
     updatedUser.balance = Number(updatedUser.balance || 0)
     updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
     updatedUser.vip = Number(user.vip || 0)
-    updatedUser.books_read_today = Number(updatedUser.books_read_today || 0)
+    updatedUser.books_read_today = Number(user.books_read_today || 0)
 
     return NextResponse.json({
       success: true,
