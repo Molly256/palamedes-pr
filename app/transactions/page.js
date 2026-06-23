@@ -19,18 +19,29 @@ export default function Transactions() {
     }
     setUser(localUser)
     loadTransactions(localUser.phone)
-  }, [])
+  }, [router])
 
   const loadTransactions = async (phone) => {
     setLoading(true)
-    const res = await fetch(`/api/user?action=transactions&phone=${phone}&t=${Date.now()}`)
-    const data = await res.json()
-    if (data.success) setAllTxs(data.transactions)
+    try {
+      const res = await fetch(`/api/transactions?phone=${phone}&t=${Date.now()}`)
+      const data = await res.json()
+
+      if (data.success) {
+        setAllTxs(data.transactions)
+      } else {
+        console.error('Failed to load transactions:', data.error)
+        setAllTxs([])
+      }
+    } catch (err) {
+      console.error('Error loading transactions:', err)
+      setAllTxs([])
+    }
     setLoading(false)
   }
 
-  const filteredTxs = activeTab === 'ALL' 
-    ? allTxs 
+  const filteredTxs = activeTab === 'ALL'
+   ? allTxs
     : allTxs.filter(tx => tx.type.toUpperCase() === activeTab)
 
   const formatUgandaTime = (timestamp) => {
@@ -48,12 +59,12 @@ export default function Transactions() {
 
   const renderTx = (tx) => {
     const isDepositWithdraw = tx.type === 'deposit' || tx.type === 'withdraw'
-    
+
     if (isDepositWithdraw) {
       return (
         <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
           <div className="flex justify-between items-start">
-            
+
             {/* Left side */}
             <div className="flex flex-col">
               <p className="text-black text-sm font-light capitalize">{tx.type}</p>
@@ -67,7 +78,9 @@ export default function Transactions() {
 
             {/* Right side - status */}
             <p className={`text-sm font-light ${
-              tx.status === 'success' ? 'text-green-500' : 'text-red-400'
+              tx.status === 'success'? 'text-green-500' :
+              tx.status === 'pending'? 'text-yellow-500' :
+              'text-red-400'
             }`}>
               {tx.status}
             </p>
@@ -80,10 +93,10 @@ export default function Transactions() {
     return (
       <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
         <div className="flex justify-between items-start">
-          
+
           {/* Left side - header */}
           <p className="text-black text-sm font-light capitalize">{tx.type}</p>
-          
+
           {/* Right side - amount */}
           <p className="text-black text-base font-light">
             {Number(tx.amount).toLocaleString()}shs
@@ -112,7 +125,7 @@ export default function Transactions() {
 
   return (
     <div className="min-h-screen bg-white">
-      
+
       <div className="p-4">
         <h1 className="text-xl font-bold text-black">Transaction History</h1>
       </div>
@@ -125,8 +138,8 @@ export default function Transactions() {
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 rounded-lg whitespace-nowrap font-light ${
-                activeTab === tab 
-                  ? 'bg-sky-400 text-black' 
+                activeTab === tab
+                 ? 'bg-sky-400 text-black'
                   : 'bg-sky-200 text-black'
               }`}
             >
@@ -138,9 +151,9 @@ export default function Transactions() {
 
       {/* Transaction List */}
       <div className="p-4 pt-2">
-        {loading ? (
+        {loading? (
           <p className="text-black text-center py-10">Loading...</p>
-        ) : filteredTxs.length === 0 ? (
+        ) : filteredTxs.length === 0? (
           <p className="text-gray-500 text-center py-10">No transactions yet</p>
         ) : (
           <div className="flex flex-col gap-3">

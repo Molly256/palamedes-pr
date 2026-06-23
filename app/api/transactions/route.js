@@ -5,7 +5,8 @@ const redis = Redis.fromEnv()
 
 export async function POST(req) {
   try {
-    const { type, phone, amount, method, withdrawPhone, withdrawName, bookTitle, vipLevel } = await req.json()
+    const body = await req.json()
+    const { type, phone, amount, method, withdrawPhone, withdrawName, bookTitle, vipLevel } = body
 
     if (!type || !phone || !amount) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -17,6 +18,7 @@ export async function POST(req) {
       amount: String(amount),
       status: (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success',
       createdAt: String(Date.now()),
+      phone,
       method: method || '',
       withdrawPhone: withdrawPhone || '',
       withdrawName: withdrawName || '',
@@ -28,7 +30,8 @@ export async function POST(req) {
     return NextResponse.json({ success: true, transaction: tx })
 
   } catch (err) {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    console.error('POST /api/transactions error:', err)
+    return NextResponse.json({ error: err.message, stack: err.stack }, { status: 500 })
   }
 }
 
@@ -45,6 +48,7 @@ export async function GET(req) {
     const parsed = txs.map(t => JSON.parse(t))
     return NextResponse.json({ success: true, transactions: parsed })
   } catch (err) {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    console.error('GET /api/transactions error:', err)
+    return NextResponse.json({ error: err.message, stack: err.stack }, { status: 500 })
   }
 }

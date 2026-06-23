@@ -21,20 +21,20 @@ export default function Deposit() {
       return
     }
     setUser(localUser)
-  }, [])
+  }, [router])
 
   const handleDeposit = async () => {
     const amt = Number(amount)
-    
+
     if (!amt || amt < 10000) {
       alert('Minimum deposit is 10,000 shs')
       return
     }
 
     setLoading(true)
-    
+
     try {
-      const res = await fetch('/api/transaction', {
+      const res = await fetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -55,8 +55,9 @@ export default function Deposit() {
 
       alert('Deposit request submitted. Wait for admin approval.')
       router.push('/transactions')
-      
+
     } catch (err) {
+      console.error('Deposit error:', err)
       alert('Something went wrong')
       setLoading(false)
     }
@@ -70,19 +71,19 @@ export default function Deposit() {
 
       <div className="mb-6">
         <label className="text-black font-bold block mb-2">Select Payment Method:</label>
-        
+
         <div className="flex flex-col gap-3">
-          <div 
+          <div
             onClick={() => setMethod('MTN')}
-            className={`border-2 rounded p-3 cursor-pointer ${method === 'MTN' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
+            className={`border-2 rounded p-3 cursor-pointer ${method === 'MTN'? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
           >
             <p className="text-black font-bold">MTN MOBILE MONEY</p>
             <p className="text-black">{paymentDetails.MTN.number} {paymentDetails.MTN.name}</p>
           </div>
 
-          <div 
+          <div
             onClick={() => setMethod('AIRTEL')}
-            className={`border-2 rounded p-3 cursor-pointer ${method === 'AIRTEL' ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+            className={`border-2 rounded p-3 cursor-pointer ${method === 'AIRTEL'? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
           >
             <p className="text-black font-bold">AIRTEL MOBILE MONEY</p>
             <p className="text-black">{paymentDetails.AIRTEL.number} {paymentDetails.AIRTEL.name}</p>
@@ -108,7 +109,7 @@ export default function Deposit() {
         disabled={loading}
         className="w-full py-3 bg-green-500 text-white rounded font-bold text-lg disabled:opacity-50"
       >
-        {loading ? 'Processing...' : 'I HAVE PAID THE MONEY'}
+        {loading? 'Processing...' : 'I HAVE PAID THE MONEY'}
       </button>
 
       <p className="text-gray-600 text-sm mt-3 text-center">
