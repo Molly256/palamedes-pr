@@ -49,27 +49,26 @@ export default function BooksPage() {
     return () => clearTimeout(t)
   }, [readingBook, timer])
 
-  // FIX 1: Save read status to DB when user clicks Read
+  // FIX: URL changed from /api/submit to /api/books/submit
   const handleRead = async (book) => {
     if (book.status === 'completed' || book.status === 'read') return
     
     setReadingBook(book)
     setTimer(10)
     
-    // Save to Redis so button stays grey after refresh
     try {
-      await fetch('/api/submit', {
+      await fetch('/api/books/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
       })
-      fetchUserBooks(user.phone) // refresh status
+      fetchUserBooks(user.phone)
     } catch (err) {
       console.error('Save read error:', err)
     }
   }
 
-  // FIX 2: Add action: 'submit' to body
+  // FIX: URL changed from /api/submit to /api/books/submit
   const handleSubmit = async (book) => {
     if (loading || book.status !== 'read') {
       if (book.status !== 'read') alert('Click Read first')
@@ -77,10 +76,10 @@ export default function BooksPage() {
     }
     setLoading(true)
     try {
-      const res = await fetch('/api/submit', {
+      const res = await fetch('/api/books/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) // ← added action
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' })
       })
       const data = await res.json()
       if (!data.success) {

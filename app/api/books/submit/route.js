@@ -1,6 +1,9 @@
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import { VIPS } from '../../viplevels/route'
+import { VIPS } from '../../../viplevels/route' // 3 dots up because file is deeper
 
 const redis = Redis.fromEnv()
 
@@ -36,13 +39,12 @@ export async function POST(req) {
     const today = getUgandaDateString()
     const bookKey = `book:${phone}:${today}:${bookId}`
     const userKey = `user:${phone}`
-    const txKey = `tx:${phone}` // ← FIX 1: was missing
+    const txKey = `tx:${phone}`
     const bookIdStr = String(bookId)
 
     // ACTION 1: User clicked "Read" button
     if (action === 'read') {
-      // Create book entry if doesn't exist
-      await redis.hset(bookKey, { bookId: bookIdStr, status: 'read' }) // ← FIX 2: add bookId field
+      await redis.hset(bookKey, { bookId: bookIdStr, status: 'read' })
       return NextResponse.json({ success: true, status: 'read', message: 'Marked as read' })
     }
 
