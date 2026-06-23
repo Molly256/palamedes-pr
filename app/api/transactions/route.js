@@ -37,8 +37,7 @@ export async function POST(req) {
 
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const phone = searchParams.get('phone')
+    const phone = request.nextUrl.searchParams.get('phone')
 
     if (!phone) {
       return NextResponse.json({ error: 'Phone required' }, { status: 400 })
