@@ -47,7 +47,7 @@ export async function GET() {
   try {
     const levels = Object.keys(VIPS).map(k => ({
       level: Number(k),
-     ...VIPS[k]
+    ...VIPS[k]
     }))
     return NextResponse.json({ success: true, levels })
   } catch (err) {
@@ -105,7 +105,7 @@ export async function POST(req) {
           phone,
           bookId,
           vipLevel: String(vipLevel),
-          reward: selectedVip.perBook,
+          reward: selectedVip.perBook, // Submit uses this for payout
           status: 'pending',
           date: today,
           createdAt: Date.now()
@@ -118,7 +118,7 @@ export async function POST(req) {
     const updateData = {
       vip: vipLevel,
       vipPricePaid: selectedVip.price,
-     ...setBalance(newBalance),
+    ...setBalance(newBalance),
       hasBoughtVip: 'true',
       vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       unlockedBooks: JSON.stringify(unlockedBooks),
@@ -142,7 +142,7 @@ export async function POST(req) {
     updatedUser.vipPricePaid = Number(updatedUser.vipPricePaid || 0)
 
     const message = isWeekday
-     ? `Upgraded to VIP ${vipLevel} successfully. ${selectedVip.books} books assigned.`
+    ? `Upgraded to VIP ${vipLevel} successfully. ${selectedVip.books} books assigned.`
       : `Upgraded to VIP ${vipLevel} successfully. Books will be assigned on the next weekday.`
 
     return NextResponse.json({
