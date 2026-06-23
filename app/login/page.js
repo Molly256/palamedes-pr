@@ -4,10 +4,7 @@ import { useRouter } from 'next/navigation'
 
 export default function Login() {
   const router = useRouter()
-  const [form, setForm] = useState({
-    phone: '',
-    password: ''
-  })
+  const [form, setForm] = useState({ phone: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -34,10 +31,10 @@ export default function Login() {
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'login',
-          phone: form.phone,
-          password: form.password
+        body: JSON.stringify({ 
+          action: 'login', 
+          phone: form.phone, 
+          password: form.password 
         })
       })
 
@@ -45,15 +42,20 @@ export default function Login() {
 
       if (!res.ok) {
         alert(data.error)
-        setLoading(false)
         return
       }
 
-      // Login success → go to dashboard
-      router.push('/dashboard')
+      localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+
+      if (data.user.phone === '0753520252') {
+        router.push('/admin')
+      } else {
+        router.push('/dashboard')
+      }
       
     } catch (err) {
       alert('Something went wrong. Try again.')
+    } finally {
       setLoading(false)
     }
   }
@@ -64,8 +66,6 @@ export default function Login() {
         <h1 className="text-2xl font-bold text-center mb-6 text-black">Login</h1>
         
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          
-          {/* Phone */}
           <div>
             <label className="text-sm text-black block mb-1">Phone Number</label>
             <input
@@ -79,7 +79,6 @@ export default function Login() {
             />
           </div>
 
-          {/* Password */}
           <div>
             <label className="text-sm text-black block mb-1">Password</label>
             <div className="relative">
@@ -102,15 +101,11 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Login Button */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 rounded font-medium"
-            style={{ 
-              backgroundColor: '#87CEEB', 
-              color: '#333' 
-            }}
+            className="w-full py-2 rounded font-medium disabled:opacity-50"
+            style={{ backgroundColor: '#87CEEB', color: '#333' }}
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

@@ -14,7 +14,7 @@ export default function Dashboard() {
 
   const normalizePhone = (phone) => {
     if (!phone) return ''
-    phone = String(phone).replace(/\D/g, '')
+    phone = String(phone).trim().replace(/\D/g, '')
     
     if (!/^07\d{8}$/.test(phone)) {
       return ''
@@ -24,25 +24,25 @@ export default function Dashboard() {
 
   const loadUser = async () => {
     const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    const cleanPhone = normalizePhone(localUser.phone)
     
-    if (!cleanPhone) {
-      setUser(localUser)
+    // If localStorage is empty, stop loading and wait for login
+    if (!localUser.phone) {
+      setUser(null)
       setLoading(false)
       return
     }
+
+    const cleanPhone = normalizePhone(localUser.phone)
     
     try {
       const res = await fetch(`/api/user?action=getDashboard&phone=${cleanPhone}&_t=${Date.now()}`)
       const data = await res.json()
       
       if (data.success && data.user) {
-        // Map DB field 'balance' to UI field 'availableBalance'
         data.user.availableBalance = Number(data.user.balance || 0)
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
         setUser(data.user)
       } else {
-        console.log('API error:', data.message)
         setUser(localUser)
       }
     } catch (e) {
