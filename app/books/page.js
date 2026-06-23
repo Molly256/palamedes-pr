@@ -3,9 +3,14 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 
+function getUgandaDateString() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
+}
+
 export default function BooksPage() {
   const [user, setUser] = useState(null)
-  const [allBooks, setAllBooks] = useState([])
+  const [allBooksMeta, setAllBooksMeta] = useState([]) // from books.json
+  const [userBooks, setUserBooks] = useState([]) // [{bookId, status, reward}] from Redis
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const [loading, setLoading] = useState(false)
@@ -14,8 +19,28 @@ export default function BooksPage() {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!userData.phone) return
     setUser(userData)
-    fetch('/data/books.json').then(r => r.json()).then(setAllBooks)
+    
+    // 1. Load metadata from books.json
+    fetch('/data/books.json').then(r => r.json()).then(setAllBooksMeta)
+    
+    // 2. Load user's book IDs + status for today from Redis
+    fetchUserBooks(userData.phone)
   }, [])
+
+  const fetchUserBooks = async (phone) => {
+    try {
+      const today = getUgandaDateString()
+      const res = await fetch(`/api/books/today?phone=${phone}&date=${today}`)
+      const data = await res.json()
+      if (data.success) {
+        setUser(data.user)
+        setUserBooks(data.books || []) // only IDs + status from Redis
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      }
+    } catch (err) {
+      console.error('Fetch books error:', err)
+    }
+  }
 
   useEffect(() => {
     if (!readingBook) return
@@ -29,8 +54,7 @@ export default function BooksPage() {
   }, [readingBook, timer])
 
   const handleRead = (book) => {
-    const completed = user.completedBooks || []
-    if (completed.includes(book.id.toString())) return
+    if (book.status === 'completed') return
     setReadingBook(book)
     setTimer(10)
   }
@@ -39,10 +63,10 @@ export default function BooksPage() {
     if (loading) return
     setLoading(true)
     try {
-      const res = await fetch('/api/books/submit', {
+      const res = await fetch('/api/submit', { // fixed: was /api/books/submit
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: user.phone, bookId: book.id.toString() })
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId })
       })
       const data = await res.json()
       if (!data.success) {
@@ -52,6 +76,7 @@ export default function BooksPage() {
       }
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      fetchUserBooks(user.phone) // refresh status after submit
       alert(`+${data.earned.toLocaleString()}shs added to your balance`)
     } catch (err) {
       alert('Error: ' + err.message)
@@ -60,19 +85,24 @@ export default function BooksPage() {
     }
   }
 
-  if (!user) return null
+  if (!user || allBooksMeta.length === 0) return null
 
   const vip = Number(user.vip || 0)
-  const unlockedIds = user.unlockedBooks || []
-  const completedIds = user.completedBooks || []
 
-  const VIPS = {
-    1: { books: 4 }, 2: { books: 4 }, 3: { books: 4 },
-    4: { books: 5 }, 5: { books: 5 }, 6: { books: 5 },
-    7: { books: 5 }, 8: { books: 5 }, 9: { books: 5 }, 10: { books: 5 }
-  }
-  const booksToShow = VIPS[vip]?.books || 0
-  const userBooks = allBooks.filter(b => unlockedIds.includes(b.id.toString())).slice(0, booksToShow)
+  // MERGE: Take bookId from Redis, find metadata in books.json by id
+  // Cover path: /books/covers/{id}.jpg matches ID
+  const booksToShow = userBooks.map(b => {
+    const meta = allBooksMeta.find(m => m.id.toString() === b.bookId)
+    return {
+      bookId: b.bookId,
+      status: b.status,
+      reward: b.reward,
+      title: meta?.title || `Book ${b.bookId}`,
+      author: meta?.author || 'Unknown',
+      preview: meta?.preview || 'No preview available',
+      cover: `/books/covers/${b.bookId}.jpg`
+    }
+  })
 
   if (readingBook) {
     return (
@@ -117,28 +147,36 @@ export default function BooksPage() {
             </button>
           </Link>
         </div>
-      ) : userBooks.length === 0? (
+      ) : booksToShow.length === 0? (
         <div style={{ textAlign: 'center', marginTop: 60, color: '#666' }}>
           <p style={{ fontSize: '16px', fontWeight: '700', marginBottom: 8, color: '#000' }}>
-            No books available today
+            No books assigned yet
           </p>
           <p style={{ fontSize: '13px' }}>
-            Books are assigned Monday to Friday. Check back on the next weekday.
+            Buy VIP to get books for today, or wait for admin to assign tomorrow
           </p>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: '20px' }}>
-          {userBooks.map(book => {
-            const isCompleted = completedIds.includes(book.id.toString())
+          {booksToShow.map(book => {
+            const isCompleted = book.status === 'completed'
             return (
-              <div key={book.id} style={{
+              <div key={book.bookId} style={{
                 background: '#f5f5f5', borderRadius: '12px', padding: '15px',
                 display: 'flex', gap: '15px', alignItems: 'center'
               }}>
-                <img src={book.cover} alt={book.title} style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }} />
+                <img 
+                  src={book.cover} 
+                  alt={book.title} 
+                  style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }}
+                  onError={(e) => { e.target.src = '/books/covers/placeholder.jpg' }}
+                />
                 <div style={{ flex: 1 }}>
                   <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
-                  <p style={{ margin: '4px 0 10px', fontSize: '13px', color: '#666' }}>{book.author}</p>
+                  <p style={{ margin: '4px 0 6px', fontSize: '13px', color: '#666' }}>{book.author}</p>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#00BFFF', fontWeight: '700' }}>
+                    Reward: {book.reward?.toLocaleString() || 0} shs
+                  </p>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button
                       onClick={() => handleRead(book)}
@@ -146,8 +184,7 @@ export default function BooksPage() {
                       style={{
                         flex: 1, padding: '10px', borderRadius: '8px', border: 'none',
                         background: isCompleted? '#ccc' : '#00BFFF', color: '#000',
-                        fontWeight: '700', cursor: isCompleted? 'not-allowed' : 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                        fontWeight: '700', cursor: isCompleted? 'not-allowed' : 'pointer'
                       }}
                     >
                       {isCompleted? '✓ Read' : 'Read'}

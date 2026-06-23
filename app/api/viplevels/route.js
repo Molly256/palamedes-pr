@@ -1,9 +1,10 @@
 import { Redis } from '@upstash/redis'
+import { NextResponse } from 'next/server'
 import allBooks from '@/public/data/books.json'
 
 const redis = Redis.fromEnv()
 
-const VIPS = {
+export const VIPS = {
  1: { books: 4, perBook: 625, price: 80000 },
  2: { books: 4, perBook: 2000, price: 250000 },
  3: { books: 4, perBook: 6500, price: 790000 },
@@ -17,13 +18,14 @@ const VIPS = {
 }
 
 function shuffle(array) {
-  let currentIndex = array.length
+  const arr = [...array]
+  let currentIndex = arr.length
   while (currentIndex!== 0) {
     const randomIndex = Math.floor(Math.random() * currentIndex)
     currentIndex--
-    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]]
+    [arr[currentIndex], arr[randomIndex]] = [arr[randomIndex], arr[currentIndex]]
   }
-  return array
+  return arr
 }
 
 function isWeekdayInUganda() {
@@ -36,81 +38,122 @@ function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
+function setBalance(amount) {
+  return { availableBalance: amount, balance: amount }
+}
+
+// GET: /api/viplevels - return all VIP levels
+export async function GET() {
+  try {
+    const levels = Object.keys(VIPS).map(k => ({
+      level: Number(k),
+     ...VIPS[k]
+    }))
+    return NextResponse.json({ success: true, levels })
+  } catch (err) {
+    console.error('GET /api/viplevels error:', err)
+    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
+  }
+}
+
+// POST: /api/viplevels - buy/upgrade VIP
 export async function POST(req) {
   try {
     const { phone, vipLevel } = await req.json()
-    if (!phone ||!vipLevel) return Response.json({ success: false, message: 'Missing data' }, { status: 400 })
+    if (!phone ||!vipLevel) {
+      return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
+    }
 
     const userKey = `user:${phone}`
     const user = await redis.hgetall(userKey)
-    if (!user ||!user.phone) return Response.json({ success: false, message: 'User not found' }, { status: 404 })
+    if (!user ||!user.phone) {
+      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+    }
 
     const selectedVip = VIPS[vipLevel]
-    if (!selectedVip) return Response.json({ success: false, message: 'Invalid VIP level' })
+    if (!selectedVip) {
+      return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
+    }
 
     const currentVip = Number(user.vip || 0)
-    if (vipLevel <= currentVip) return Response.json({ success: false, message: 'You already have this VIP or higher' })
+    if (vipLevel <= currentVip) {
+      return NextResponse.json({ success: false, message: 'You already have this VIP or higher' }, { status: 400 })
+    }
 
     const currentPricePaid = Number(user.vipPricePaid || 0)
     const upgradeCost = selectedVip.price - currentPricePaid
-    const availableBalance = Number(user.availableBalance || 0)
+    const currentBalance = Number(user.availableBalance || user.balance || 0)
 
-    if (availableBalance < upgradeCost) return Response.json({ success: false, message: 'Insufficient balance' })
+    if (currentBalance < upgradeCost) {
+      return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
+    }
 
     const isWeekday = isWeekdayInUganda()
     const today = getUgandaDateString()
+    const newBalance = currentBalance - upgradeCost
+
+    let unlockedBooks = []
+
+    if (isWeekday) {
+      const shuffled = shuffle(allBooks)
+      unlockedBooks = shuffled.slice(0, selectedVip.books).map(b => String(b.id))
+
+      const pipeline = redis.pipeline()
+      unlockedBooks.forEach(bookId => {
+        const bookKey = `book:${phone}:${today}:${bookId}`
+        pipeline.hset(bookKey, {
+          phone,
+          bookId,
+          vipLevel: String(vipLevel),
+          reward: selectedVip.perBook,
+          status: 'pending',
+          date: today,
+          createdAt: Date.now()
+        })
+        pipeline.sadd(`books:${phone}:${today}`, bookKey)
+      })
+      await pipeline.exec()
+    }
 
     const updateData = {
       vip: vipLevel,
       vipPricePaid: selectedVip.price,
-      availableBalance: availableBalance - upgradeCost,
-      vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+     ...setBalance(newBalance),
+      hasBoughtVip: 'true',
+      vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      unlockedBooks: JSON.stringify(unlockedBooks),
+      completedBooks: '[]',
+      books_read_today: 0,
+      dailyIncome: 0,
+      lastResetDate: today
     }
 
-    if (isWeekday) {
-      const shuffled = shuffle([...allBooks])
-      const selectedBooks = shuffled.slice(0, selectedVip.books).map(b => b.id.toString())
-      updateData.unlockedBooks = JSON.stringify(selectedBooks)
-      updateData.completedBooks = '[]'
-      updateData.books_read_today = 0
-      updateData.dailyIncome = 0
-      updateData.lastResetDate = today
-    } else {
-      updateData.unlockedBooks = '[]'
-      updateData.completedBooks = '[]'
-      updateData.books_read_today = 0
-      updateData.dailyIncome = 0
-      updateData.lastResetDate = today
-    }
-
-    const pipeline = redis.pipeline()
-    pipeline.hset(userKey, updateData)
-    await pipeline.exec()
-
+    await redis.hset(userKey, updateData)
     await payInvitationReward(phone, vipLevel)
 
     const updatedUser = await redis.hgetall(userKey)
     updatedUser.unlockedBooks = JSON.parse(updatedUser.unlockedBooks || '[]')
     updatedUser.completedBooks = JSON.parse(updatedUser.completedBooks || '[]')
-    updatedUser.availableBalance = Number(updatedUser.availableBalance)
-    updatedUser.vip = Number(updatedUser.vip)
-    updatedUser.books_read_today = Number(updatedUser.books_read_today)
+    updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
+    updatedUser.balance = Number(updatedUser.balance || 0)
+    updatedUser.vip = Number(updatedUser.vip || 0)
+    updatedUser.books_read_today = Number(updatedUser.books_read_today || 0)
     updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
     updatedUser.vipPricePaid = Number(updatedUser.vipPricePaid || 0)
 
     const message = isWeekday
-  ? `Upgraded to VIP ${vipLevel} successfully. ${selectedVip.books} books assigned.`
+     ? `Upgraded to VIP ${vipLevel} successfully. ${selectedVip.books} books assigned.`
       : `Upgraded to VIP ${vipLevel} successfully. Books will be assigned on the next weekday.`
 
-    return Response.json({
+    return NextResponse.json({
       success: true,
       user: updatedUser,
       message
     })
 
   } catch (err) {
-    console.error(err)
-    return Response.json({ success: false, message: 'Server error' }, { status: 500 })
+    console.error('POST /api/viplevels error:', err)
+    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
   }
 }
 
@@ -122,8 +165,7 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
     const inviterVip = Number(await redis.hget(`user:${inviterPhone}`, 'vip') || 0)
     const downlineVip = Number(vipLevelBought)
 
-    if (inviterVip < downlineVip) return
-    if (inviterVip === 0) return
+    if (inviterVip < downlineVip || inviterVip === 0) return
 
     const vipAmounts = {
       1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000,
@@ -148,13 +190,17 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
       type: 'invitation_reward',
       amount: rewardAmount,
       from: downlinePhone,
-      level: level,
+      level,
       vipLevel: vipLevelBought,
       date: new Date().toISOString(),
       status: 'completed'
     }))
 
-    await redis.hset(`user:${downlinePhone}`, 'vip_paid', '1')
+    const inviterKey = `user:${inviterPhone}`
+    const inviter = await redis.hgetall(inviterKey)
+    const newBal = Number(inviter.availableBalance || inviter.balance || 0) + rewardAmount
+
+    await redis.hset(inviterKey, setBalance(newBal))
 
   } catch (err) {
     console.error('Invitation reward error:', err)
