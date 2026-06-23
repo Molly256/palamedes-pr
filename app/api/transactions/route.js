@@ -45,7 +45,17 @@ export async function GET(req) {
 
   try {
     const txs = await redis.lrange(`tx:${phone}`, 0, 99)
-    const parsed = txs.map(t => JSON.parse(t))
+    
+    const parsed = txs
+      .map(t => {
+        try {
+          return typeof t === 'string' ? JSON.parse(t) : t
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+
     return NextResponse.json({ success: true, transactions: parsed })
   } catch (err) {
     console.error('GET /api/transactions error:', err)
