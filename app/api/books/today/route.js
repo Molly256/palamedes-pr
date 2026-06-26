@@ -1,3 +1,6 @@
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
@@ -5,14 +8,6 @@ const redis = Redis.fromEnv()
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
-}
-
-function safeParse(str, fallback = []) {
-  try {
-    return JSON.parse(str || '[]')
-  } catch {
-    return fallback
-  }
 }
 
 export async function GET(req) {
@@ -31,46 +26,51 @@ export async function GET(req) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
 
-    let bookKeys = await redis.smembers(`books:${phone}:${date}`)
+    // 1. READ ONLY: Get today's book IDs from Redis Set. Nothing else.
+    const bookIds = await redis.smembers(`books:${phone}:${date}`)
     
-    // Fallback to unlockedBooks if set is empty
-    if (!bookKeys || bookKeys.length === 0) {
-      const unlocked = safeParse(user.unlockedBooks)
-      bookKeys = unlocked.map(id => `book:${phone}:${date}:${id}`)
-    }
-    
-    if (!bookKeys || bookKeys.length === 0) {
-      user.unlockedBooks = safeParse(user.unlockedBooks)
-      user.completedBooks = safeParse(user.completedBooks)
-      user.availableBalance = Number(user.availableBalance || 0)
-      user.balance = Number(user.balance || 0)
-      user.vip = Number(user.vip || 0)
-      user.books_read_today = Number(user.books_read_today || 0)
-      user.dailyIncome = Number(user.dailyIncome || 0)
-      
-      return NextResponse.json({ success: true, user, books: [] })
+    if (!bookIds || bookIds.length === 0) {
+      return NextResponse.json({ 
+        success: true, 
+        user: {
+          vip: Number(user.vip || 0),
+          availableBalance: Number(user.availableBalance || 0),
+          balance: Number(user.balance || 0),
+          books_read_today: Number(user.books_read_today || 0),
+          dailyIncome: Number(user.dailyIncome || 0),
+        },
+        books: [] 
+      })
     }
 
+    // 2. READ ONLY: HGETALL each book key for this exact date
+    const bookKeys = bookIds.map(id => `book:${phone}:${date}:${id}`)
     const booksData = await Promise.all(bookKeys.map(k => redis.hgetall(k)))
     
+    // 3. Return raw Redis data. No joins, no fs, no covers check.
     const books = booksData
-      .filter(b => b && b.bookId)
+      .filter(b => b && b.bookId) // drop missing keys
       .map(b => ({
         bookId: String(b.bookId),
         status: b.status || 'pending',
         reward: Number(b.reward || 0),
-        submittedAt: b.submittedAt || null
+        date: b.date || date, // <- needed for 24hr filter in frontend
+        submittedAt: b.submittedAt || null,
+        title: b.title || null,  // if you saved it in viplevels
+        cover: b.cover || null   // if you saved it in viplevels
       }))
 
-    user.unlockedBooks = safeParse(user.unlockedBooks)
-    user.completedBooks = safeParse(user.completedBooks)
-    user.availableBalance = Number(user.availableBalance || 0)
-    user.balance = Number(user.balance || 0)
-    user.vip = Number(user.vip || 0)
-    user.books_read_today = Number(user.books_read_today || 0)
-    user.dailyIncome = Number(user.dailyIncome || 0)
-
-    return NextResponse.json({ success: true, user, books })
+    return NextResponse.json({ 
+      success: true, 
+      user: {
+        vip: Number(user.vip || 0),
+        availableBalance: Number(user.availableBalance || 0),
+        balance: Number(user.balance || 0),
+        books_read_today: Number(user.books_read_today || 0),
+        dailyIncome: Number(user.dailyIncome || 0),
+      },
+      books 
+    })
 
   } catch (err) {
     console.error('GET /api/books/today error:', err)

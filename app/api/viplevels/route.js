@@ -1,6 +1,10 @@
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import allBooks from '@/public/data/books.json'
+import fs from 'fs/promises'
+import path from 'path'
 
 const redis = Redis.fromEnv()
 
@@ -19,23 +23,21 @@ export const VIPS = {
 
 function shuffle(array) {
   const arr = [...array]
-  let currentIndex = arr.length
-  while (currentIndex!== 0) {
-    const randomIndex = Math.floor(Math.random() * currentIndex)
-    currentIndex--
-    [arr[currentIndex], arr[randomIndex]] = [arr[randomIndex], arr[currentIndex]]
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]]
   }
   return arr
 }
 
 function isWeekdayInUganda() {
-  const ugandaDate = new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' })
-  const day = new Date(ugandaDate).getDay()
-  return day >= 1 && day <= 5
+  const ugandaDay = new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' })
+  const d = new Date(ugandaDay).getDay() // 0=Sun, 1=Mon...6=Sat
+  return d >= 1 && d <= 5
 }
 
 function getUgandaDateString() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' }) // YYYY-MM-DD
 }
 
 function setBalance(amount) {
@@ -55,7 +57,7 @@ export async function GET() {
   try {
     const levels = Object.keys(VIPS).map(k => ({
       level: Number(k),
-  ...VIPS[k]
+    ...VIPS[k]
     }))
     return NextResponse.json({ success: true, levels })
   } catch (err) {
@@ -67,7 +69,14 @@ export async function GET() {
 // POST: /api/viplevels - buy/upgrade VIP
 export async function POST(req) {
   try {
-    const { phone, vipLevel } = await req.json()
+    let body
+    try {
+      body = await req.json()
+    } catch {
+      return NextResponse.json({ success: false, message: 'Invalid JSON' }, { status: 400 })
+    }
+
+    const { phone, vipLevel } = body
     if (!phone ||!vipLevel) {
       return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
@@ -96,52 +105,88 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
     }
 
-    const isWeekday = isWeekdayInUganda()
     const today = getUgandaDateString()
+    const alreadyBoughtToday = user.vip_bought_date === today
+    const isWeekday = isWeekdayInUganda()
+    const shouldCreateBooks = isWeekday &&!alreadyBoughtToday
+
     const newBalance = currentBalance - upgradeCost
+    let unlockedBooks = safeParse(user.unlockedBooks)
+    let assignedBooksMeta = [] // return to frontend so Books tab can render instantly
 
-    let unlockedBooks = []
+    const pipeline = redis.pipeline()
 
-    if (isWeekday) {
-      const shuffled = shuffle(allBooks)
-      unlockedBooks = shuffled.slice(0, selectedVip.books).map(b => String(b.id))
+    if (shouldCreateBooks) {
+      const booksPath = path.join(process.cwd(), 'public/data/books.json')
+      const coversDir = path.join(process.cwd(), 'public/books/covers')
 
-      const pipeline = redis.pipeline()
-      unlockedBooks.forEach(bookId => {
+      const [allBooks, coverFiles] = await Promise.all([
+        fs.readFile(booksPath, 'utf8').then(JSON.parse),
+        fs.readdir(coversDir)
+      ])
+
+      // 1. Get valid IDs from covers: 11.jpg -> "11"
+      const coverIds = new Set(
+        coverFiles
+         .map(f => f.replace(/\.jpg$/i, ''))
+         .filter(id => /^\d+$/.test(id))
+         .map(id => String(id))
+      )
+
+      // 2. Only use books.json entries that have a matching cover file
+      const validBooks = allBooks.filter(b => coverIds.has(String(b.id)))
+
+      if (validBooks.length === 0) {
+        return NextResponse.json({ success: false, message: 'No books with covers found' }, { status: 500 })
+      }
+
+      const shuffled = shuffle(validBooks)
+      const booksToAssign = shuffled.slice(0, Math.min(selectedVip.books, validBooks.length))
+
+      unlockedBooks = booksToAssign.map(b => String(b.id))
+      assignedBooksMeta = booksToAssign.map(b => ({
+        id: String(b.id),
+        title: b.title,
+        cover: `/books/covers/${b.id}.jpg`,
+        reward: selectedVip.perBook
+      }))
+
+      booksToAssign.forEach(b => {
+        const bookId = String(b.id)
         const bookKey = `book:${phone}:${today}:${bookId}`
         pipeline.hset(bookKey, {
           phone,
           bookId,
           vipLevel: String(vipLevel),
           reward: selectedVip.perBook,
+          title: b.title,
+          cover: `/books/covers/${bookId}.jpg`,
           status: 'pending',
           date: today,
           createdAt: Date.now()
         })
-        pipeline.sadd(`books:${phone}:${today}`, bookKey)
+        pipeline.sadd(`books:${phone}:${today}`, bookId)
       })
-      await pipeline.exec()
     }
 
-    const updateData = {
+    pipeline.hset(userKey, {
       vip: vipLevel,
       vipPricePaid: selectedVip.price,
-  ...setBalance(newBalance),
+    ...setBalance(newBalance),
       hasBoughtVip: 'true',
       vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       unlockedBooks: JSON.stringify(unlockedBooks),
       completedBooks: '[]',
       books_read_today: 0,
       dailyIncome: 0,
-      lastResetDate: today
-    }
+      lastResetDate: today,
+      vip_bought_date: today // blocks 2nd buy same day
+    })
 
-    await redis.hset(userKey, updateData)
+    await pipeline.exec()
     await payInvitationReward(phone, vipLevel)
 
     const updatedUser = await redis.hgetall(userKey)
-
-    // FIX: Use safeParse instead of JSON.parse to avoid crash
     updatedUser.unlockedBooks = safeParse(updatedUser.unlockedBooks)
     updatedUser.completedBooks = safeParse(updatedUser.completedBooks)
     updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
@@ -151,19 +196,24 @@ export async function POST(req) {
     updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
     updatedUser.vipPricePaid = Number(updatedUser.vipPricePaid || 0)
 
-    const message = isWeekday
-  ? `Upgraded to VIP ${vipLevel} successfully. ${selectedVip.books} books assigned.`
+    const message = shouldCreateBooks
+    ? `Upgraded to VIP ${vipLevel} successfully. ${assignedBooksMeta.length} books assigned.`
       : `Upgraded to VIP ${vipLevel} successfully. Books will be assigned on the next weekday.`
 
     return NextResponse.json({
       success: true,
       user: updatedUser,
-      message
+      message,
+      books: assignedBooksMeta // [ {id, title, cover, reward} ] -> Books tab can use this
     })
 
   } catch (err) {
     console.error('POST /api/viplevels error:', err)
-    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
+    return NextResponse.json({
+      success: false,
+      message: 'Server error',
+      detail: process.env.NODE_ENV === 'development'? err.message : undefined
+    }, { status: 500 })
   }
 }
 
@@ -174,7 +224,6 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
 
     const inviterVip = Number(await redis.hget(`user:${inviterPhone}`, 'vip') || 0)
     const downlineVip = Number(vipLevelBought)
-
     if (inviterVip < downlineVip || inviterVip === 0) return
 
     const vipAmounts = {
@@ -187,11 +236,7 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
     const level = Number(await redis.hget(`downlines:${inviterPhone}`, downlinePhone))
     if (!level || level > 3) return
 
-    let rate = 0
-    if (level === 1) rate = 0.05
-    if (level === 2) rate = 0.02
-    if (level === 3) rate = 0.01
-
+    const rate = level === 1? 0.05 : level === 2? 0.02 : 0.01
     const rewardAmount = Math.floor(inviterAmount * rate)
     if (rewardAmount <= 0) return
 
@@ -209,7 +254,6 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
     const inviterKey = `user:${inviterPhone}`
     const inviter = await redis.hgetall(inviterKey)
     const newBal = Number(inviter.availableBalance || inviter.balance || 0) + rewardAmount
-
     await redis.hset(inviterKey, setBalance(newBal))
 
   } catch (err) {

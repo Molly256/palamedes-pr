@@ -1,85 +1,87 @@
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import fs from 'fs'
+import fs from 'fs/promises'
 import path from 'path'
+import { VIPS } from '@/app/api/viplevels/route'
 
 const redis = Redis.fromEnv()
 
-function isWeekdayInUganda() {
-  const ugandaDate = new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' })
-  const day = new Date(ugandaDate).getDay() // 1=Mon ... 5=Fri
-  return day >= 1 && day <= 5
-}
-
-function getTodayUgandaDate() {
+function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
-export async function GET() {
-  if (!isWeekdayInUganda()) {
-    return NextResponse.json({ 
-      success: false, 
-      message: 'Can only run Mon-Fri Uganda time' 
-    })
+function shuffle(array) {
+  const arr = [...array]
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]]
   }
+  return arr
+}
 
-  const today = getTodayUgandaDate()
-  const runKey = `books_generated:${today}`
-
-  if (await redis.get(runKey)) {
-    return NextResponse.json({ 
-      success: false, 
-      message: `Already generated for ${today}` 
-    })
-  }
-
+export async function POST() {
   try {
-    // 1. Load all books from public/data/books.json
-    const booksPath = path.join(process.cwd(), 'public/data/books.json')
-    const allBooks = JSON.parse(fs.readFileSync(booksPath, 'utf-8'))
+    const today = getUgandaDateString()
+    const coversDir = path.join(process.cwd(), 'public/books/covers')
 
-    if (allBooks.length < 4) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'Need at least 4 books in books.json' 
-      })
+    // 1. Get valid cover IDs: 1.jpg -> "1"
+    const coverFiles = await fs.readdir(coversDir)
+    const coverIds = coverFiles
+     .map(f => f.replace(/\.jpg$/i, ''))
+     .filter(id => /^\d+$/.test(id))
+     .map(String)
+
+    if (coverIds.length < 4) {
+      return NextResponse.json({ success: false, message: 'Need at least 4 cover images' }, { status: 500 })
     }
 
-    // 2. Pick 4 random IDs
-    const shuffledIds = allBooks
-      .map(b => b.id.toString()) // make sure it's string to match your frontend
-      .sort(() => 0.5 - Math.random())
-      .slice(0, 4)
+    // 2. Pick 4 random IDs. VIP1-3 all need 4
+    const bookIds = shuffle(coverIds).slice(0, 4)
+    const perBookReward = VIPS[1].perBook // 625. Use VIP1 rate for everyone
 
-    // 3. Assign to all VIP 1-3 users
+    // 3. Get all users with hasBoughtVip=true
     const userKeys = await redis.keys('user:*')
-    let assigned = 0
+    const users = await Promise.all(userKeys.map(k => redis.hgetall(k)))
+    const vipUsers = users.filter(u => u.hasBoughtVip === 'true' && u.phone)
 
-    for (const key of userKeys) {
-      const user = await redis.hgetall(key)
-      const vip = Number(user.vip || 0)
-
-      if (vip >= 1 && vip <= 3) {
-        await redis.hset(key, {
-          unlockedBooks: JSON.stringify(shuffledIds), // only 4 IDs
-          completedBooks: JSON.stringify([]),         // reset daily
-          books_read_today: 0,
-          lastBooksDate: today
-        })
-        assigned++
-      }
+    if (vipUsers.length === 0) {
+      return NextResponse.json({ success: true, message: 'No VIP users found', usersUpdated: 0 })
     }
 
-    await redis.set(runKey, '1', { ex: 86400 }) // block re-run for 24h
+    // 4. Write to Redis for each user
+    const pipeline = redis.pipeline()
+    vipUsers.forEach(user => {
+      const phone = user.phone
+      const setKey = `books:${phone}:${today}`
+
+      pipeline.del(setKey) // overwrite today's books
+      bookIds.forEach(bookId => {
+        const bookKey = `book:${phone}:${today}:${bookId}`
+        pipeline.hset(bookKey, {
+          phone,
+          bookId,
+          status: 'pending',
+          reward: perBookReward,
+          date: today,
+          createdAt: Date.now()
+        })
+        pipeline.sadd(setKey, bookId)
+      })
+    })
+    await pipeline.exec()
 
     return NextResponse.json({
       success: true,
-      message: `Assigned 4 books to ${assigned} VIP 1-3 users`,
-      bookIds: shuffledIds
+      message: `Generated 4 books for ${vipUsers.length} users`,
+      bookIds,
+      usersUpdated: vipUsers.length
     })
 
   } catch (err) {
-    console.error(err)
+    console.error('Generate books error:', err)
     return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
   }
 }
