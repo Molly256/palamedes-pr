@@ -62,9 +62,8 @@ export default function Transactions() {
 
     if (isMoneyTx) {
       return (
-        <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
+        <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
           <div className="flex justify-between items-start">
-            {/* Left side */}
             <div className="flex flex-col">
               <p className="text-black text-sm font-light capitalize">{typeKey}</p>
               <p className="text-black text-base font-light mt-1">
@@ -74,7 +73,6 @@ export default function Transactions() {
                 {formatUgandaTime(tx.createdAt)}
               </p>
             </div>
-            {/* Right side status */}
             <p className={`text-sm font-light capitalize ${
               status === 'success'? 'text-green-400' :
               status === 'pending'? 'text-red-400' :
@@ -87,9 +85,8 @@ export default function Transactions() {
       )
     }
 
-    // DAILY INCOME + VIPLEVEL PURCHASE + REFUND + SHARES = Same layout
     return (
-      <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
+      <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
         <div className="flex justify-between items-start">
           <p className="text-black text-sm font-light capitalize">{typeKey}</p>
           <p className="text-black text-base font-light">
@@ -106,40 +103,35 @@ export default function Transactions() {
   if (!user) return <div className="p-4 text-black">Loading...</div>
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="p-4">
-        <h1 className="text-xl font-bold text-black">Transaction History</h1>
-      </div>
-
-      {/* Tabs: hot skyblue + font-light black text */}
-      <div className="px-4 pb-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-          {TABS.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black transition-colors
-                ${activeTab === tab
-              ? 'bg-sky-400' // active = hot sky blue
-                  : 'bg-sky-200' // inactive = lighter sky blue
-                }`}
-            >
-              {tab}
-            </button>
-          ))}
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-md mx-auto">
+        <div className="p-4">
+          <h1 className="text-xl font-semibold text-black">Transaction History</h1>
         </div>
-      </div>
 
-      <div className="p-4 pt-2">
-        {loading? (
-          <p className="text-black text-center py-10">Loading...</p>
-        ) : filteredTxs.length === 0? (
-          <p className="text-gray-500 text-center py-10">No transactions yet</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {filteredTxs.map(renderTx)}
+        {/* Tabs: hot skyblue hex so Tailwind won't purge */}
+        <div className="px-4 pb-3">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {TABS.map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black
+                  ${activeTab === tab? 'bg-[#38bdf8]' : 'bg-[#bae6fd]'}`}
+              >
+                {tab}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
+
+        <div className="px-4 pb-20 flex-col gap-3">
+          {loading? (
+            <p className="text-black text-center py-10">Loading...</p>
+          ) : filteredTxs.length === 0? (
+            <p className="text-gray-500 text-center py-10">No transactions yet</p>
+          ) : filteredTxs.map(renderTx)}
+        </div>
       </div>
     </div>
   )
