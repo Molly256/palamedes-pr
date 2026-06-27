@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
-import { getServerSession } from 'next-auth/next'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { VIPS } from '@/app/api/viplevels/route'
 
 const redis = Redis.fromEnv()
@@ -77,17 +75,10 @@ return {1, 'ok'}
 
 export async function POST(request) {
   try {
-    // 1. Auth - same as your Prisma version
-    const session = await getServerSession(authOptions)
-    if (!session ||!session.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-    const phone = session.user.id // id = phone
-
-    // 2. Body
-    const { bookId } = await request.json()
-    if (!bookId) {
-      return NextResponse.json({ error: "Missing Book ID" }, { status: 400 })
+    // 1. Auth: Get phone from body instead of session
+    const { phone, bookId } = await request.json()
+    if (!phone ||!bookId) {
+      return NextResponse.json({ error: "Missing phone or Book ID" }, { status: 400 })
     }
 
     const today = getUgandaDateString()
@@ -97,7 +88,7 @@ export async function POST(request) {
     const txKey = `tx:${phone}` // <- This is your Daily Income tab key
     const lockKey = `lock:submit:${phone}:${today}:${bookIdStr}`
 
-    // 3. Get VIP + amount
+    // 2. Get VIP + amount
     const user = await redis.hgetall(userKey)
     if (!user?.phone) {
       return NextResponse.json({ error: "User profile missing" }, { status: 404 })
@@ -120,7 +111,7 @@ export async function POST(request) {
       phone: phone
     }
 
-    // 4. Run atomic
+    // 3. Run atomic
     const res = await redis.eval(
       SUBMIT_LUA,
       [bookKey, userKey, txKey, lockKey],
@@ -143,7 +134,7 @@ export async function POST(request) {
       success: true,
       earned: paymentAmount,
       user: {
-       ...updatedUser,
+      ...updatedUser,
         availableBalance: Number(updatedUser.availableBalance || 0),
         dailyIncome: Number(updatedUser.dailyIncome || 0),
         books_read_today: Number(updatedUser.books_read_today || 0),
