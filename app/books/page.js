@@ -58,7 +58,7 @@ export default function BooksPage() {
     if (book.status !== 'pending') return
     setReadingBook(book)
     setTimer(10)
-    await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' }) // <- fixed: added )
+    await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' }) // <- 2x ) here
     await fetchBooks(user.phone)
   }
 
