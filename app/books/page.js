@@ -12,7 +12,7 @@ export default function BooksPage() {
   const [books, setBooks] = useState([])
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
-  const [submittingIds, setSubmittingIds] = useState(new Set()) // <- Hard lock per bookId
+  const [submittingIds, setSubmittingIds] = useState(new Set()) // <- Frontend lock only
   const pollIntervalRef = useRef(null)
 
   const fetchBooks = async (phone) => {
@@ -70,16 +70,13 @@ export default function BooksPage() {
     if (book.status !== 'read') return alert('Click Read first')
     if (submittingIds.has(book.bookId)) return // <- Block 2nd tap instantly
 
-    const today = getUgandaDateString()
-    const idempotencyKey = `${user.phone}:${today}:${book.bookId}:${Date.now()}` // <- Unique per tap
-    
     setSubmittingIds(prev => new Set(prev).add(book.bookId)) // <- Lock UI immediately
 
     try {
       const res = await fetch('/api/books/submit', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', idempotencyKey }) // <- SEND KEY
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) // <- NO KEY
       })
       
       const data = await res.json()
@@ -142,7 +139,7 @@ export default function BooksPage() {
             <div style={{ display: 'grid', gap: '20px', marginBottom: '40px' }}>
               {pendingBooks.map(book => {
                 const isRead = book.status === 'read'
-                const isSubmitting = submittingIds.has(book.bookId) // <- NEW
+                const isSubmitting = submittingIds.has(book.bookId)
                 return (
                   <div key={book.bookId} style={{ background: '#f5f5f5', borderRadius: '12px', padding: '15px', display: 'flex', gap: '15px', alignItems: 'center' }}>
                     <img src={book.cover} alt={book.title} style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }} />
@@ -153,7 +150,7 @@ export default function BooksPage() {
                         <button onClick={() => handleRead(book)} disabled={isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#10b981' : '#00BFFF', color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' }}>{isRead ? '✓ Read' : 'Read'}</button>
                         <button 
                           onClick={() => handleSubmit(book)} 
-                          disabled={!isRead || isSubmitting} // <- NEW: Hard lock
+                          disabled={!isRead || isSubmitting}
                           style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#00BFFF', color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.6 : 1 }}
                         >
                           {isSubmitting ? 'Submitting...' : 'Submit'} 
