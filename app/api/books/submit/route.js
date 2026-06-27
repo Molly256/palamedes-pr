@@ -12,7 +12,8 @@ function getUgandaDateString() {
 
 function safeParse(str, fallback = []) {
   try {
-    return JSON.parse(str || '[]')
+    const parsed = JSON.parse(str || '[]')
+    return Array.isArray(parsed)? parsed : fallback
   } catch {
     return fallback
   }
@@ -21,7 +22,7 @@ function safeParse(str, fallback = []) {
 export async function POST(req) {
   try {
     const { phone, bookId, action } = await req.json()
-    if (!phone || !bookId || !action) {
+    if (!phone ||!bookId ||!action) {
       return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
 
@@ -29,7 +30,7 @@ export async function POST(req) {
     const bookKey = `book:${phone}:${today}:${bookId}`
     const userKey = `user:${phone}`
     const txKey = `tx:${phone}`
-    const lockKey = `lock:submit:${phone}:${today}` // <- prevents double submit race
+    const lockKey = `lock:submit:${phone}`
     const bookIdStr = String(bookId)
 
     if (action === 'read') {
@@ -38,22 +39,24 @@ export async function POST(req) {
     }
 
     if (action === 'submit') {
-      // 1. Set a 3s lock so user can't spam Submit on 2 books at once
-      const lock = await redis.set(lockKey, '1', { ex: 3, nx: true })
-      if (!lock) {
-        return NextResponse.json({ success: false, message: 'Wait 1s, processing...' }, { status: 429 })
+      // 1. Redis SETNX lock for 2 seconds. Stops double-tap + race on book 2.
+      const locked = await redis.set(lockKey, Date.now(), { ex: 2, nx: true })
+      if (!locked) {
+        return NextResponse.json({ success: false, message: 'Processing, try again in 1s' }, { status: 429 })
       }
 
       try {
-        // 2. Always get fresh user + book data inside the lock
-        const [user, bookData] = await redis.mget(userKey, bookKey)
-        if (!user || !user.phone) {
+        // 2. Get fresh data every time inside the lock
+        const user = await redis.hgetall(userKey)
+        if (!user?.phone) {
           return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
         }
-        if (!bookData) {
-          return NextResponse.json({ success: false, message: 'Book not found. Refresh page.' }, { status: 400 })
+
+        const bookData = await redis.hgetall(bookKey)
+        if (!bookData?.bookId) {
+          return NextResponse.json({ success: false, message: 'Book not found. Refresh.' }, { status: 400 })
         }
-        if (bookData.status !== 'read') {
+        if (bookData.status!== 'read') {
           return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
         }
 
@@ -62,32 +65,29 @@ export async function POST(req) {
         const vipConfig = VIPS[vip]
         if (!vipConfig) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
-        // 3. Reset if new day
-        if (user.lastResetDate !== today) {
+        // 3. Reset day if needed - but only if we're inside the lock
+        if (user.lastResetDate!== today) {
           await redis.hset(userKey, {
             books_read_today: 0,
             dailyIncome: 0,
             completedBooks: '[]',
             lastResetDate: today
           })
-          user.books_read_today = 0
-          user.completedBooks = '[]'
-          user.dailyIncome = 0
         }
 
-        const booksReadToday = Number(user.books_read_today || 0)
+        // 4. Re-read after reset to avoid stale data
+        const freshUser = await redis.hgetall(userKey)
+        const booksReadToday = Number(freshUser.books_read_today || 0)
         if (booksReadToday >= vipConfig.books) {
           return NextResponse.json({ success: false, message: `TODAY'S BOOKS ARE DONE` }, { status: 400 })
         }
 
-        const completed = safeParse(user.completedBooks).map(String)
+        const completed = safeParse(freshUser.completedBooks)
         if (completed.includes(bookIdStr)) {
           return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
         }
 
         const earned = vipConfig.perBook
-        const newCompleted = [...completed, bookIdStr]
-
         const tx = {
           id: Date.now(),
           type: 'book_submission',
@@ -97,32 +97,36 @@ export async function POST(req) {
           status: 'completed'
         }
 
-        // 4. Atomic: Use HINCRBY so Redis handles +1, not us. No race.
+        // 5. ATOMIC: Use HINCRBY so Redis does math, not Node. No race.
+        // Use SADD for completedBooks instead of JSON array to avoid corruption
         const pipeline = redis.pipeline()
         pipeline.hset(bookKey, { status: 'submitted', submittedAt: Date.now() })
         pipeline.hincrby(userKey, 'availableBalance', earned)
         pipeline.hincrby(userKey, 'dailyIncome', earned)
         pipeline.hincrby(userKey, 'books_read_today', 1)
-        pipeline.hset(userKey, { completedBooks: JSON.stringify(newCompleted) })
+        pipeline.sadd(`completed:${phone}:${today}`, bookIdStr) // <- Redis Set, no JSON corruption
         pipeline.lpush(txKey, JSON.stringify(tx))
         await pipeline.exec()
 
-        // 5. Read back fresh once after write
+        // 6. Read final state
+        const completedArr = await redis.smembers(`completed:${phone}:${today}`)
         const updatedUser = await redis.hgetall(userKey)
-        updatedUser.completedBooks = safeParse(updatedUser.completedBooks)
-        updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
-        updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
-        updatedUser.books_read_today = Number(updatedUser.books_read_today || 0)
 
         return NextResponse.json({
           success: true,
-          user: updatedUser,
+          user: {
+           ...updatedUser,
+            completedBooks: completedArr,
+            availableBalance: Number(updatedUser.availableBalance || 0),
+            dailyIncome: Number(updatedUser.dailyIncome || 0),
+            books_read_today: Number(updatedUser.books_read_today || 0),
+          },
           earned,
           status: 'submitted',
           message: `+${earned} UGX`
         })
       } finally {
-        await redis.del(lockKey) // always release lock
+        await redis.del(lockKey) // always release
       }
     }
 
