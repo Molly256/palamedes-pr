@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
-import booksMeta from '@/public/data/books.json'
+import { VIPS } from '@/app/api/viplevels/route'
 
 const redis = Redis.fromEnv()
 export const runtime = 'nodejs'
@@ -10,63 +10,119 @@ function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
-export async function GET(req) {
+function safeParse(str, fallback = []) {
   try {
-    const { searchParams } = new URL(req.url)
-    const phone = searchParams.get('phone')
-    const date = searchParams.get('date') || getUgandaDateString()
-    
-    if (!phone) {
-      return NextResponse.json({ success: true, books: [], user: null })
+    return JSON.parse(str || '[]')
+  } catch {
+    return fallback
+  }
+}
+
+export async function POST(req) {
+  try {
+    const { phone, bookId, action } = await req.json()
+    if (!phone || !bookId || !action) {
+      return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
 
-    const setKey = `books:${phone}:${date}`
-    const bookIds = await redis.smembers(setKey)
-    
-    if (!bookIds || bookIds.length === 0) {
-      const user = await redis.hgetall(`user:${phone}`)
-      return NextResponse.json({ 
-        success: true, 
-        books: [], 
-        user: user ? { 
-          ...user, 
-          availableBalance: Number(user.availableBalance || 0), 
-          vip: Number(user.vip || 0) 
-        } : null 
+    const today = getUgandaDateString()
+    const bookKey = `book:${phone}:${today}:${bookId}`
+    const userKey = `user:${phone}`
+    const txKey = `tx:${phone}`
+    const bookIdStr = String(bookId)
+
+    if (action === 'read') {
+      await redis.hset(bookKey, { bookId: bookIdStr, status: 'read', readAt: Date.now() })
+      return NextResponse.json({ success: true, status: 'read', message: 'Marked as read' })
+    }
+
+    if (action === 'submit') {
+      const user = await redis.hgetall(userKey)
+      if (!user || !user.phone) {
+        return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
+      }
+
+      const vip = Number(user.vip || 0)
+      if (vip === 0) {
+        return NextResponse.json({ success: false, message: 'No active VIP' }, { status: 400 })
+      }
+
+      const vipConfig = VIPS[vip]
+      if (!vipConfig) {
+        return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
+      }
+
+      if (user.lastResetDate !== today) {
+        await redis.hset(userKey, {
+          books_read_today: 0,
+          dailyIncome: 0,
+          completedBooks: '[]',
+          lastResetDate: today
+        })
+      }
+
+      const booksReadToday = Number(user.books_read_today || 0)
+      if (booksReadToday >= vipConfig.books) {
+        return NextResponse.json({ success: false, message: `TODAY'S BOOKS ARE DONE` }, { status: 400 })
+      }
+
+      const completed = safeParse(user.completedBooks).map(String)
+      if (completed.includes(bookIdStr)) {
+        return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
+      }
+
+      const bookData = await redis.hgetall(bookKey)
+      if (!bookData) {
+        return NextResponse.json({ success: false, message: 'Book not found. Refresh page.' }, { status: 400 })
+      }
+      if (bookData.status !== 'read') {
+        return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
+      }
+
+      const earned = vipConfig.perBook
+      const newBalance = Number(user.availableBalance || 0) + earned
+      const newDailyIncome = Number(user.dailyIncome || 0) + earned
+      const newCompleted = [...completed, bookIdStr]
+
+      const tx = {
+        id: Date.now(),
+        type: 'book_submission',
+        bookId: bookIdStr,
+        amount: earned,
+        date: new Date().toISOString(),
+        status: 'completed'
+      }
+
+      const pipeline = redis.pipeline()
+      pipeline.hset(bookKey, { status: 'submitted', submittedAt: Date.now() })
+      pipeline.hset(userKey, {
+        availableBalance: newBalance,
+        dailyIncome: newDailyIncome,
+        completedBooks: JSON.stringify(newCompleted),
+        books_read_today: booksReadToday + 1
+      })
+      pipeline.lpush(txKey, JSON.stringify(tx))
+      await pipeline.exec()
+
+      const updatedUser = await redis.hgetall(userKey)
+      updatedUser.completedBooks = safeParse(updatedUser.completedBooks)
+      updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
+      updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
+      updatedUser.books_read_today = Number(updatedUser.books_read_today || 0)
+
+      return NextResponse.json({
+        success: true,
+        user: updatedUser,
+        earned,
+        status: 'submitted',
+        message: `Book submitted successfully. +${earned} UGX`
       })
     }
 
-    const books = await Promise.all(
-      bookIds.slice(0, 4).map(async (id) => {
-        const meta = booksMeta.find(m => String(m.id) === String(id)) || {}
-        const bookKey = `book:${phone}:${date}:${id}`
-        const bookData = await redis.hgetall(bookKey)
-        
-        return {
-          bookId: id,
-          title: meta.title || `Book ${id}`,
-          author: meta.author || 'Unknown',
-          cover: meta.cover || `/books/covers/${id}.jpg`,
-          preview: meta.preview || 'No preview available',
-          status: bookData?.status || 'pending'
-        }
-      })
-    )
-
-    const user = await redis.hgetall(`user:${phone}`)
-    
-    return NextResponse.json({ 
-      success: true, 
-      books, 
-      user: user ? { 
-        ...user, 
-        availableBalance: Number(user.availableBalance || 0), 
-        vip: Number(user.vip || 0) 
-      } : null 
-    }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
 
   } catch (err) {
-    console.error('GET /api/books/data error:', err)
+    console.error('Submit error:', err)
     return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
   }
 }
