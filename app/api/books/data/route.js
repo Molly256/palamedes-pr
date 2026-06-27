@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server'
-import { redis } from '@/lib/redis'
+import { Redis } from '@upstash/redis' // same as your viplevels API
 import booksMeta from '@/public/data/books.json'
 import fs from 'fs'
 import path from 'path'
+
+const redis = Redis.fromEnv() // create inline
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url)
