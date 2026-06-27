@@ -17,13 +17,10 @@ export default function Register() {
 
   const handlePhoneChange = (val) => {
     const cleaned = val.replace(/\D/g, '').slice(0, 10)
-    setForm({ ...form, phone: cleaned })
+    const inviteCode = /^07\d{8}$/.test(cleaned) ? `PM${cleaned.slice(-6)}` : ''
     
-    if (/^07\d{8}$/.test(cleaned)) {
-      setForm(prev => ({ ...prev, phone: cleaned, inviteCode: `PM${cleaned.slice(-6)}` }))
-    } else {
-      setForm(prev => ({ ...prev, phone: cleaned, inviteCode: '' }))
-    }
+    // FIX: Single setForm with functional update. No race, no stale state
+    setForm(prev => ({ ...prev, phone: cleaned, inviteCode }))
   }
 
   const handleSubmit = async (e) => {
@@ -56,7 +53,7 @@ export default function Register() {
         body: JSON.stringify({
           action: 'register',
           username: form.username,
-          phone: form.phone,
+          phone: form.phone, // <- Now guaranteed to be 07XXXXXXXX
           password: form.password
         })
       })
@@ -92,7 +89,7 @@ export default function Register() {
               type="text"
               placeholder="6 letters/numbers"
               value={form.username}
-              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              onChange={(e) => setForm(prev => ({ ...prev, username: e.target.value }))}
               maxLength={6}
               className="w-full border-gray-300 rounded px-3 py-2 text-base text-black bg-white focus:outline-none focus:border-blue-500"
               required
@@ -121,7 +118,7 @@ export default function Register() {
                 type={showPassword ? 'text' : 'password'}
                 placeholder="6 letters/numbers"
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
                 maxLength={6}
                 className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-base text-black bg-white focus:outline-none focus:border-blue-500"
                 required
@@ -144,7 +141,7 @@ export default function Register() {
                 type={showRepeatPassword ? 'text' : 'password'}
                 placeholder="Repeat password"
                 value={form.repeatPassword}
-                onChange={(e) => setForm({ ...form, repeatPassword: e.target.value })}
+                onChange={(e) => setForm(prev => ({ ...prev, repeatPassword: e.target.value }))}
                 maxLength={6}
                 className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-base text-black bg-white focus:outline-none focus:border-blue-500"
                 required

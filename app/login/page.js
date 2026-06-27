@@ -10,7 +10,8 @@ export default function Login() {
 
   const handlePhoneChange = (val) => {
     const cleaned = val.replace(/\D/g, '').slice(0, 10)
-    setForm({ ...form, phone: cleaned })
+    // FIX: functional update so we never use stale form
+    setForm(prev => ({ ...prev, phone: cleaned }))
   }
 
   const handleSubmit = async (e) => {
@@ -33,7 +34,7 @@ export default function Login() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           action: 'login', 
-          phone: form.phone, 
+          phone: form.phone, // <- Now always 07XXXXXXXX
           password: form.password 
         })
       })
@@ -86,7 +87,7 @@ export default function Login() {
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Enter password"
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))} // <- FIXED
                 maxLength={6}
                 className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-black bg-white focus:outline-none focus:border-blue-500"
                 required

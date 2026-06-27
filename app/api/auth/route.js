@@ -46,7 +46,8 @@ export async function POST(req) {
 
       const userKey = `user:${phone}`
       const exists = await redis.hgetall(userKey).catch(() => null)
-      // FIX: Handle [] case for exists check too
+      
+      // FIX: Upstash can return [] or {} for missing. Only count it if phone field exists
       const alreadyExists = exists && !Array.isArray(exists) && Object.keys(exists).length > 0 && exists.phone
       if (alreadyExists) {
         return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
@@ -57,7 +58,7 @@ export async function POST(req) {
       await redis.hset(userKey, {
         username,
         phone,
-        password, // In prod: hash this
+        password, // In prod: hash this with bcrypt
         inviteCode: userInviteCode,
         availableBalance: 2500,
         unlockedBooks: '[]',
@@ -85,7 +86,13 @@ export async function POST(req) {
       const userKey = `user:${phone}`
       const user = await redis.hgetall(userKey).catch(() => null)
       
-      console.log("LOGIN DEBUG:", { userKey, user, type: typeof user, isArray: Array.isArray(user) })
+      console.log("LOGIN DEBUG:", { 
+        sent_phone: phone, 
+        userKey, 
+        redis_result: user, 
+        isArray: Array.isArray(user),
+        keys: user && !Array.isArray(user) ? Object.keys(user) : null
+      })
 
       // FIX: Upstash returns null, {} OR [] for missing/empty. All = not found
       const notFound = !user || Array.isArray(user) || Object.keys(user).length === 0 || !user.phone
@@ -97,7 +104,7 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      // FIX: Clone the frozen object before mutating. This kills the 500
+      // FIX: Clone the frozen object before mutating. This kills the 500 "object is not extensible"
       const safeUser = { ...user }
 
       // Migrate old 'balance' -> 'availableBalance' safely
