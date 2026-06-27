@@ -9,7 +9,7 @@ function getUgandaDateString() {
 
 export default function BooksPage() {
   const [user, setUser] = useState(null)
-  const [books, setBooks] = useState([]) // already joined data from API
+  const [books, setBooks] = useState([])
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const [loading, setLoading] = useState(false)
@@ -119,8 +119,7 @@ export default function BooksPage() {
                     <img src={book.cover} alt={book.title} style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }} />
                     <div style={{ flex: 1 }}>
                       <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
-                      <p style={{ margin: '4px 0 6px', fontSize: '13px', color: '#666' }}>{book.author}</p>
-                      <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#00BFFF', fontWeight: '700' }}>Reward: {Number(book.reward || 0).toLocaleString()} shs</p> // FIX 1: Number() so 0 doesn't crash
+                      <p style={{ margin: '4px 0 10px', fontSize: '13px', color: '#666' }}>{book.author}</p>
                       <div style={{ display: 'flex', gap: '10px' }}>
                         <button onClick={() => handleRead(book)} disabled={isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#10b981' : '#00BFFF', color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' }}>{isRead ? '✓ Read' : 'Read'}</button>
                         <button onClick={() => handleSubmit(book)} disabled={!isRead || loading} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#00BFFF', color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>Submit</button>
@@ -142,7 +141,6 @@ export default function BooksPage() {
                     <div style={{ flex: 1 }}>
                       <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
                       <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#666' }}>{book.author}</p>
-                      <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#10b981', fontWeight: '700' }}>+{Number(book.reward || 0).toLocaleString()} shs Earned</p> // FIX 1
                     </div>
                   </div>
                 ))}
