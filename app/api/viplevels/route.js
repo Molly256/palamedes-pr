@@ -30,12 +30,6 @@ function shuffle(array) {
   return arr
 }
 
-function isWeekdayInUganda() {
-  const ugandaDay = new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' })
-  const d = new Date(ugandaDay).getDay() // 0=Sun, 1=Mon...6=Sat
-  return d >= 1 && d <= 5
-}
-
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' }) // YYYY-MM-DD
 }
@@ -52,12 +46,65 @@ function safeParse(str, fallback = []) {
   }
 }
 
-// GET: /api/viplevels
+async function assignBooksToUser(phone, vipLevel, today, pipeline) {
+  const selectedVip = VIPS[vipLevel]
+
+  const booksPath = path.join(process.cwd(), 'public/data/books.json')
+  const coversDir = path.join(process.cwd(), 'public/books/covers')
+
+  const [allBooks, coverFiles] = await Promise.all([
+    fs.readFile(booksPath, 'utf8').then(JSON.parse),
+    fs.readdir(coversDir)
+  ])
+
+  const coverIds = new Set(
+    coverFiles
+   .map(f => f.replace(/\.jpg$/i, ''))
+   .filter(id => /^\d+$/.test(id))
+   .map(id => String(id))
+  )
+
+  const validBooks = allBooks.filter(b => coverIds.has(String(b.id)))
+  if (validBooks.length === 0) {
+    throw new Error('No books with covers found')
+  }
+
+  const shuffled = shuffle(validBooks)
+  const booksToAssign = shuffled.slice(0, Math.min(selectedVip.books, validBooks.length))
+
+  const unlockedBooks = booksToAssign.map(b => String(b.id))
+  const assignedBooksMeta = booksToAssign.map(b => ({
+    id: String(b.id),
+    title: b.title,
+    cover: `/books/covers/${b.id}.jpg`,
+    reward: selectedVip.perBook
+  }))
+
+  booksToAssign.forEach(b => {
+    const bookId = String(b.id)
+    const bookKey = `book:${phone}:${today}:${bookId}`
+    pipeline.hset(bookKey, {
+      phone,
+      bookId,
+      vipLevel: String(vipLevel),
+      reward: selectedVip.perBook,
+      title: b.title,
+      cover: `/books/covers/${bookId}.jpg`,
+      status: 'pending',
+      date: today,
+      createdAt: Date.now()
+    })
+    pipeline.sadd(`books:${phone}:${today}`, bookId)
+  })
+
+  return { unlockedBooks, assignedBooksMeta }
+}
+
 export async function GET() {
   try {
     const levels = Object.keys(VIPS).map(k => ({
       level: Number(k),
-    ...VIPS[k]
+  ...VIPS[k]
     }))
     return NextResponse.json({ success: true, levels })
   } catch (err) {
@@ -66,24 +113,21 @@ export async function GET() {
   }
 }
 
-// POST: /api/viplevels - buy/upgrade VIP
 export async function POST(req) {
   try {
-    let body
-    try {
-      body = await req.json()
-    } catch {
+    const body = await req.json().catch(() => null)
+    if (!body) {
       return NextResponse.json({ success: false, message: 'Invalid JSON' }, { status: 400 })
     }
 
-    const { phone, vipLevel } = body
+    const { phone, vipLevel, backfill } = body
     if (!phone ||!vipLevel) {
       return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
 
     const userKey = `user:${phone}`
     const user = await redis.hgetall(userKey)
-    if (!user ||!user.phone) {
+    if (!user || Array.isArray(user) || Object.keys(user).length === 0 ||!user.phone) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
 
@@ -93,6 +137,33 @@ export async function POST(req) {
     }
 
     const currentVip = Number(user.vip || 0)
+    const currentBooks = safeParse(user.unlockedBooks)
+    const today = getUgandaDateString()
+
+    // BACKFILL: Give books to old VIP users who have []
+    if (backfill === true && currentVip >= vipLevel && currentBooks.length === 0) {
+      const pipeline = redis.pipeline()
+      const { unlockedBooks, assignedBooksMeta } = await assignBooksToUser(phone, currentVip, today, pipeline)
+
+      pipeline.hset(userKey, {
+        unlockedBooks: JSON.stringify(unlockedBooks),
+        vip_bought_date: today,
+        lastResetDate: today
+      })
+
+      await pipeline.exec()
+      const updatedUser = await redis.hgetall(userKey)
+      updatedUser.unlockedBooks = safeParse(updatedUser.unlockedBooks)
+
+      return NextResponse.json({
+        success: true,
+        user: updatedUser,
+        message: `Backfilled: ${assignedBooksMeta.length} books assigned`,
+        books: assignedBooksMeta
+      })
+    }
+
+    // NORMAL BUY/UPGRADE
     if (vipLevel <= currentVip) {
       return NextResponse.json({ success: false, message: 'You already have this VIP or higher' }, { status: 400 })
     }
@@ -105,74 +176,16 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
     }
 
-    const today = getUgandaDateString()
-    const alreadyBoughtToday = user.vip_bought_date === today
-    const isWeekday = isWeekdayInUganda()
-    const shouldCreateBooks = isWeekday &&!alreadyBoughtToday
-
     const newBalance = currentBalance - upgradeCost
-    let unlockedBooks = safeParse(user.unlockedBooks)
-    let assignedBooksMeta = [] // return to frontend so Books tab can render instantly
-
     const pipeline = redis.pipeline()
 
-    if (shouldCreateBooks) {
-      const booksPath = path.join(process.cwd(), 'public/data/books.json')
-      const coversDir = path.join(process.cwd(), 'public/books/covers')
-
-      const [allBooks, coverFiles] = await Promise.all([
-        fs.readFile(booksPath, 'utf8').then(JSON.parse),
-        fs.readdir(coversDir)
-      ])
-
-      // 1. Get valid IDs from covers: 11.jpg -> "11"
-      const coverIds = new Set(
-        coverFiles
-         .map(f => f.replace(/\.jpg$/i, ''))
-         .filter(id => /^\d+$/.test(id))
-         .map(id => String(id))
-      )
-
-      // 2. Only use books.json entries that have a matching cover file
-      const validBooks = allBooks.filter(b => coverIds.has(String(b.id)))
-
-      if (validBooks.length === 0) {
-        return NextResponse.json({ success: false, message: 'No books with covers found' }, { status: 500 })
-      }
-
-      const shuffled = shuffle(validBooks)
-      const booksToAssign = shuffled.slice(0, Math.min(selectedVip.books, validBooks.length))
-
-      unlockedBooks = booksToAssign.map(b => String(b.id))
-      assignedBooksMeta = booksToAssign.map(b => ({
-        id: String(b.id),
-        title: b.title,
-        cover: `/books/covers/${b.id}.jpg`,
-        reward: selectedVip.perBook
-      }))
-
-      booksToAssign.forEach(b => {
-        const bookId = String(b.id)
-        const bookKey = `book:${phone}:${today}:${bookId}`
-        pipeline.hset(bookKey, {
-          phone,
-          bookId,
-          vipLevel: String(vipLevel),
-          reward: selectedVip.perBook,
-          title: b.title,
-          cover: `/books/covers/${bookId}.jpg`,
-          status: 'pending',
-          date: today,
-          createdAt: Date.now()
-        })
-        pipeline.sadd(`books:${phone}:${today}`, bookId)
-      })
-    }
+    // FIX: Always assign books now. No weekend check anymore.
+    const { unlockedBooks, assignedBooksMeta } = await assignBooksToUser(phone, vipLevel, today, pipeline)
 
     pipeline.hset(userKey, {
       vip: vipLevel,
       vipPricePaid: selectedVip.price,
-    ...setBalance(newBalance),
+  ...setBalance(newBalance),
       hasBoughtVip: 'true',
       vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       unlockedBooks: JSON.stringify(unlockedBooks),
@@ -180,7 +193,7 @@ export async function POST(req) {
       books_read_today: 0,
       dailyIncome: 0,
       lastResetDate: today,
-      vip_bought_date: today // blocks 2nd buy same day
+      vip_bought_date: today
     })
 
     await pipeline.exec()
@@ -188,23 +201,14 @@ export async function POST(req) {
 
     const updatedUser = await redis.hgetall(userKey)
     updatedUser.unlockedBooks = safeParse(updatedUser.unlockedBooks)
-    updatedUser.completedBooks = safeParse(updatedUser.completedBooks)
     updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
-    updatedUser.balance = Number(updatedUser.balance || 0)
     updatedUser.vip = Number(updatedUser.vip || 0)
-    updatedUser.books_read_today = Number(updatedUser.books_read_today || 0)
-    updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
-    updatedUser.vipPricePaid = Number(updatedUser.vipPricePaid || 0)
-
-    const message = shouldCreateBooks
-    ? `Upgraded to VIP ${vipLevel} successfully. ${assignedBooksMeta.length} books assigned.`
-      : `Upgraded to VIP ${vipLevel} successfully. Books will be assigned on the next weekday.`
 
     return NextResponse.json({
       success: true,
       user: updatedUser,
-      message,
-      books: assignedBooksMeta // [ {id, title, cover, reward} ] -> Books tab can use this
+      message: `Upgraded to VIP ${vipLevel} successfully. ${assignedBooksMeta.length} books assigned.`,
+      books: assignedBooksMeta
     })
 
   } catch (err) {
@@ -223,13 +227,9 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
     if (!inviterPhone) return
 
     const inviterVip = Number(await redis.hget(`user:${inviterPhone}`, 'vip') || 0)
-    const downlineVip = Number(vipLevelBought)
-    if (inviterVip < downlineVip || inviterVip === 0) return
+    if (inviterVip < vipLevelBought || inviterVip === 0) return
 
-    const vipAmounts = {
-      1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000,
-      6: 2100000, 7: 4000000, 8: 4600000, 9: 5000000, 10: 8000000
-    }
+    const vipAmounts = { 1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000, 6: 2100000, 7: 4000000, 8: 4600000, 9: 5000000, 10: 8000000 }
     const inviterAmount = vipAmounts[inviterVip]
     if (!inviterAmount) return
 
