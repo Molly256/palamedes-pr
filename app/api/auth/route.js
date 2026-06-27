@@ -47,7 +47,6 @@ export async function POST(req) {
       const userKey = `user:${phone}`
       const exists = await redis.hgetall(userKey).catch(() => null)
       
-      // FIX: Upstash can return [] or {} for missing. Only count it if phone field exists
       const alreadyExists = exists && !Array.isArray(exists) && Object.keys(exists).length > 0 && exists.phone
       if (alreadyExists) {
         return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
@@ -55,19 +54,18 @@ export async function POST(req) {
 
       const userInviteCode = `PM${phone.slice(-6)}`
 
+      // FIX: All values must be strings for Upstash hset. Removed [] arrays.
       await redis.hset(userKey, {
-        username,
-        phone,
-        password, // In prod: hash this with bcrypt
+        username: username,
+        phone: phone,
+        password: password,
         inviteCode: userInviteCode,
-        availableBalance: 2500,
-        unlockedBooks: '[]',
-        completedBooks: '[]',
-        vip: 0,
-        books_read_today: 0,
-        dailyIncome: 0,
+        availableBalance: '2500',
+        vip: '0',
+        books_read_today: '0',
+        dailyIncome: '0',
         lastResetDate: '',
-        createdAt: Date.now()
+        createdAt: String(Date.now())
       })
 
       return NextResponse.json({ success: true, inviteCode: userInviteCode })
@@ -86,25 +84,15 @@ export async function POST(req) {
       const userKey = `user:${phone}`
       const user = await redis.hgetall(userKey).catch(() => null)
       
-      console.log("LOGIN DEBUG:", { 
-        sent_phone: phone, 
-        userKey, 
-        redis_result: user, 
-        isArray: Array.isArray(user),
-        keys: user && !Array.isArray(user) ? Object.keys(user) : null
-      })
-
-      // FIX: Upstash returns null, {} OR [] for missing/empty. All = not found
       const notFound = !user || Array.isArray(user) || Object.keys(user).length === 0 || !user.phone
       if (notFound) {
-        return NextResponse.json({ error: 'User not found', debug_user: user }, { status: 404 })
+        return NextResponse.json({ error: 'User not found' }, { status: 404 })
       }
 
       if (String(user.password || '') !== String(password)) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      // FIX: Clone the frozen object before mutating. This kills the 500 "object is not extensible"
       const safeUser = { ...user }
 
       // Migrate old 'balance' -> 'availableBalance' safely
@@ -113,22 +101,20 @@ export async function POST(req) {
       
       if (oldBalance > 0 && currentBalance === 0) {
         await redis.hset(userKey, { 
-          availableBalance: oldBalance,
-          balance: 0
+          availableBalance: String(oldBalance),
+          balance: '0'
         })
         safeUser.availableBalance = oldBalance
       } else {
         safeUser.availableBalance = currentBalance
       }
 
-      // SAFE PARSE: Never crash if Redis data is corrupted
-      safeUser.unlockedBooks = safeParse(safeUser.unlockedBooks)
-      safeUser.completedBooks = safeParse(safeUser.completedBooks)
+      // Convert everything to numbers for frontend
       safeUser.vip = safeNumber(safeUser.vip)
       safeUser.books_read_today = safeNumber(safeUser.books_read_today)
       safeUser.dailyIncome = safeNumber(safeUser.dailyIncome)
 
-      // FIX: Delete from clone only
+      // Remove sensitive fields
       delete safeUser.password
       delete safeUser.balance
 
@@ -139,9 +125,6 @@ export async function POST(req) {
 
   } catch (err) {
     console.error("Auth route error:", err)
-    return NextResponse.json({ 
-      error: 'Server error', 
-      detail: process.env.NODE_ENV === 'development' ? err.message : undefined 
-    }, { status: 500 })
+    return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }
