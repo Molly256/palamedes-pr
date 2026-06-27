@@ -5,6 +5,15 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 })
 
+function safeNumber(val, fallback = 0) {
+  const n = Number(val)
+  return isNaN(n) ? fallback : n
+}
+
+function isEmptyHash(user) {
+  return !user || Array.isArray(user) || Object.keys(user).length === 0
+}
+
 // GET: used by dashboard to fetch user data
 export async function GET(request) {
   try {
@@ -18,17 +27,21 @@ export async function GET(request) {
     if (action === 'getDashboard') {
       const user = await redis.hgetall(`user:${phone}`)
       
-      if (!user || Object.keys(user).length === 0) {
+      if (isEmptyHash(user)) {
         return Response.json({ success: false, message: 'User not found' }, { status: 404 })
       }
+
+      // FIX: Use availableBalance. Fallback to balance for old users
+      const availableBalance = safeNumber(user.availableBalance) || safeNumber(user.balance)
 
       return Response.json({ 
         success: true, 
         user: {
           phone: user.phone,
           username: user.username,
-          balance: Number(user.balance || 0),
-          vip: Number(user.vip || 0),
+          balance: availableBalance, // <- Dashboard expects 'balance'
+          availableBalance: availableBalance, // <- Keep both for safety
+          vip: safeNumber(user.vip),
           avatar: user.avatar || ''
         }
       })
@@ -56,21 +69,24 @@ export async function POST(request) {
     if (action === 'login') {
       const user = await redis.hgetall(userKey)
       
-      if (!user || Object.keys(user).length === 0) {
+      if (isEmptyHash(user)) {
         return Response.json({ success: false, message: 'User not found' }, { status: 404 })
       }
 
-      if (user.password !== password) {
+      if (String(user.password || '') !== String(password)) {
         return Response.json({ success: false, message: 'Wrong password' }, { status: 401 })
       }
+
+      const availableBalance = safeNumber(user.availableBalance) || safeNumber(user.balance)
 
       return Response.json({ 
         success: true, 
         user: {
           phone: user.phone,
           username: user.username,
-          balance: Number(user.balance || 0),
-          vip: Number(user.vip || 0),
+          balance: availableBalance, // <- FIXED
+          availableBalance: availableBalance,
+          vip: safeNumber(user.vip),
           avatar: user.avatar || ''
         }
       })
@@ -83,14 +99,16 @@ export async function POST(request) {
 
       await redis.hset(userKey, updateData)
       const updatedUser = await redis.hgetall(userKey)
+      const availableBalance = safeNumber(updatedUser.availableBalance) || safeNumber(updatedUser.balance)
 
       return Response.json({ 
         success: true, 
         user: {
           phone: updatedUser.phone,
           username: updatedUser.username,
-          balance: Number(updatedUser.balance || 0),
-          vip: Number(updatedUser.vip || 0),
+          balance: availableBalance, // <- FIXED
+          availableBalance: availableBalance,
+          vip: safeNumber(updatedUser.vip),
           avatar: updatedUser.avatar || ''
         }
       })
