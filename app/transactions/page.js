@@ -64,18 +64,20 @@ export default function Transactions() {
       return (
         <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
           <div className="flex justify-between items-start">
+            {/* Left side */}
             <div className="flex flex-col">
               <p className="text-black text-sm font-light capitalize">{typeKey}</p>
-              <p className="text-gray-600 text-base font-light mt-1">
+              <p className="text-black text-base font-light mt-1">
                 {amount.toLocaleString()}shs
               </p>
               <p className="text-black text-xs font-light mt-1">
                 {formatUgandaTime(tx.createdAt)}
               </p>
             </div>
+            {/* Right side status */}
             <p className={`text-sm font-light capitalize ${
-              status === 'success'? 'text-green-500' :
-              status === 'pending'? 'text-yellow-500' :
+              status === 'success'? 'text-green-400' :
+              status === 'pending'? 'text-red-400' :
               'text-red-400'
             }`}>
               {status || 'unknown'}
@@ -85,7 +87,7 @@ export default function Transactions() {
       )
     }
 
-    // DAILY INCOME = type | amount, then date below. No book
+    // DAILY INCOME + VIPLEVEL PURCHASE + REFUND + SHARES = Same layout
     return (
       <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
         <div className="flex justify-between items-start">
@@ -109,7 +111,7 @@ export default function Transactions() {
         <h1 className="text-xl font-bold text-black">Transaction History</h1>
       </div>
 
-      {/* Tabs: arranged, skyblue bg, font-light black text */}
+      {/* Tabs: hot skyblue + font-light black text */}
       <div className="px-4 pb-3">
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {TABS.map(tab => (
@@ -118,7 +120,7 @@ export default function Transactions() {
               onClick={() => setActiveTab(tab)}
               className={`flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black transition-colors
                 ${activeTab === tab
-               ? 'bg-sky-400' // active = hot sky blue
+              ? 'bg-sky-400' // active = hot sky blue
                   : 'bg-sky-200' // inactive = lighter sky blue
                 }`}
             >
