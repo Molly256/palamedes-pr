@@ -12,7 +12,7 @@ function getUgandaDateString() {
 
 export async function POST(req) {
   try {
-    const { phone, bookId, action } = await req.json()
+    const { phone, bookId, action, idempotencyKey } = await req.json() // <- MUST READ THIS
     if (!phone ||!bookId ||!action) {
       return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
@@ -21,9 +21,11 @@ export async function POST(req) {
     const bookKey = `book:${phone}:${today}:${bookId}`
     const userKey = `user:${phone}`
     const txKey = `tx:${phone}`
-    const lockKey = `lock:submit:${phone}`
     const completedSetKey = `completed:${phone}:${today}`
     const bookIdStr = String(bookId)
+    
+    // KEY FIX: This key makes 1 tap = 1 pay, even if Vercel retries
+    const idemKey = `idem:${idempotencyKey || `${phone}:${today}:${bookId}:${Date.now()}` 
 
     if (action === 'read') {
       await redis.hset(bookKey, { bookId: bookIdStr, status: 'read', readAt: Date.now() })
@@ -31,57 +33,41 @@ export async function POST(req) {
     }
 
     if (action === 'submit') {
-      // 1. Soft lock 2s to stop UI spam clicks
-      const locked = await redis.set(lockKey, Date.now(), { ex: 2, nx: true })
-      if (!locked) {
-        return NextResponse.json({ success: false, message: 'Processing, try again in 1s' }, { status: 429 })
+      // 1. IDEMPOTENCY GUARD: Only 1 request with this key can run
+      const claimed = await redis.set(idemKey, '1', { nx: true, ex: 60 })
+      if (!claimed) {
+        return NextResponse.json({ success: false, message: 'Already processed' }, { status: 409 })
       }
 
       try {
         const user = await redis.hgetall(userKey)
-        if (!user?.phone) {
-          return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
-        }
+        if (!user?.phone) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
 
         const bookData = await redis.hgetall(bookKey)
-        if (!bookData?.bookId) {
-          return NextResponse.json({ success: false, message: 'Book not found. Refresh.' }, { status: 400 })
-        }
-        if (bookData.status!== 'read') {
-          return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
-        }
+        if (!bookData?.bookId) return NextResponse.json({ success: false, message: 'Book not found. Refresh.' }, { status: 400 })
+        if (bookData.status!== 'read') return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
 
         const vip = Number(user.vip || 0)
-        if (vip === 0) return NextResponse.json({ success: false, message: 'No active VIP' }, { status: 400 })
         const vipConfig = VIPS[vip]
         if (!vipConfig) return NextResponse.json({ success: false, message: 'Invalid VIP level' }, { status: 400 })
 
-        // 2. Daily reset
         if (user.lastResetDate!== today) {
-          await redis.hset(userKey, {
-            books_read_today: 0,
-            dailyIncome: 0,
-            lastResetDate: today
-          })
+          await redis.hset(userKey, { books_read_today: 0, dailyIncome: 0, lastResetDate: today })
         }
 
-        // 3. KEY FIX: Atomic check + add. If 2 requests race, only 1 gets `added=1`
+        // 2. SADD GUARD: Backup if idem fails
         const added = await redis.sadd(completedSetKey, bookIdStr)
-        if (added === 0) {
-          return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
-        }
+        if (added === 0) return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
 
-        // 4. Check daily limit AFTER SADD so we can rollback if over limit
         const booksReadToday = Number(user.books_read_today || 0)
         if (booksReadToday >= vipConfig.books) {
-          await redis.srem(completedSetKey, bookIdStr) // rollback the SADD
+          await redis.srem(completedSetKey, bookIdStr)
           return NextResponse.json({ success: false, message: `TODAY'S BOOKS ARE DONE` }, { status: 400 })
         }
 
-        // 5. Pay according to VIP level + create tx history
         const earned = vipConfig.perBook
         const tx = {
-          id: `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          id: `tx_${idempotencyKey}`, // <- Use idemKey for tx id so you can spot dupes
           type: 'book_submission',
           bookId: bookIdStr,
           amount: String(earned),
@@ -90,7 +76,6 @@ export async function POST(req) {
           phone
         }
 
-        // 6. ATOMIC: Update book status, pay, increment, save tx
         const pipeline = redis.pipeline()
         pipeline.hset(bookKey, { status: 'submitted', submittedAt: Date.now() })
         pipeline.hincrby(userKey, 'availableBalance', earned)
@@ -99,15 +84,14 @@ export async function POST(req) {
         pipeline.lpush(txKey, JSON.stringify(tx))
         await pipeline.exec()
 
-        // 7. Return fresh state for BOOKS -> COMPLETED move
         const completedArr = await redis.smembers(completedSetKey)
         const updatedUser = await redis.hgetall(userKey)
 
         return NextResponse.json({
           success: true,
           user: {
-          ...updatedUser,
-            completedBooks: completedArr, // <- Send this to frontend. Use it to filter BOOKS vs COMPLETED
+            ...updatedUser,
+            completedBooks: completedArr,
             availableBalance: Number(updatedUser.availableBalance || 0),
             dailyIncome: Number(updatedUser.dailyIncome || 0),
             books_read_today: Number(updatedUser.books_read_today || 0),
@@ -116,13 +100,12 @@ export async function POST(req) {
           status: 'submitted',
           message: `+${earned} UGX`
         })
-      } finally {
-        await redis.del(lockKey) // always release
+      } catch (e) {
+        await redis.del(idemKey) // Release on error so user can retry for real
+        throw e
       }
     }
-
     return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 })
-
   } catch (err) {
     console.error('Submit error:', err)
     return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
