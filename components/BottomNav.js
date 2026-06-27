@@ -15,7 +15,6 @@ export default function BottomNav() {
     { href: '/dashboard', icon: '🏠', label: 'Home', color: '#FFB800' },
     { href: '/books', icon: '📋', label: 'BOOKS', color: '#00D26A' },
     { href: '/hot', icon: '🔥', label: 'Hot', color: '#FF2E2E' },
-    { href: '/my', icon: '👤', label: 'My', color: '#007AFF' },
     { href: '/settings', icon: '⚙️', label: 'Settings', color: '#BF5AF2' },
   ]
 
@@ -28,7 +27,7 @@ export default function BottomNav() {
       height: '75px',
       background: '#FFFFFF',
       display: 'flex',
-      justifyContent: 'space-around',
+      justifyContent: 'space-around', // <- keeps 4 tabs evenly spaced
       alignItems: 'center',
       border: 'none',
       borderTop: 'none',
