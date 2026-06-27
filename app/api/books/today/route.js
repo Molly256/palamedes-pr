@@ -20,18 +20,22 @@ export async function GET(req) {
       return NextResponse.json({ success: false, message: 'Missing phone' }, { status: 400 })
     }
 
+    // 1. Check user exists
     const userKey = `user:${phone}`
     const user = await redis.hgetall(userKey)
-    if (!user ||!user.phone) {
+    if (!user || !user.phone) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
     }
 
-    // 1. READ ONLY: Get today's book IDs from Redis Set. Nothing else.
-    const bookIds = await redis.smembers(`books:${phone}:${date}`)
+    // 2. READ SET: books:0753520252:2026-06-27
+    const setKey = `books:${phone}:${date}`
+    const bookIds = await redis.smembers(setKey)
     
     if (!bookIds || bookIds.length === 0) {
       return NextResponse.json({ 
         success: true, 
+        date,
+        setKey,
         user: {
           vip: Number(user.vip || 0),
           availableBalance: Number(user.availableBalance || 0),
@@ -43,25 +47,29 @@ export async function GET(req) {
       })
     }
 
-    // 2. READ ONLY: HGETALL each book key for this exact date
+    // 3. READ HASH: book:0753520252:2026-06-27:40739 x4
     const bookKeys = bookIds.map(id => `book:${phone}:${date}:${id}`)
     const booksData = await Promise.all(bookKeys.map(k => redis.hgetall(k)))
     
-    // 3. Return raw Redis data. No joins, no fs, no covers check.
+    // 4. Return raw Redis data. No joins, no fs.
     const books = booksData
-      .filter(b => b && b.bookId) // drop missing keys
+      .filter(b => b && b.bookId) 
       .map(b => ({
         bookId: String(b.bookId),
         status: b.status || 'pending',
         reward: Number(b.reward || 0),
-        date: b.date || date, // <- needed for 24hr filter in frontend
+        date: b.date || date,
         submittedAt: b.submittedAt || null,
-        title: b.title || null,  // if you saved it in viplevels
-        cover: b.cover || null   // if you saved it in viplevels
+        title: b.title || null,
+        author: b.author || null,
+        cover: b.cover || null
       }))
 
     return NextResponse.json({ 
-      success: true, 
+      success: true,
+      date,
+      setKey,
+      bookIds, // shows you what was in the SET
       user: {
         vip: Number(user.vip || 0),
         availableBalance: Number(user.availableBalance || 0),
@@ -70,7 +78,7 @@ export async function GET(req) {
         dailyIncome: Number(user.dailyIncome || 0),
       },
       books 
-    })
+    }, { headers: { 'Cache-Control': 'no-store' } })
 
   } catch (err) {
     console.error('GET /api/books/today error:', err)

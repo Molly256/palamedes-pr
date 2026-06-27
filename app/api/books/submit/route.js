@@ -7,12 +7,6 @@ import { VIPS } from '@/app/api/viplevels/route'
 
 const redis = Redis.fromEnv()
 
-function isWeekdayInUganda() {
-  const ugandaDate = new Date().toLocaleString('en-US', { timeZone: 'Africa/Kampala' })
-  const day = new Date(ugandaDate).getDay()
-  return day >= 1 && day <= 5
-}
-
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
@@ -25,14 +19,10 @@ function safeParse(str, fallback = []) {
   }
 }
 
-function setBalance(amount) {
-  return { availableBalance: amount, balance: amount }
-}
-
 export async function POST(req) {
   try {
     const { phone, bookId, action } = await req.json()
-    if (!phone ||!bookId ||!action) {
+    if (!phone || !bookId || !action) {
       return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
     }
 
@@ -50,12 +40,8 @@ export async function POST(req) {
 
     // ACTION 2: Submit
     if (action === 'submit') {
-      if (!isWeekdayInUganda()) {
-        return NextResponse.json({ success: false, message: 'Submissions are only allowed Monday to Friday.' }, { status: 400 })
-      }
-
       const user = await redis.hgetall(userKey)
-      if (!user ||!user.phone) {
+      if (!user || !user.phone) {
         return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 })
       }
 
@@ -85,7 +71,6 @@ export async function POST(req) {
       }
 
       const completed = safeParse(user.completedBooks).map(String)
-
       if (completed.includes(bookIdStr)) {
         return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
       }
@@ -94,12 +79,12 @@ export async function POST(req) {
       if (!bookData) {
         return NextResponse.json({ success: false, message: 'Book not found. Refresh page.' }, { status: 400 })
       }
-      if (bookData.status!== 'read') {
+      if (bookData.status !== 'read') {
         return NextResponse.json({ success: false, message: 'Click Read first' }, { status: 400 })
       }
 
       const earned = vipConfig.perBook
-      const currentBalance = Number(user.availableBalance || user.balance || 0)
+      const currentBalance = Number(user.availableBalance || 0) // Only this field
       const newBalance = currentBalance + earned
       const newDailyIncome = Number(user.dailyIncome || 0) + earned
       const newCompleted = [...completed, bookIdStr]
@@ -116,7 +101,7 @@ export async function POST(req) {
       const pipeline = redis.pipeline()
       pipeline.hset(bookKey, { status: 'completed', submittedAt: Date.now() })
       pipeline.hset(userKey, {
-     ...setBalance(newBalance),
+        availableBalance: newBalance, // <- ONLY THIS
         dailyIncome: newDailyIncome,
         completedBooks: JSON.stringify(newCompleted),
         books_read_today: booksReadToday + 1
@@ -127,16 +112,15 @@ export async function POST(req) {
       const updatedUser = await redis.hgetall(userKey)
       updatedUser.completedBooks = safeParse(updatedUser.completedBooks)
       updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
-      updatedUser.balance = Number(updatedUser.balance || 0)
       updatedUser.dailyIncome = Number(updatedUser.dailyIncome || 0)
-      updatedUser.books_read_today = Number(user.books_read_today || 0)
+      updatedUser.books_read_today = Number(updatedUser.books_read_today || 0)
 
       return NextResponse.json({
         success: true,
         user: updatedUser,
         earned,
         status: 'completed',
-        message: `Book submitted successfully. +${earned} UGX added to daily income`
+        message: `Book submitted successfully. +${earned} UGX`
       })
     }
 

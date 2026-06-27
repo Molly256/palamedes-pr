@@ -2,20 +2,25 @@ import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
-export async function GET() {
+export async function GET(req) {
+  const { searchParams } = new URL(req.url)
+  const idsParam = searchParams.get('ids') // "40739,1260,16389,11"
+  
+  if (!idsParam) return NextResponse.json({ success: true, covers: [] })
+  
+  const ids = idsParam.split(',')
   const coversPath = path.join(process.cwd(), 'public', 'books', 'covers')
+
+  const covers = ids.map(id => {
+    const filePath = path.join(coversPath, `${id}.jpg`)
+    const exists = fs.existsSync(filePath)
+    return { 
+      id, 
+      cover: exists ? `/books/covers/${id}.jpg` : '/books/covers/default.jpg' 
+    }
+  })
   
-  let ids = []
-  try {
-    ids = fs.readdirSync(coversPath)
-      .filter(name => name.endsWith('.jpg')) // only jpg
-      .map(name => name.replace('.jpg', '')) // "11.jpg" -> "11"
-      .sort((a, b) => Number(a) - Number(b)) // numeric sort 1,2,3,10
-  } catch {
-    ids = [] // folder missing = no books
-  }
-  
-  return NextResponse.json({ ids }, {
+  return NextResponse.json({ success: true, covers }, {
     headers: { 'Cache-Control': 'no-store' }
   })
 }

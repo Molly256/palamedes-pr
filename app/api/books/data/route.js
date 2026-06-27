@@ -1,55 +1,51 @@
 import { NextResponse } from 'next/server'
-import { Redis } from '@upstash/redis' // same as your viplevels API
+import { Redis } from '@upstash/redis'
 import booksMeta from '@/public/data/books.json'
-import fs from 'fs'
-import path from 'path'
 
-const redis = Redis.fromEnv() // create inline
-
+const redis = Redis.fromEnv()
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+function getUgandaDateString() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
+}
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url)
   const phone = searchParams.get('phone')
-  const date = searchParams.get('date')
+  const date = searchParams.get('date') || getUgandaDateString()
   
-  if (!phone || !date) return NextResponse.json({ success: true, books: [], user: null })
+  if (!phone) return NextResponse.json({ success: true, books: [], user: null })
+
+  // 1. Read IDs from Redis SET: books:0753520252:2026-06-27
+  const key = `books:${phone}:${date}`
+  const bookIds = await redis.smembers(key) // ['40739','1260','16389','11']
   
-  const key = `books:today:UGX:${date}:${phone}`
-  const rawBooks = await redis.lrange(key, 0, 3)
-  const booksFromRedis = rawBooks.map(b => {
-    try { return typeof b === 'string' ? JSON.parse(b) : b } 
-    catch { return { bookId: String(b) } }
+  if (!bookIds || bookIds.length === 0) {
+    const user = await redis.hgetall(`user:${phone}`)
+    return NextResponse.json({ success: true, books: [], user })
+  }
+
+  // 2. Take only first 4 IDs and get exact data from books.json
+  const books = bookIds.slice(0, 4).map(id => {
+    const meta = booksMeta.find(m => String(m.id) === id)
+    return {
+      bookId: id,
+      title: meta?.title || `Book ${id}`,
+      author: meta?.author || 'Unknown',
+      reward: Number(meta?.reward || 0),
+      preview: meta?.preview || 'No preview available',
+      cover: `/books/covers/${id}.jpg`,
+      status: 'pending' // frontend will handle status later
+    }
   })
-  const idsFromRedis = booksFromRedis.map(b => String(b.bookId))
 
-  let realIds = new Set()
-  try {
-    realIds = new Set(
-      fs.readdirSync(path.join(process.cwd(), 'public', 'books', 'covers'))
-        .filter(f => f.toLowerCase().endsWith('.jpg'))
-        .map(f => path.parse(f).name)
-    )
-  } catch {}
-
-  const books = idsFromRedis
-    .filter(id => realIds.has(id))
-    .slice(0, 4)
-    .map(id => {
-      const meta = booksMeta.find(m => String(m.id) === id)
-      const r = booksFromRedis.find(x => String(x.bookId) === id)
-      return {
-        bookId: id,
-        status: r?.status || 'pending',
-        reward: Number(r?.reward ?? meta?.reward ?? 0),
-        title: meta?.title || `Book ${id}`,
-        author: meta?.author || 'Unknown',
-        preview: meta?.preview || 'No preview available',
-        cover: `/books/covers/${id}.jpg`
-      }
-    })
-
+  // 3. Get user for balance/VIP
   const user = await redis.hgetall(`user:${phone}`)
-  return NextResponse.json({ success: true, books, user }, { headers: { 'Cache-Control': 'no-store' } })
+  
+  return NextResponse.json({ 
+    success: true, 
+    books, 
+    user: user ? { ...user, availableBalance: Number(user.availableBalance || 0), vip: Number(user.vip || 0) } : null 
+  }, { headers: { 'Cache-Control': 'no-store' } })
 }
