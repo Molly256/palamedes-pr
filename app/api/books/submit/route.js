@@ -12,9 +12,9 @@ function getUgandaDateString() {
 
 export async function POST(req) {
   try {
-    const { phone, bookId, action, idempotencyKey } = await req.json() // <- MUST READ THIS
-    if (!phone ||!bookId ||!action) {
-      return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
+    const { phone, bookId, action, idempotencyKey } = await req.json()
+    if (!phone ||!bookId ||!action ||!idempotencyKey) { // <- FIX 2: Require it
+      return NextResponse.json({ success: false, message: 'Missing data or idempotencyKey' }, { status: 400 })
     }
 
     const today = getUgandaDateString()
@@ -23,9 +23,7 @@ export async function POST(req) {
     const txKey = `tx:${phone}`
     const completedSetKey = `completed:${phone}:${today}`
     const bookIdStr = String(bookId)
-    
-    // KEY FIX: This key makes 1 tap = 1 pay, even if Vercel retries
-    const idemKey = `idem:${idempotencyKey || `${phone}:${today}:${bookId}:${Date.now()}` 
+    const idemKey = `idem:${idempotencyKey}` // <- FIX 1: Closed backtick
 
     if (action === 'read') {
       await redis.hset(bookKey, { bookId: bookIdStr, status: 'read', readAt: Date.now() })
@@ -55,7 +53,6 @@ export async function POST(req) {
           await redis.hset(userKey, { books_read_today: 0, dailyIncome: 0, lastResetDate: today })
         }
 
-        // 2. SADD GUARD: Backup if idem fails
         const added = await redis.sadd(completedSetKey, bookIdStr)
         if (added === 0) return NextResponse.json({ success: false, message: 'Already submitted' }, { status: 400 })
 
@@ -67,7 +64,7 @@ export async function POST(req) {
 
         const earned = vipConfig.perBook
         const tx = {
-          id: `tx_${idempotencyKey}`, // <- Use idemKey for tx id so you can spot dupes
+          id: idempotencyKey, // <- Use idemKey for tx id
           type: 'book_submission',
           bookId: bookIdStr,
           amount: String(earned),
@@ -101,7 +98,7 @@ export async function POST(req) {
           message: `+${earned} UGX`
         })
       } catch (e) {
-        await redis.del(idemKey) // Release on error so user can retry for real
+        await redis.del(idemKey)
         throw e
       }
     }
