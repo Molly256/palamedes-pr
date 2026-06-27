@@ -7,8 +7,9 @@ import { NextResponse } from 'next/server'
 const redis = Redis.fromEnv()
 
 function safeParse(str, fallback = []) {
+  if (!str) return fallback
   try {
-    return JSON.parse(str || '[]')
+    return JSON.parse(str)
   } catch {
     return fallback
   }
@@ -21,7 +22,6 @@ function safeNumber(val, fallback = 0) {
 
 export async function POST(req) {
   try {
-    // 1. SAFE JSON PARSE: prevent "Unexpected non-whitespace character" crash
     let body
     try {
       body = await req.json()
@@ -45,8 +45,8 @@ export async function POST(req) {
       }
 
       const userKey = `user:${phone}`
-      const exists = await redis.hgetall(userKey)
-      if (exists && Object.keys(exists).length > 0) {
+      const exists = await redis.hgetall(userKey).catch(() => null)
+      if (exists && exists.phone) {
         return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
       }
 
@@ -73,50 +73,55 @@ export async function POST(req) {
     if (action === 'login') {
       const { phone, password } = body
 
-      if (typeof phone !== 'string' || !/^07\d{8}$/.test(phone)) {
+      if (!phone || !/^07\d{8}$/.test(phone)) {
         return NextResponse.json({ error: 'Invalid phone' }, { status: 400 })
       }
-      if (typeof password !== 'string') {
+      if (!password || typeof password !== 'string') {
         return NextResponse.json({ error: 'Invalid password' }, { status: 400 })
       }
 
       const userKey = `user:${phone}`
-      const user = await redis.hgetall(userKey)
-      if (!user || Object.keys(user).length === 0) {
+      const user = await redis.hgetall(userKey).catch(() => null)
+      
+      // FIX 1: Check .phone not Object.keys.length. Redis returns null for missing key
+      if (!user || !user.phone) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 })
       }
 
-      // Password check
-      if (String(user.password) !== String(password)) {
+      // FIX 2: Coerce to string to avoid type issues
+      if (String(user.password || '') !== String(password)) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
+      // FIX 3: Clone the frozen object before mutating. This kills the 500
+      const safeUser = { ...user }
+
       // Migrate old 'balance' -> 'availableBalance' safely
-      const oldBalance = safeNumber(user.balance)
-      const currentBalance = safeNumber(user.availableBalance)
+      const oldBalance = safeNumber(safeUser.balance)
+      const currentBalance = safeNumber(safeUser.availableBalance)
       
       if (oldBalance > 0 && currentBalance === 0) {
         await redis.hset(userKey, { 
           availableBalance: oldBalance,
           balance: 0
         })
-        user.availableBalance = oldBalance
+        safeUser.availableBalance = oldBalance
       } else {
-        user.availableBalance = currentBalance
+        safeUser.availableBalance = currentBalance
       }
 
       // SAFE PARSE: Never crash if Redis data is corrupted
-      user.unlockedBooks = safeParse(user.unlockedBooks)
-      user.completedBooks = safeParse(user.completedBooks)
-      user.vip = safeNumber(user.vip)
-      user.books_read_today = safeNumber(user.books_read_today)
-      user.dailyIncome = safeNumber(user.dailyIncome)
+      safeUser.unlockedBooks = safeParse(safeUser.unlockedBooks)
+      safeUser.completedBooks = safeParse(safeUser.completedBooks)
+      safeUser.vip = safeNumber(safeUser.vip)
+      safeUser.books_read_today = safeNumber(safeUser.books_read_today)
+      safeUser.dailyIncome = safeNumber(safeUser.dailyIncome)
 
-      // Remove sensitive fields
-      delete user.password
-      delete user.balance
+      // FIX 4: Delete from clone only
+      delete safeUser.password
+      delete safeUser.balance
 
-      return NextResponse.json({ success: true, user })
+      return NextResponse.json({ success: true, user: safeUser })
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
