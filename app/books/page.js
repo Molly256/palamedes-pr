@@ -58,30 +58,39 @@ export default function BooksPage() {
     if (book.status !== 'pending') return
     setReadingBook(book)
     setTimer(10)
-    await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' }) })
+    await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
     await fetchBooks(user.phone)
   }
 
   const handleSubmit = async (book) => {
     if (book.status !== 'read') return alert('Click Read first')
     setLoadingBookId(book.bookId)
-    const res = await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) })
-    const data = await res.json()
-    if (data.success) {
+    try {
+      const res = await fetch('/api/books/submit', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) 
+      })
+      
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message || `Server ${res.status}`)
+      
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
       await fetchBooks(user.phone)
       alert(`+${data.earned.toLocaleString()}shs added`)
-    } else { 
-      alert(data.message) 
+    } catch (err) {
+      console.error('Submit error:', err)
+      alert(err.message)
+    } finally {
+      setLoadingBookId(null)
     }
-    setLoadingBookId(null)
   }
 
   if (!user) return null
   const vip = Number(user.vip || 0)
-  const pendingBooks = books.filter(b => b.status !== 'completed')
-  const completedBooks = books.filter(b => b.status === 'completed')
+  const pendingBooks = books.filter(b => b.status === 'pending' || b.status === 'read')
+  const completedBooks = books.filter(b => b.status === 'submitted')
 
   if (readingBook) {
     return (
