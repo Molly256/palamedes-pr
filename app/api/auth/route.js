@@ -46,7 +46,9 @@ export async function POST(req) {
 
       const userKey = `user:${phone}`
       const exists = await redis.hgetall(userKey).catch(() => null)
-      if (exists && exists.phone) {
+      // FIX: Handle [] case for exists check too
+      const alreadyExists = exists && !Array.isArray(exists) && Object.keys(exists).length > 0 && exists.phone
+      if (alreadyExists) {
         return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
       }
 
@@ -83,17 +85,19 @@ export async function POST(req) {
       const userKey = `user:${phone}`
       const user = await redis.hgetall(userKey).catch(() => null)
       
-      // FIX 1: Check .phone not Object.keys.length. Redis returns null for missing key
-      if (!user || !user.phone) {
-        return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      console.log("LOGIN DEBUG:", { userKey, user, type: typeof user, isArray: Array.isArray(user) })
+
+      // FIX: Upstash returns null, {} OR [] for missing/empty. All = not found
+      const notFound = !user || Array.isArray(user) || Object.keys(user).length === 0 || !user.phone
+      if (notFound) {
+        return NextResponse.json({ error: 'User not found', debug_user: user }, { status: 404 })
       }
 
-      // FIX 2: Coerce to string to avoid type issues
       if (String(user.password || '') !== String(password)) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      // FIX 3: Clone the frozen object before mutating. This kills the 500
+      // FIX: Clone the frozen object before mutating. This kills the 500
       const safeUser = { ...user }
 
       // Migrate old 'balance' -> 'availableBalance' safely
@@ -117,7 +121,7 @@ export async function POST(req) {
       safeUser.books_read_today = safeNumber(safeUser.books_read_today)
       safeUser.dailyIncome = safeNumber(safeUser.dailyIncome)
 
-      // FIX 4: Delete from clone only
+      // FIX: Delete from clone only
       delete safeUser.password
       delete safeUser.balance
 
