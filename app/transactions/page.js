@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 
 const TABS = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES']
 
-// Normalize API type -> Tab name
 const toTabKey = (t) => String(t || '').toLowerCase().replace(/_/g, ' ').trim()
 
 export default function Transactions() {
@@ -29,13 +28,7 @@ export default function Transactions() {
     try {
       const res = await fetch(`/api/transactions?phone=${phone}&t=${Date.now()}`, { cache: 'no-store' })
       const data = await res.json()
-
-      if (data.success) {
-        setAllTxs(Array.isArray(data.transactions)? data.transactions : [])
-      } else {
-        console.error('Failed to load transactions:', data.error)
-        setAllTxs([])
-      }
+      setAllTxs(data.success? data.transactions : [])
     } catch (err) {
       console.error('Error loading transactions:', err)
       setAllTxs([])
@@ -45,27 +38,24 @@ export default function Transactions() {
 
   const filteredTxs = useMemo(() => {
     if (activeTab === 'ALL') return allTxs
-    const tabKey = activeTab.toLowerCase() // DAILY INCOME -> daily income
+    const tabKey = activeTab.toLowerCase()
     return allTxs.filter(tx => toTabKey(tx.type) === tabKey)
   }, [allTxs, activeTab])
 
   const formatUgandaTime = (timestamp) => {
     const ms = Number(timestamp)
     if (!ms || isNaN(ms)) return ''
-    const date = new Date(ms)
-    return new Intl.DateTimeFormat('en-UG', {
-      timeZone: 'Africa/Kampala',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(date)
+    const d = new Date(ms)
+    const yy = String(d.getFullYear()).slice(-2)
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const hh = String(d.getHours()).padStart(2, '0')
+    const min = String(d.getMinutes()).padStart(2, '0')
+    return `${yy} ${mm} ${dd} ${hh}:${min}`
   }
 
   const renderTx = (tx) => {
-    const typeKey = toTabKey(tx.type) // daily income, deposit, etc
+    const typeKey = toTabKey(tx.type)
     const isMoneyTx = typeKey === 'deposit' || typeKey === 'withdraw'
     const amount = Number(tx.amount) || 0
     const status = String(tx.status || '').toLowerCase()
@@ -82,7 +72,6 @@ export default function Transactions() {
               <p className="text-black text-xs font-light mt-1">
                 {formatUgandaTime(tx.createdAt)}
               </p>
-              {tx.method && <p className="text-black text-xs font-light mt-1">Via: {tx.method}</p>}
             </div>
             <p className={`text-sm font-light capitalize ${
               status === 'success'? 'text-green-500' :
@@ -96,7 +85,7 @@ export default function Transactions() {
       )
     }
 
-    // DAILY INCOME, VIPLEVEL PURCHASE, REFUND, SHARES
+    // DAILY INCOME = type | amount, then date below. No book
     return (
       <div key={tx.id} className="border border-gray-200 rounded p-3 bg-white">
         <div className="flex justify-between items-start">
@@ -105,22 +94,9 @@ export default function Transactions() {
             {amount.toLocaleString()}shs
           </p>
         </div>
-
-        <div className="flex justify-end">
-          <p className="text-black text-xs font-light mt-1">
-            {formatUgandaTime(tx.createdAt)}
-          </p>
-        </div>
-
-        {typeKey === 'daily income' && tx.bookTitle && (
-          <p className="text-black text-xs font-light mt-1">Book: {tx.bookTitle}</p>
-        )}
-        {typeKey === 'viplevel purchase' && tx.vipLevel && (
-          <p className="text-black text-xs font-light mt-1">Level: {tx.vipLevel}</p>
-        )}
-        {tx.bookId &&!tx.bookTitle && (
-          <p className="text-black text-xs font-light mt-1">Book ID: {tx.bookId}</p>
-        )}
+        <p className="text-black text-xs font-light mt-1 text-right">
+          {formatUgandaTime(tx.createdAt)}
+        </p>
       </div>
     )
   }
@@ -133,17 +109,18 @@ export default function Transactions() {
         <h1 className="text-xl font-bold text-black">Transaction History</h1>
       </div>
 
-      <div className="overflow-x-auto px-2 pb-2">
-        <div className="flex gap-2">
+      {/* Tabs: arranged, skyblue bg, font-light black text */}
+      <div className="px-4 pb-3">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {TABS.map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-lg whitespace-nowrap font-light ${
-                activeTab === tab
-                ? 'bg-sky-400 text-black'
-                  : 'bg-sky-200 text-black'
-              }`}
+              className={`flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black transition-colors
+                ${activeTab === tab
+               ? 'bg-sky-400' // active = hot sky blue
+                  : 'bg-sky-200' // inactive = lighter sky blue
+                }`}
             >
               {tab}
             </button>
