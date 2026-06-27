@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
 
 const redis = Redis.fromEnv()
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+const safeParse = (s) => { try { return JSON.parse(s) } catch { return null } }
 
 export async function POST(req) {
   try {
@@ -51,19 +55,39 @@ export async function POST(req) {
 export async function GET(request) {
   try {
     const phone = request.nextUrl.searchParams.get('phone')
+    if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    if (!phone) {
-      return NextResponse.json({ error: 'Phone required' }, { status: 400 })
-    }
-
-    const txIds = await redis.lrange(`tx:${phone}`, 0, 99)
+    // 1. READ FRESH FROM tx:phone LIST
+    const items = await redis.lrange(`tx:${phone}`, 0, 99)
     const transactions = []
     
-    for (const id of txIds) {
-      const tx = await redis.hgetall(`tx:${id}`)
-      if (tx && Object.keys(tx).length > 0) {
-        transactions.push(tx)
+    for (const item of items) {
+      let tx = null
+
+      if (typeof item === 'string' && item.startsWith('tx_')) {
+        // Case 1: It's an ID -> read hash. Like tx_1782559635885_iaiiu43claj
+        tx = await redis.hgetall(`tx:${item}`)
+      } else {
+        // Case 2: It's raw JSON -> from book submit. Like {"type":"book_submission",...}
+        tx = safeParse(item)
       }
+
+      if (!tx || !tx.id) continue
+
+      // 2. NORMALIZE: Make both formats match your page
+      transactions.push({
+        id: tx.id,
+        type: tx.type === 'book_submission' ? 'daily income' : tx.type, // <- matches DAILY INCOME tab
+        amount: String(tx.amount),
+        status: tx.status === 'completed' ? 'success' : tx.status, // <- green color
+        createdAt: String(tx.createdAt || new Date(tx.date).getTime()), // <- ms for formatUgandaTime
+        phone: tx.phone || phone,
+        method: tx.method || '',
+        withdrawPhone: tx.withdrawPhone || '',
+        withdrawName: tx.withdrawName || '',
+        bookTitle: tx.bookTitle || (tx.bookId ? `Book ${tx.bookId}` : ''), // <- Book 40739 etc
+        vipLevel: tx.vipLevel || ''
+      })
     }
 
     return NextResponse.json({ success: true, transactions })
