@@ -1,3 +1,4 @@
+import './globals.css' // <- ONLY CHANGE: Add this line
 import BottomNav from '../components/BottomNav'
 import SWRegister from '../components/SWRegister'
 

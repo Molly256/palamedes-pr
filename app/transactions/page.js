@@ -109,7 +109,6 @@ export default function Transactions() {
           <h1 className="text-xl font-semibold text-black">Transaction History</h1>
         </div>
 
-        {/* Tabs: hot skyblue hex so Tailwind won't purge */}
         <div className="px-4 pb-3">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {TABS.map(tab => (
@@ -130,9 +129,11 @@ export default function Transactions() {
             <p className="text-black text-center py-10">Loading...</p>
           ) : filteredTxs.length === 0? (
             <p className="text-gray-500 text-center py-10">No transactions yet</p>
-          ) : filteredTxs.map(renderTx)}
+          ) : (
+            filteredTxs.map(renderTx)
+          )}
         </div>
       </div>
     </div>
   )
-}"// v2 cache bust" 
+}
