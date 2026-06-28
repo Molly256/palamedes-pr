@@ -30,17 +30,17 @@ export default function BooksPage() {
 
       if (coversJson.success && Array.isArray(dataJson)) {
         
-        // 2. MERGE THEM BY ID ON THE CLIENT
-        const coverMap = new Map(coversJson.covers.map(c => [c.id, c.cover]));
+        // 2. FIX 1: MERGE THEM BY STRING ID ONLY
+        const coverMap = new Map(coversJson.covers.map(c => [String(c.id), c.cover]));
         
         const mergedBooks = dataJson.map(b => ({
-          bookId: b.id.toString(),
+          bookId: String(b.id),
           title: b.title,
           author: b.author,
           preview: b.preview || 'No preview',
-          cover: coverMap.get(b.id.toString()) || `/covers/${b.id}.jpg`, // <-- from covers API
+          cover: coverMap.get(String(b.id)), // FIX 2: No /covers/ fallback. Must come from API
           status: 'pending' // default
-        }));
+        })).filter(b => b.cover); // Remove any book with no cover found
         
         setBooks(mergedBooks);
         
@@ -75,7 +75,7 @@ export default function BooksPage() {
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     setReadingBook(book)
     setTimer(10)
-    fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover }) })
+    fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover })
       .catch(err => { console.error('Read error:', err); setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)) })
       .finally(() => { lockRef.current.delete(`r-${book.bookId}`) })
   }
@@ -86,7 +86,7 @@ export default function BooksPage() {
     lockRef.current.add(`s-${book.bookId}`)
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'submitted'} : b))
     try {
-      const res = await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover }) })
+      const res = await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover })
       const data = await res.json()
       if (!res.ok) {
         if (res.status === 409) { await fetchBooks(user.phone, true); return }
