@@ -1,69 +1,78 @@
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
+import { redis } from '@/lib/redis'; // Adjust this to your actual Upstash client import
 
-import { Redis } from '@upstash/redis'
-import { NextResponse } from 'next/server'
-import path from 'path'
-import { promises as fs } from 'fs'
-
-const redis = Redis.fromEnv()
-
-const run = async () => {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
-
-  // 1. Read 4 random book IDs from public/data/books.json
-  const booksPath = path.join(process.cwd(), 'public/data/books.json')
-  const file = await fs.readFile(booksPath, 'utf-8')
-  const books = JSON.parse(file) // [{id: "1", title: "..."}, ...]
-  
-  if (!Array.isArray(books) || books.length < 4) {
-    return { success: false, message: 'Need at least 4 books in public/data/books.json' }
-  }
-  
-  const bookIds = [...books].sort(() => 0.5 - Math.random()).slice(0, 4).map(b => String(b.id))
-
-  // 2. Get only VIP users: hasBoughtVip === 'true'
-  const userKeys = await redis.keys('user:*')
-  const users = await Promise.all(userKeys.map(k => redis.hgetall(k)))
-  const vipPhones = users.filter(u => u.hasBoughtVip === 'true' && u.phone).map(u => u.phone)
-
-  if (vipPhones.length === 0) {
-    return { success: true, message: 'No VIP users found', usersUpdated: 0, bookIds, date: today }
-  }
-
-  // 3. Write only the SET: books:phone:YYYY-MM-DD = [id1,id2,id3,id4]
-  const pipeline = redis.pipeline()
-  for (const phone of vipPhones) {
-    const key = `books:${phone}:${today}`
-    pipeline.del(key) // overwrite if run twice
-    pipeline.sadd(key, ...bookIds)
-  }
-  await pipeline.exec()
-
-  return {
-    success: true,
-    message: `Assigned 4 books to ${vipPhones.length} VIP users`,
-    date: today,
-    bookIds,
-    usersUpdated: vipPhones.length
-  }
-}
-
-export async function GET() {
+export async function POST(request) {
   try {
-    const result = await run()
-    return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } })
-  } catch (err) {
-    console.error('Generate books error:', err)
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
-  }
-}
+    // 1. Read and parse books from public/data/books.json
+    const jsonPath = path.join(process.cwd(), 'public', 'data', 'books.json');
+    const fileData = fs.readFileSync(jsonPath, 'utf8');
+    const books = JSON.parse(fileData);
 
-export async function POST() {
-  try {
-    const result = await run()
-    return NextResponse.json(result)
-  } catch (err) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
+    if (!Array.isArray(books) || books.length < 4) {
+      return NextResponse.json({ error: 'Not enough books in JSON file' }, { status: 400 });
+    }
+
+    // 2. Select 4 unique random book IDs
+    const shuffled = [...books].sort(() => 0.5 - Math.random());
+    const randomBookIds = shuffled.slice(0, 4).map(book => book.id.toString());
+
+    // 3. Generate today's date formatted as yyyy-mm-dd (Matches your screenshot: 2026-06-28)
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    // 4. Find all user profile keys matching your structure
+    const userKeys = await redis.keys('user:*');
+    
+    // 5. Initialize Upstash pipeline for batch processing
+    const pipeline = redis.pipeline();
+    let updatedCount = 0;
+
+    for (const key of userKeys) {
+      // Fetch the user object from Upstash Hash
+      const user = await redis.hgetall(key);
+
+      // Check VIP status (supports both string and boolean types)
+      if (user && (user.hasBoughtVip === 'true' || user.hasBoughtVip === true)) {
+        
+        // Extract phone directly from the key name (e.g., "user:0753520252" -> "0753520252")
+        const phone = key.split(':')[1]; 
+        
+        if (phone) {
+          const targetKey = `books:${phone}:${dateStr}`;
+          
+          // Delete any existing key for today to start fresh
+          pipeline.del(targetKey);
+          
+          // Add the 4 IDs to a Redis Set matching your screenshot format
+          pipeline.sadd(targetKey, ...randomBookIds);
+          
+          // Optional: Automatically clean up after 48 hours to save Upstash space
+          pipeline.expire(targetKey, 172800); 
+
+          updatedCount++;
+        }
+      }
+    }
+
+    // 6. Execute all commands in one single round-trip
+    if (updatedCount > 0) {
+      await pipeline.exec();
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      message: `Successfully posted books for ${updatedCount} VIP users.`,
+      date: dateStr,
+      generatedIds: randomBookIds
+    });
+
+  } catch (error) {
+    console.error('API Error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
