@@ -13,19 +13,40 @@ export default function BooksPage() {
   const [books, setBooks] = useState([])
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
-  
-  const lockRef = useRef(new Set()) // 0ms lock, no re-render lag
+  const lockRef = useRef(new Set())
 
   const fetchBooks = async (phone, silent = false) => {
     try {
       const today = getUgandaDateString()
-      const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' })
-      const data = await res.json()
-      if (data.success) {
-        setBooks(data.books || [])
-        if (data.user && !silent) {
-          setUser(data.user)
-          localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      
+      // 1. CALL BOTH APIS AT ONCE
+      const [coversRes, dataRes] = await Promise.all([
+        fetch(`/api/books/covers?phone=${phone}&date=${today}`, { cache: 'no-store' }),
+        fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' })
+      ]);
+      
+      const coversJson = await coversRes.json(); // {success: true, covers: [{id, cover}]}
+      const dataJson = await dataRes.json();     // [{id, title, author, preview}]
+
+      if (coversJson.success && Array.isArray(dataJson)) {
+        
+        // 2. MERGE THEM BY ID ON THE CLIENT
+        const coverMap = new Map(coversJson.covers.map(c => [c.id, c.cover]));
+        
+        const mergedBooks = dataJson.map(b => ({
+          bookId: b.id.toString(),
+          title: b.title,
+          author: b.author,
+          preview: b.preview || 'No preview',
+          cover: coverMap.get(b.id.toString()) || `/covers/${b.id}.jpg`, // <-- from covers API
+          status: 'pending' // default
+        }));
+        
+        setBooks(mergedBooks);
+        
+        if (!silent) {
+          const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+          setUser(userData)
         }
       }
     } catch (err) {
@@ -50,63 +71,33 @@ export default function BooksPage() {
   const handleRead = async (book) => {
     if (book.status !== 'pending') return
     if (lockRef.current.has(`r-${book.bookId}`)) return
-
     lockRef.current.add(`r-${book.bookId}`)
-    // 1. INSTANT UI only for button
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     setReadingBook(book)
     setTimer(10)
-
-    fetch('/api/books/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover })
-    }).catch(err => {
-      console.error('Read error:', err)
-      setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)) // rollback only on fail
-    }).finally(() => {
-      lockRef.current.delete(`r-${book.bookId}`)
-    })
+    fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover }) })
+      .catch(err => { console.error('Read error:', err); setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)) })
+      .finally(() => { lockRef.current.delete(`r-${book.bookId}`) })
   }
 
   const handleSubmit = async (book) => {
     if (book.status !== 'read') return alert('Click Read first')
     if (lockRef.current.has(`s-${book.bookId}`)) return
-
     lockRef.current.add(`s-${book.bookId}`)
-    
-    // 1. INSTANT UI: Only grey the button. DO NOT add balance here.
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'submitted'} : b))
-
     try {
-      const res = await fetch('/api/books/submit', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover })
-      })
-      
+      const res = await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover }) })
       const data = await res.json()
       if (!res.ok) {
-        if (res.status === 409) { // Already submitted server-side. Sync UI to server.
-          const u = await fetch(`/api/books/data?phone=${user.phone}&date=${getUgandaDateString()}`, { cache: 'no-store' }).then(r=>r.json())
-          setUser(u.user)
-          localStorage.setItem('palamedes_user', JSON.stringify(u.user))
-          setBooks(u.books || [])
-          return
-        }
+        if (res.status === 409) { await fetchBooks(user.phone, true); return }
         throw new Error(data.error || 'Submit failed')
       }
-      
-      // 2. ONLY TRUTH: Set user + books from server response only
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      // Refetch books to confirm status = submitted
       await fetchBooks(user.phone, true)
-
     } catch(err) {
       console.error('Submit error:', err)
       alert(err.message)
-      // Rollback button only, no balance touch
       setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     } finally {
       lockRef.current.delete(`s-${book.bookId}`)
@@ -161,28 +152,8 @@ export default function BooksPage() {
                       <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
                       <p style={{ margin: '4px 0 10px', fontSize: '13px', color: '#666' }}>{book.author}</p>
                       <div style={{ display: 'flex', gap: '10px' }}>
-                        <button 
-                          onClick={() => handleRead(book)} 
-                          disabled={isRead} 
-                          style={{ 
-                            flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-                            background: isRead ? '#9ca3af' : '#00BFFF',
-                            color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' 
-                          }}
-                        >
-                          {isRead ? '✓ Read' : 'Read'}
-                        </button>
-                        <button 
-                          onClick={() => handleSubmit(book)} 
-                          disabled={!isRead} 
-                          style={{ 
-                            flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-                            background: isRead ? '#00BFFF' : '#9ca3af',
-                            color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer' 
-                          }}
-                        >
-                          Submit 
-                        </button>
+                        <button onClick={() => handleRead(book)} disabled={isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#9ca3af' : '#00BFFF', color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' }}>{isRead ? '✓ Read' : 'Read'}</button>
+                        <button onClick={() => handleSubmit(book)} disabled={!isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#00BFFF' : '#9ca3af', color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer' }}>Submit </button>
                       </div>
                     </div>
                   </div>
@@ -190,7 +161,6 @@ export default function BooksPage() {
               })}
             </div>
           )}
-
           {completedBooks.length > 0 && (
             <>
               <h2 style={{ fontSize: '20px', fontWeight: '900', marginBottom: '16px', color: '#000' }}>COMPLETED TODAY'S BOOKS</h2>

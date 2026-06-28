@@ -1,52 +1,51 @@
 import { NextResponse } from 'next/server';
 import { Redis } from '@upstash/redis';
-import fs from 'fs'; // <-- NEW
-import path from 'path'; // <-- NEW
+import fs from 'fs';
+import path from 'path';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const redis = Redis.fromEnv();
 
-// DELETE THE IMPORT ABOVE. USE THIS INSTEAD:
-const books = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'app/data/books.json'), 'utf8'));
+// READ JSON ONCE AT COLD START. WORKS ON VERCEL
+const booksFilePath = path.join(process.cwd(), 'app', 'data', 'books.json');
+const ALL_BOOKS = JSON.parse(fs.readFileSync(booksFilePath, 'utf8'));
 
-export async function POST(request) {
+function getUgandaDateString() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
+}
+
+export async function GET(request) {
   try {
-    if (!Array.isArray(books) || books.length < 4) {
-      return NextResponse.json({ error: 'Not enough books in JSON file' }, { status: 400 });
+    const { searchParams } = new URL(request.url);
+    const phone = searchParams.get('phone'); // app must send ?phone=...
+    const date = searchParams.get('date') || getUgandaDateString(); // Uganda time
+    
+    if (!phone) {
+      return NextResponse.json({ error: 'Missing phone' }, { status: 400 });
     }
 
-    const shuffled = [...books].sort(() => 0.5 - Math.random());
-    const randomBookIds = shuffled.slice(0, 4).map(book => book.id.toString());
-    const today = new Date().toISOString().split('T')[0];
+    // 1. Read book IDs from Redis: books:phone:yy-mm-dd
+    const redisKey = `books:${phone}:${date}`;
+    const bookIds = await redis.smembers(redisKey); // ['45130','45304','1342','43']
 
-    const userKeys = await redis.keys('user:*');
-    const pipeline = redis.pipeline();
-    let updatedCount = 0;
-
-    for (const key of userKeys) {
-      const user = await redis.hgetall(key);
-      if (user?.hasBoughtVip === 'true' || user?.hasBoughtVip === true) {
-        const phone = key.split(':')[1];
-        if (phone) {
-          const targetKey = `books:${phone}:${today}`;
-          pipeline.del(targetKey);
-          pipeline.sadd(targetKey,...randomBookIds);
-          pipeline.expire(targetKey, 172800);
-          updatedCount++;
-        }
-      }
+    if (!bookIds || bookIds.length === 0) {
+      return NextResponse.json([]); // No books for today
     }
 
-    if (updatedCount > 0) await pipeline.exec();
+    // 2. Go to app/data/books.json and get data for each ID
+    const booksForToday = ALL_BOOKS.filter(book =>
+      bookIds.includes(book.id.toString())
+    );
 
-    return NextResponse.json({
-      success: true,
-      message: `Successfully posted books for ${updatedCount} VIP users.`,
-      date: today,
-      generatedIds: randomBookIds
+    // 3. Send full book data to page.js for the Books tab
+    return NextResponse.json(booksForToday, {
+      headers: { 'Cache-Control': 'no-store' }
     });
 
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('API /books/data Error:', error);
     return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
   }
 }
