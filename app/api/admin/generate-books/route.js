@@ -7,8 +7,9 @@ const redis = Redis.fromEnv();
 
 export async function POST(request) {
   try {
-    // 5 levels up from route.js on Vercel to hit root, then into public/data
-    const jsonPath = path.join(import.meta.dirname, '../../../../../public/data/books.json');
+    // Use env var with fallback = the "Fix" from your first screenshot
+    const bookDir = process.env.BOOKS_PATH || 'public/data/books.json';
+    const jsonPath = path.join(process.cwd(), bookDir);
     const books = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
 
     if (!Array.isArray(books) || books.length < 4) {
