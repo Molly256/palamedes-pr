@@ -39,13 +39,12 @@ export async function POST(req) {
       vipLevel: String(vipLevel || '')
     }
 
-    // 1. User history: Keep your existing list. SOURCE OF TRUTH for /transactions page
+    // 1. SOURCE OF TRUTH: Only write to tx:phone list
     await redis.lpush(`tx:${phone}`, JSON.stringify(tx)) 
     
-    // 2. ADMIN COMPAT: If pending, also write hash + list so /api/admin?action=pending works
+    // 2. ADMIN QUEUE: Only store the id, not the full hash
     if (status === 'pending') {
-      await redis.hset(`tx:${id}`, tx)    // admin does hgetall tx:id
-      await redis.lpush('pending_tx', id) // admin does lrange pending_tx
+      await redis.lpush('pending_tx', id) 
     }
     
     return NextResponse.json({ success: true, transaction: tx })
@@ -71,7 +70,7 @@ export async function GET(request) {
         id: String(tx.id), 
         type: toUiType(tx.type),
         amount: String(tx.amount),
-        status: tx.status === 'completed' ? 'success' : tx.status,
+        status: tx.status === 'completed' ? 'success' : tx.status, // map old 'completed' -> 'success'
         createdAt: String(tx.createdAt),
         phone: tx.phone, 
         method: tx.method || '', 
