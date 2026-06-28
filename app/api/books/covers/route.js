@@ -6,9 +6,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req) {
-  // FIX: Add base URL fallback for Vercel
-  const baseUrl = req.url.startsWith('http') ? req.url : `https://www.palamedes-pr.co.uk${req.url}`
-  const { searchParams } = new URL(baseUrl)
+  const { searchParams } = req.nextUrl // <-- NO new URL() at all
   
   const idsParam = searchParams.get('ids') // "40739,1260,16389,11"
   

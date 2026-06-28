@@ -12,9 +12,7 @@ function getUgandaDateString() {
 
 export async function GET(req) {
   try {
-    // FIX: Vercel base URL patch
-    const baseUrl = req.url.startsWith('http') ? req.url : `https://www.palamedes-pr.co.uk${req.url}`
-    const { searchParams } = new URL(baseUrl)
+    const { searchParams } = req.nextUrl // <-- Only line changed
     
     const phone = searchParams.get('phone')
     const date = searchParams.get('date') || getUgandaDateString()
@@ -74,6 +72,6 @@ export async function GET(req) {
 
   } catch (err) {
     console.error('GET /api/books/data error:', err)
-    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
   }
 }
