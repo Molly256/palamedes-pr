@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { redis } from '@/lib/redis'; // Adjust this to your actual Upstash client import
+import { Redis } from '@upstash/redis'; // <-- FIXED: Direct import
+
+const redis = Redis.fromEnv(); // <-- Uses Vercel env vars UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
 
 export async function POST(request) {
   try {
@@ -18,7 +20,7 @@ export async function POST(request) {
     const shuffled = [...books].sort(() => 0.5 - Math.random());
     const randomBookIds = shuffled.slice(0, 4).map(book => book.id.toString());
 
-    // 3. Generate today's date formatted as yyyy-mm-dd (Matches your screenshot: 2026-06-28)
+    // 3. Generate today's date formatted as yyyy-mm-dd 
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -39,7 +41,7 @@ export async function POST(request) {
       // Check VIP status (supports both string and boolean types)
       if (user && (user.hasBoughtVip === 'true' || user.hasBoughtVip === true)) {
         
-        // Extract phone directly from the key name (e.g., "user:0753520252" -> "0753520252")
+        // Extract phone directly from the key name
         const phone = key.split(':')[1]; 
         
         if (phone) {
@@ -48,10 +50,10 @@ export async function POST(request) {
           // Delete any existing key for today to start fresh
           pipeline.del(targetKey);
           
-          // Add the 4 IDs to a Redis Set matching your screenshot format
+          // Add the 4 IDs to a Redis Set
           pipeline.sadd(targetKey, ...randomBookIds);
           
-          // Optional: Automatically clean up after 48 hours to save Upstash space
+          // Auto cleanup after 48 hours
           pipeline.expire(targetKey, 172800); 
 
           updatedCount++;
