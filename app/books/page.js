@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
-import { VIPS } from '@/app/api/viplevels/route' // <- For instant balance
+import { VIPS } from '@/app/config/vips' // <- FIX: No /api import
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -14,7 +14,7 @@ export default function BooksPage() {
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   
-  const lockRef = useRef(new Set()) // <- 1 ref for both Read + Submit. Instant lock.
+  const lockRef = useRef(new Set()) // <- Instant lock, no state lag
 
   const fetchBooks = async (phone, silent = false) => {
     try {
