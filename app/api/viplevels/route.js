@@ -32,8 +32,8 @@ function safeParse(str, fallback = []) {
 
 async function assignBooksToUser(phone, vipLevel, today, pipeline) {
   const selectedVip = VIPS[vipLevel]
-  const booksPath = path.join(process.cwd(), 'public/data/books.json')
-  const coversDir = path.join(process.cwd(), 'public/books/covers')
+  const booksPath = path.join(process.cwd(), 'app/data/books.json') // FIXED: was public/data
+  const coversDir = path.join(process.cwd(), 'public/books/covers') // Covers still from public/
 
   const [allBooks, coverFiles] = await Promise.all([
     fs.readFile(booksPath, 'utf8').then(JSON.parse),
@@ -112,7 +112,7 @@ export async function POST(req) {
 
     pipeline.hset(userKey, {
       vip: String(vipLevel), vipPricePaid: String(selectedVip.price),
-     ...setBalance(newBalance), hasBoughtVip: 'true',
+    ...setBalance(newBalance), hasBoughtVip: 'true',
       vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       unlockedBooks: JSON.stringify(unlockedBooks), completedBooks: '[]',
       books_read_today: '0', dailyIncome: '0', lastResetDate: today, vip_bought_date: today
