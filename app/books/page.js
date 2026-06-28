@@ -27,15 +27,17 @@ export default function BooksPage() {
       const dataJson = await dataRes.json();     
 
       if (coversJson.success && Array.isArray(dataJson)) {
-        const coverMap = new Map(coversJson.covers.map(c => [String(c.id), c.cover]));
-        const mergedBooks = dataJson.map(b => ({
-          bookId: String(b.id),
-          title: b.title,
-          author: b.author,
-          preview: b.preview || 'No preview',
-          cover: coverMap.get(String(b.id)), 
-          status: 'pending' 
-        })).filter(b => b.cover); 
+        const idSet = new Set(coversJson.covers.map(c => String(c.id)));
+        const mergedBooks = dataJson
+          .filter(b => idSet.has(String(b.id)))
+          .map(b => ({
+            bookId: String(b.id),
+            title: b.title,
+            author: b.author,
+            preview: b.preview || 'No preview',
+            cover: `/books/covers/${String(b.id)}.jpg`, 
+            status: 'pending' 
+          }));
         
         setBooks(mergedBooks);
         if (!silent) {
