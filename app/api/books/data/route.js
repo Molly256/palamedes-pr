@@ -12,7 +12,10 @@ function getUgandaDateString() {
 
 export async function GET(req) {
   try {
-    const { searchParams } = new URL(req.url)
+    // FIX: Vercel base URL patch
+    const baseUrl = req.url.startsWith('http') ? req.url : `https://www.palamedes-pr.co.uk${req.url}`
+    const { searchParams } = new URL(baseUrl)
+    
     const phone = searchParams.get('phone')
     const date = searchParams.get('date') || getUgandaDateString()
     
