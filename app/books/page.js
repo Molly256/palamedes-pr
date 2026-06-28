@@ -18,32 +18,26 @@ export default function BooksPage() {
   const fetchBooks = async (phone, silent = false) => {
     try {
       const today = getUgandaDateString()
-      
-      // 1. CALL BOTH APIS AT ONCE
       const [coversRes, dataRes] = await Promise.all([
         fetch(`/api/books/covers?phone=${phone}&date=${today}`, { cache: 'no-store' }),
         fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' })
       ]);
       
-      const coversJson = await coversRes.json(); // {success: true, covers: [{id, cover}]}
-      const dataJson = await dataRes.json();     // [{id, title, author, preview}]
+      const coversJson = await coversRes.json(); 
+      const dataJson = await dataRes.json();     
 
       if (coversJson.success && Array.isArray(dataJson)) {
-        
-        // 2. FIX 1: MERGE THEM BY STRING ID ONLY
         const coverMap = new Map(coversJson.covers.map(c => [String(c.id), c.cover]));
-        
         const mergedBooks = dataJson.map(b => ({
           bookId: String(b.id),
           title: b.title,
           author: b.author,
           preview: b.preview || 'No preview',
-          cover: coverMap.get(String(b.id)), // FIX 2: No /covers/ fallback. Must come from API
-          status: 'pending' // default
-        })).filter(b => b.cover); // Remove any book with no cover found
+          cover: coverMap.get(String(b.id)), 
+          status: 'pending' 
+        })).filter(b => b.cover); 
         
         setBooks(mergedBooks);
-        
         if (!silent) {
           const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
           setUser(userData)
@@ -75,9 +69,18 @@ export default function BooksPage() {
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     setReadingBook(book)
     setTimer(10)
-    fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover })
-      .catch(err => { console.error('Read error:', err); setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)) })
-      .finally(() => { lockRef.current.delete(`r-${book.bookId}`) })
+    fetch('/api/books/submit', { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
+      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover }) 
+    })
+      .catch(err => { 
+        console.error('Read error:', err); 
+        setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)) 
+      })
+      .finally(() => { 
+        lockRef.current.delete(`r-${book.bookId}`) 
+      })
   }
 
   const handleSubmit = async (book) => {
@@ -86,7 +89,11 @@ export default function BooksPage() {
     lockRef.current.add(`s-${book.bookId}`)
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'submitted'} : b))
     try {
-      const res = await fetch('/api/books/submit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover })
+      const res = await fetch('/api/books/submit', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover }) 
+      })
       const data = await res.json()
       if (!res.ok) {
         if (res.status === 409) { await fetchBooks(user.phone, true); return }
