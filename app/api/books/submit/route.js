@@ -18,7 +18,7 @@ const getUgandaDateString = () => {
 
 /*
 Keys:
-book:{phone}:{date}:{bookId} -> HSET status. HSETNX = ATOMIC LOCK
+book:{phone}:{date}:{bookId} -> HSET status
 user:{phone} -> HSET balance
 tx:{phone} -> LPUSH tx JSON = Daily Income tab
 book_submission:{txId} -> HSET tx details = Transaction History tab
@@ -38,24 +38,25 @@ ARGV[1], ARGV[2], ARGV[3], tonumber(ARGV[4]), ARGV[5], ARGV[6], tonumber(ARGV[7]
 
 if action == 'read' then
   local status = redis.call('HGET', bookKey, 'status')
-  if status == 'submitted' or status == 'read' then
-    return {1, 'READ'}
-  end
+  if status == 'submitted' then return {1, 'READ'} end
+  if status == 'read' then return {1, 'READ'} end
   redis.call('HSET', bookKey, 'status', 'read', 'readAt', nowMs)
   return {1, 'READ'}
 end
 
 if action == 'submit' then
-  -- 0. IDEMPOTENCY: If Chrome retried, we already paid. Return 409.
+  -- 0. IDEMPOTENCY: If Chrome retried, we already paid.
   if redis.call('EXISTS', idemKey) == 1 then
     return {0, 'ALREADY_PAID'}
   end
   
-  -- 1. ATOMIC GATEKEEPER: HSETNX. Only 1 serverless instance wins.
-  if redis.call('HSETNX', bookKey, 'status', 'submitted') == 0 then
+  -- 1. ATOMIC GATEKEEPER: Must be 'read' to submit. If not, fail.
+  local status = redis.call('HGET', bookKey, 'status')
+  if status ~= 'read' then
     return {0, 'ALREADY_PAID'}
   end
-  redis.call('HSET', bookKey, 'submittedAt', nowMs, 'reward', earned)
+  -- Only winner sets to submitted
+  redis.call('HSET', bookKey, 'status', 'submitted', 'submittedAt', nowMs, 'reward', earned)
 
   -- 2. USER + DAILY LIMIT + RESET
   local user = redis.call('HGETALL', userKey)
@@ -96,7 +97,7 @@ if action == 'submit' then
     'title', title,
     'cover', cover
   )
-  redis.call('EXPIRE', ssetKey, 2592000) -- 30 days TTL
+  redis.call('EXPIRE', ssetKey, 2592000)
 
   -- 5. MARK AS PAID: Stops Chrome retry double pay
   redis.call('SET', idemKey, '1', 'EX', 86400)
@@ -171,7 +172,7 @@ export async function POST(request) {
       earned: paymentAmount,
       txId,
       user: {
-       ...updatedUser,
+      ...updatedUser,
         availableBalance: toNum(updatedUser.availableBalance),
         dailyIncome: toNum(updatedUser.dailyIncome),
         books_read_today: toNum(updatedUser.books_read_today),
