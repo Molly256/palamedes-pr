@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import { VIPS } from '@/app/config/vips' // <- FIX: No /api import, no fs
+import { VIPS } from '@/app/config/vips' // No fs here
 
 const redis = Redis.fromEnv()
 
@@ -12,7 +12,7 @@ const toNum = (v, f = 0) => {
   return Number.isNaN(n)? f : n
 }
 
-function getUgandaDateString() {
+const getUgandaDateString = () => {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
@@ -22,27 +22,22 @@ book:{phone}:{date}:{bookId} -> HSET status
 user:{phone} -> HSET balance
 tx:{phone} -> LPUSH tx JSON = Daily Income tab
 book_submission:{txId} -> HSET tx details = Transaction History tab
+paylock:{txId} -> SET NX EX = ATOMIC 1-PAY LOCK
 */
+
 const SUBMIT_LUA = `
 local bookKey = KEYS[1]
 local userKey = KEYS[2]
 local txKey = KEYS[3]
 local ssetKey = KEYS[4] -- book_submission:{txId}
 local booksSetKey = KEYS[5]
+local payLockKey = KEYS[6] -- ATOMIC LOCK KEY
 
-local action = ARGV[1]
-local today = ARGV[2]
-local bookIdStr = ARGV[3]
-local earned = tonumber(ARGV[4])
-local txJson = ARGV[5]
-local txId = ARGV[6]
-local booksLimit = tonumber(ARGV[7])
-local nowMs = ARGV[8]
-local title = ARGV[9]
-local cover = ARGV[10]
+local action, today, bookIdStr, earned, txJson, txId, booksLimit, nowMs, title, cover =
+ARGV[1], ARGV[2], ARGV[3], tonumber(ARGV[4]), ARGV[5], ARGV[6], tonumber(ARGV[7]), ARGV[8], ARGV[9], ARGV[10]
 
--- 1. IDEMPOTENCY: 1 PAY ONLY
-if redis.call('SISMEMBER', txKey.. ':paid', txId) == 1 then
+-- 1. ATOMIC 1-PAY LOCK: SET NX = Only 1 wins. 2nd gets nil instantly. No race.
+if redis.call('SET', payLockKey, '1', 'NX', 'EX', '120') == false then
   return {0, 'ALREADY_PAID'}
 end
 
@@ -76,8 +71,6 @@ if action == 'submit' then
 
   if u.lastResetDate ~= today then
     redis.call('HSET', userKey, 'books_read_today', '0', 'dailyIncome', '0', 'lastResetDate', today)
-    u.books_read_today = '0'
-    u.dailyIncome = '0'
   end
 
   if tonumber(u.books_read_today or 0) >= booksLimit then
@@ -92,7 +85,6 @@ if action == 'submit' then
   redis.call('HINCRBY', userKey, 'books_read_today', 1)
   redis.call('LPUSH', txKey, txJson) -- Daily Income tab
   redis.call('SADD', booksSetKey, bookIdStr)
-  redis.call('SADD', txKey.. ':paid', txId) -- 1-pay lock
 
   -- 5. WRITE TO book_submission:{txId} HASH = Transaction History tab
   redis.call('HSET', ssetKey,
@@ -102,7 +94,6 @@ if action == 'submit' then
     'amount', earned,
     'createdAt', nowMs,
     'status', 'success',
-    'description', 'Daily income book submission',
     'phone', u.phone,
     'title', title,
     'cover', cover
@@ -124,14 +115,10 @@ export async function POST(request) {
 
     const today = getUgandaDateString()
     const bookIdStr = String(bookId)
-    const bookKey = `book:${phone}:${today}:${bookIdStr}`
-    const userKey = `user:${phone}`
-    const txKey = `tx:${phone}`
-    const booksSetKey = `books:${phone}:${today}`
     const txId = `${phone}:${today}:${bookIdStr}:${action}`
-    const ssetKey = `book_submission:${txId}`
+    const payLockKey = `paylock:${txId}` -- NEW: This stops double pay
 
-    const user = await redis.hgetall(userKey)
+    const user = await redis.hgetall(`user:${phone}`)
     if (!user?.phone) {
       return NextResponse.json({ error: "User profile missing" }, { status: 404 })
     }
@@ -143,21 +130,30 @@ export async function POST(request) {
     const paymentAmount = vipConfig.perBook
     const nowMs = String(Date.now())
 
-    const tx = {
+    const tx = JSON.stringify({
       id: txId,
       type: 'daily_income',
       bookId: bookIdStr,
       amount: paymentAmount,
       createdAt: nowMs,
       status: 'success',
-      description: `Daily income book submission VIP ${vip}`,
-      phone: phone
-    }
+      phone
+    })
 
     const res = await redis.eval(
       SUBMIT_LUA,
-      [bookKey, userKey, txKey, ssetKey, booksSetKey],
-      [action, today, bookIdStr, String(paymentAmount), JSON.stringify(tx), txId, String(vipConfig.books), nowMs, title || '', cover || '']
+      [
+        `book:${phone}:${today}:${bookIdStr}`,
+        `user:${phone}`,
+        `tx:${phone}`,
+        `book_submission:${txId}`,
+        `books:${phone}:${today}`,
+        payLockKey -- 6th key = atomic lock
+      ],
+      [
+        action, today, bookIdStr, String(paymentAmount), tx, txId,
+        String(vipConfig.books), nowMs, title || '', cover || ''
+      ]
     )
 
     if (res[0] === 0) {
@@ -168,13 +164,13 @@ export async function POST(request) {
       return NextResponse.json({ error: msg }, { status: 400 })
     }
 
-    const updatedUser = await redis.hgetall(userKey)
+    const updatedUser = await redis.hgetall(`user:${phone}`)
     return NextResponse.json({
       success: true,
       earned: paymentAmount,
       txId,
       user: {
-      ...updatedUser,
+       ...updatedUser,
         availableBalance: toNum(updatedUser.availableBalance),
         dailyIncome: toNum(updatedUser.dailyIncome),
         books_read_today: toNum(updatedUser.books_read_today),
