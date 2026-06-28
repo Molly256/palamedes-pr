@@ -1,77 +1,48 @@
-import { NextResponse } from 'next/server'
-import { Redis } from '@upstash/redis'
-import booksMeta from '@/public/data/books.json'
+import { NextResponse } from 'next/server';
+import books from '../../data/books.json'; // <-- same path
+import { Redis } from '@upstash/redis';
 
-const redis = Redis.fromEnv()
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+const redis = Redis.fromEnv();
 
-function getUgandaDateString() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
-}
-
-export async function GET(req) {
+export async function POST(request) {
   try {
-    const { searchParams } = req.nextUrl // <-- Only line changed
-    
-    const phone = searchParams.get('phone')
-    const date = searchParams.get('date') || getUgandaDateString()
-    
-    if (!phone) {
-      return NextResponse.json({ success: true, books: [], user: null })
+    if (!Array.isArray(books) || books.length < 4) {
+      return NextResponse.json({ error: 'Not enough books in JSON file' }, { status: 400 });
     }
 
-    // 1. Read IDs from Redis SET: books:0753520252:2026-06-27
-    const setKey = `books:${phone}:${date}`
-    const bookIds = await redis.smembers(setKey)
-    
-    if (!bookIds || bookIds.length === 0) {
-      const user = await redis.hgetall(`user:${phone}`)
-      return NextResponse.json({ 
-        success: true, 
-        books: [], 
-        user: user ? { 
-          ...user, 
-          availableBalance: Number(user.availableBalance || 0), 
-          vip: Number(user.vip || 0) 
-        } : null 
-      })
-    }
+    const shuffled = [...books].sort(() => 0.5 - Math.random());
+    const randomBookIds = shuffled.slice(0, 4).map(book => book.id.toString());
+    const today = new Date().toISOString().split('T')[0];
 
-    // 2. For each ID: merge books.json + Redis book:phone:date:id hash
-    const books = await Promise.all(
-      bookIds.slice(0, 4).map(async (id) => {
-        const meta = booksMeta.find(m => String(m.id) === String(id)) || {}
-        const bookKey = `book:${phone}:${date}:${id}`
-        const bookData = await redis.hgetall(bookKey) // {reward: '2300', status: 'pending'}
-        
-        return {
-          bookId: id,
-          title: meta.title || `Book ${id}`,
-          author: meta.author || 'Unknown',
-          cover: meta.cover || `/books/covers/${id}.jpg`,
-          preview: meta.preview || 'No preview available',
-          reward: Number(bookData?.reward || 0), // from Redis
-          status: bookData?.status || 'pending'   // from Redis
+    const userKeys = await redis.keys('user:*');
+    const pipeline = redis.pipeline();
+    let updatedCount = 0;
+
+    for (const key of userKeys) {
+      const user = await redis.hgetall(key);
+      if (user?.hasBoughtVip === 'true' || user?.hasBoughtVip === true) {
+        const phone = key.split(':')[1];
+        if (phone) {
+          const targetKey = `books:${phone}:${today}`;
+          pipeline.del(targetKey);
+          pipeline.sadd(targetKey,...randomBookIds);
+          pipeline.expire(targetKey, 172800);
+          updatedCount++;
         }
-      })
-    )
+      }
+    }
 
-    // 3. Get user for balance/VIP
-    const user = await redis.hgetall(`user:${phone}`)
-    
-    return NextResponse.json({ 
-      success: true, 
-      books, 
-      user: user ? { 
-        ...user, 
-        availableBalance: Number(user.availableBalance || 0), 
-        vip: Number(user.vip || 0) 
-      } : null 
-    }, { headers: { 'Cache-Control': 'no-store' } })
+    if (updatedCount > 0) await pipeline.exec();
 
-  } catch (err) {
-    console.error('GET /api/books/data error:', err)
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 })
+    return NextResponse.json({
+      success: true,
+      message: `Successfully posted books for ${updatedCount} VIP users.`,
+      date: today,
+      generatedIds: randomBookIds
+    });
+
+  } catch (error) {
+    console.error('API Error:', error);
+    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
   }
 }

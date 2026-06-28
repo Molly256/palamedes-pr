@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
-import fs from 'fs'
-import path from 'path'
+// DELETED: fs, path. Can't use them on Vercel
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,7 +13,7 @@ function getUgandaDateString() {
 
 export async function GET(req) {
   try {
-    const { searchParams } = req.nextUrl // <-- NO new URL()
+    const { searchParams } = req.nextUrl 
     
     const phone = searchParams.get('phone')
     const date = searchParams.get('date') || getUgandaDateString()
@@ -30,18 +29,12 @@ export async function GET(req) {
     if (!bookIds || bookIds.length === 0) {
       return NextResponse.json({ success: true, covers: [] })
     }
-    
-    const coversPath = path.join(process.cwd(), 'public', 'books', 'covers')
 
-    // 2. For each ID, check public/books/covers/{id}.jpg exists
-    const covers = bookIds.slice(0, 4).map(id => {
-      const filePath = path.join(coversPath, `${id}.jpg`)
-      const exists = fs.existsSync(filePath)
-      return { 
-        id: String(id), 
-        cover: exists ? `/books/covers/${id}.jpg` : '/books/covers/default.jpg' 
-      }
-    })
+    // 2. Just build URLs. Don't fs.existsSync. Vercel lambda can't see app/books/covers/
+    const covers = bookIds.slice(0, 4).map(id => ({ 
+      id: String(id), 
+      cover: `/books/covers/${id}.jpg` // <-- app/books/covers/
+    }))
     
     return NextResponse.json({ success: true, covers }, {
       headers: { 'Cache-Control': 'no-store' }
