@@ -9,7 +9,7 @@ const redis = Redis.fromEnv()
 
 const toNum = (v, f = 0) => {
   const n = Number(v)
-  return Number.isNaN(n) ? f : n
+  return Number.isNaN(n)? f : n
 }
 
 const getUgandaDateString = () => {
@@ -18,28 +18,23 @@ const getUgandaDateString = () => {
 
 /*
 Keys:
-book:{phone}:{date}:{bookId} -> HSET status
+book:{phone}:{date}:{bookId} -> HSET status. HSETNX = ATOMIC LOCK
 user:{phone} -> HSET balance
 tx:{phone} -> LPUSH tx JSON = Daily Income tab
 book_submission:{txId} -> HSET tx details = Transaction History tab
-paylock:{txId} -> SET NX EX = ATOMIC 1-PAY LOCK
+idem:{txId} -> SET EX = Idempotency guard for Chrome retry
 */
 
 const SUBMIT_LUA = `
 local bookKey = KEYS[1]
 local userKey = KEYS[2]
 local txKey = KEYS[3]
-local ssetKey = KEYS[4] -- book_submission:{txId}
+local ssetKey = KEYS[4]
 local booksSetKey = KEYS[5]
-local payLockKey = KEYS[6] -- ATOMIC LOCK KEY
+local idemKey = KEYS[6]
 
 local action, today, bookIdStr, earned, txJson, txId, booksLimit, nowMs, title, cover =
 ARGV[1], ARGV[2], ARGV[3], tonumber(ARGV[4]), ARGV[5], ARGV[6], tonumber(ARGV[7]), ARGV[8], ARGV[9], ARGV[10]
-
--- 1. ATOMIC 1-PAY LOCK: SET NX = Only 1 wins. 2nd gets nil instantly. No race.
-if redis.call('SET', payLockKey, '1', 'NX', 'EX', '120') == false then
-  return {0, 'ALREADY_PAID'}
-end
 
 if action == 'read' then
   local status = redis.call('HGET', bookKey, 'status')
@@ -51,18 +46,21 @@ if action == 'read' then
 end
 
 if action == 'submit' then
-  -- 2. STATUS CHECK
-  local status = redis.call('HGET', bookKey, 'status')
-  if status == 'submitted' then
+  -- 0. IDEMPOTENCY: If Chrome retried, we already paid. Return 409.
+  if redis.call('EXISTS', idemKey) == 1 then
     return {0, 'ALREADY_PAID'}
   end
-  if status ~= 'read' then
-    return {0, 'NOT_READ_YET'}
+  
+  -- 1. ATOMIC GATEKEEPER: HSETNX. Only 1 serverless instance wins.
+  if redis.call('HSETNX', bookKey, 'status', 'submitted') == 0 then
+    return {0, 'ALREADY_PAID'}
   end
+  redis.call('HSET', bookKey, 'submittedAt', nowMs, 'reward', earned)
 
-  -- 3. USER + DAILY LIMIT + RESET
+  -- 2. USER + DAILY LIMIT + RESET
   local user = redis.call('HGETALL', userKey)
   if #user == 0 then
+    redis.call('HSET', bookKey, 'status', 'read') -- rollback
     return {0, 'USER_NOT_FOUND'}
   end
 
@@ -74,11 +72,11 @@ if action == 'submit' then
   end
 
   if tonumber(u.books_read_today or 0) >= booksLimit then
+    redis.call('HSET', bookKey, 'status', 'read') -- rollback
     return {0, 'DAILY_LIMIT'}
   end
 
-  -- 4. ATOMIC PAYOUT
-  redis.call('HSET', bookKey, 'status', 'submitted', 'submittedAt', nowMs, 'reward', earned)
+  -- 3. ATOMIC PAYOUT
   redis.call('HINCRBY', userKey, 'availableBalance', earned)
   redis.call('HINCRBY', userKey, 'balance', earned)
   redis.call('HINCRBY', userKey, 'dailyIncome', earned)
@@ -86,7 +84,7 @@ if action == 'submit' then
   redis.call('LPUSH', txKey, txJson) -- Daily Income tab
   redis.call('SADD', booksSetKey, bookIdStr)
 
-  -- 5. WRITE TO book_submission:{txId} HASH = Transaction History tab
+  -- 4. WRITE TO book_submission:{txId} HASH = Transaction History tab
   redis.call('HSET', ssetKey,
     'id', txId,
     'type', 'daily_income',
@@ -100,6 +98,9 @@ if action == 'submit' then
   )
   redis.call('EXPIRE', ssetKey, 2592000) -- 30 days TTL
 
+  -- 5. MARK AS PAID: Stops Chrome retry double pay
+  redis.call('SET', idemKey, '1', 'EX', 86400)
+
   return {1, 'OK'}
 end
 
@@ -109,14 +110,14 @@ return {0, 'INVALID_ACTION'}
 export async function POST(request) {
   try {
     const { phone, bookId, action, title, cover } = await request.json()
-    if (!phone || !bookId || !action) {
+    if (!phone ||!bookId ||!action) {
       return NextResponse.json({ error: "Missing data" }, { status: 400 })
     }
 
     const today = getUgandaDateString()
     const bookIdStr = String(bookId)
     const txId = `${phone}:${today}:${bookIdStr}:${action}`
-    const payLockKey = `paylock:${txId}` // FIXED: // not --
+    const idemKey = `idem:${txId}`
 
     const user = await redis.hgetall(`user:${phone}`)
     if (!user?.phone) {
@@ -148,7 +149,7 @@ export async function POST(request) {
         `tx:${phone}`,
         `book_submission:${txId}`,
         `books:${phone}:${today}`,
-        payLockKey // FIXED: // not --
+        idemKey
       ],
       [
         action, today, bookIdStr, String(paymentAmount), tx, txId,
@@ -170,7 +171,7 @@ export async function POST(request) {
       earned: paymentAmount,
       txId,
       user: {
-        ...updatedUser,
+       ...updatedUser,
         availableBalance: toNum(updatedUser.availableBalance),
         dailyIncome: toNum(updatedUser.dailyIncome),
         books_read_today: toNum(updatedUser.books_read_today),
