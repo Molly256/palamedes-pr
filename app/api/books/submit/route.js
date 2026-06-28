@@ -1,108 +1,125 @@
-import { NextResponse } from 'next/server'
-import { Redis } from '@upstash/redis'
-import { VIPS } from '@/app/api/viplevels/route'
-
-const redis = Redis.fromEnv()
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+import { Redis } from '@upstash/redis'
+import { NextResponse } from 'next/server'
+import { VIPS } from '@/app/config/vips' // <- FIX: No /api import, no fs
+
+const redis = Redis.fromEnv()
+
+const toNum = (v, f = 0) => {
+  const n = Number(v)
+  return Number.isNaN(n)? f : n
+}
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
 /*
-Keys: EXACT match your Redis
+Keys:
 book:{phone}:{date}:{bookId} -> HSET status
 user:{phone} -> HSET balance
 tx:{phone} -> LPUSH tx JSON = Daily Income tab
 book_submission:{txId} -> HSET tx details = Transaction History tab
-lock:submit:{phone}:{date}:{bookId} -> NX lock
 */
 const SUBMIT_LUA = `
 local bookKey = KEYS[1]
 local userKey = KEYS[2]
 local txKey = KEYS[3]
-local lockKey = KEYS[4]
+local ssetKey = KEYS[4] -- book_submission:{txId}
 local booksSetKey = KEYS[5]
-local submissionKey = KEYS[6] -- book_submission:{txId}
 
-local today = ARGV[1]
-local bookIdStr = ARGV[2]
-local earned = tonumber(ARGV[3])
-local txJson = ARGV[4]
-local txId = ARGV[5]
-local booksLimit = tonumber(ARGV[6])
-local nowMs = ARGV[7]
+local action = ARGV[1]
+local today = ARGV[2]
+local bookIdStr = ARGV[3]
+local earned = tonumber(ARGV[4])
+local txJson = ARGV[5]
+local txId = ARGV[6]
+local booksLimit = tonumber(ARGV[7])
+local nowMs = ARGV[8]
+local title = ARGV[9]
+local cover = ARGV[10]
 
--- 1. IDEMPOTENCY
-if redis.call('SET', lockKey, '1', 'NX', 'EX', '30') == nil then
-  return {0, 'Book already submitted today!'}
+-- 1. IDEMPOTENCY: 1 PAY ONLY
+if redis.call('SISMEMBER', txKey.. ':paid', txId) == 1 then
+  return {0, 'ALREADY_PAID'}
 end
 
--- 2. STATUS CHECK
-local status = redis.call('HGET', bookKey, 'status')
-if status == 'submitted' then
-  return {0, 'Book already submitted today!'}
-end
-if status ~= 'read' then
-  redis.call('DEL', lockKey)
-  return {0, 'Click Read first'}
-end
-
--- 3. USER + DAILY LIMIT + RESET
-local user = redis.call('HGETALL', userKey)
-if not user or #user == 0 then
-  redis.call('DEL', lockKey)
-  return {0, 'User profile missing'}
+if action == 'read' then
+  local status = redis.call('HGET', bookKey, 'status')
+  if status == 'submitted' or status == 'read' then
+    return {1, 'READ'}
+  end
+  redis.call('HSET', bookKey, 'status', 'read', 'readAt', nowMs)
+  return {1, 'READ'}
 end
 
-local u = {}
-for i=1, #user, 2 do u[user[i]] = user[i+1] end
+if action == 'submit' then
+  -- 2. STATUS CHECK
+  local status = redis.call('HGET', bookKey, 'status')
+  if status == 'submitted' then
+    return {0, 'ALREADY_PAID'}
+  end
+  if status ~= 'read' then
+    return {0, 'NOT_READ_YET'}
+  end
 
-if u.lastResetDate ~= today then
-  redis.call('HSET', userKey, 'books_read_today', 0, 'dailyIncome', 0, 'lastResetDate', today)
-  u.books_read_today = '0'
-  u.dailyIncome = '0'
+  -- 3. USER + DAILY LIMIT + RESET
+  local user = redis.call('HGETALL', userKey)
+  if #user == 0 then
+    return {0, 'USER_NOT_FOUND'}
+  end
+
+  local u = {}
+  for i=1, #user, 2 do u[user[i]] = user[i+1] end
+
+  if u.lastResetDate ~= today then
+    redis.call('HSET', userKey, 'books_read_today', '0', 'dailyIncome', '0', 'lastResetDate', today)
+    u.books_read_today = '0'
+    u.dailyIncome = '0'
+  end
+
+  if tonumber(u.books_read_today or 0) >= booksLimit then
+    return {0, 'DAILY_LIMIT'}
+  end
+
+  -- 4. ATOMIC PAYOUT
+  redis.call('HSET', bookKey, 'status', 'submitted', 'submittedAt', nowMs, 'reward', earned)
+  redis.call('HINCRBY', userKey, 'availableBalance', earned)
+  redis.call('HINCRBY', userKey, 'balance', earned)
+  redis.call('HINCRBY', userKey, 'dailyIncome', earned)
+  redis.call('HINCRBY', userKey, 'books_read_today', 1)
+  redis.call('LPUSH', txKey, txJson) -- Daily Income tab
+  redis.call('SADD', booksSetKey, bookIdStr)
+  redis.call('SADD', txKey.. ':paid', txId) -- 1-pay lock
+
+  -- 5. WRITE TO book_submission:{txId} HASH = Transaction History tab
+  redis.call('HSET', ssetKey,
+    'id', txId,
+    'type', 'daily_income',
+    'bookId', bookIdStr,
+    'amount', earned,
+    'createdAt', nowMs,
+    'status', 'success',
+    'description', 'Daily income book submission',
+    'phone', u.phone,
+    'title', title,
+    'cover', cover
+  )
+  redis.call('EXPIRE', ssetKey, 2592000) -- 30 days TTL
+
+  return {1, 'OK'}
 end
 
-if tonumber(u.books_read_today or 0) >= booksLimit then
-  redis.call('DEL', lockKey)
-  return {0, "TODAY'S BOOKS ARE DONE"}
-end
-
--- 4. ATOMIC PAYOUT
-redis.call('HSET', bookKey, 'status', 'submitted', 'submittedAt', nowMs)
-redis.call('HINCRBY', userKey, 'availableBalance', earned)
-redis.call('HINCRBY', userKey, 'dailyIncome', earned)
-redis.call('HINCRBY', userKey, 'books_read_today', 1)
-redis.call('LPUSH', txKey, txJson) -- Daily Income tab
-redis.call('SADD', booksSetKey, bookIdStr)
-
--- 5. WRITE TO book_submission:{txId} HASH = Transaction History tab
-local tx = cjson.decode(txJson)
-redis.call('HSET', submissionKey, 
-  'id', tx.id,
-  'type', tx.type,
-  'bookId', tx.bookId,
-  'amount', tx.amount,
-  'createdAt', tx.createdAt,
-  'status', tx.status,
-  'description', tx.description,
-  'phone', tx.phone
-)
-redis.call('EXPIRE', submissionKey, 2592000) -- 30 days TTL
-
-return {1, 'ok'}
+return {0, 'INVALID_ACTION'}
 `
 
 export async function POST(request) {
   try {
-    const { phone, bookId, action } = await request.json()
-    if (!phone ||!bookId) {
-      return NextResponse.json({ error: "Missing phone or Book ID" }, { status: 400 })
-    }
-    if (action!== 'submit') {
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 })
+    const { phone, bookId, action, title, cover } = await request.json()
+    if (!phone ||!bookId ||!action) {
+      return NextResponse.json({ error: "Missing data" }, { status: 400 })
     }
 
     const today = getUgandaDateString()
@@ -110,67 +127,63 @@ export async function POST(request) {
     const bookKey = `book:${phone}:${today}:${bookIdStr}`
     const userKey = `user:${phone}`
     const txKey = `tx:${phone}`
-    const lockKey = `lock:submit:${phone}:${today}:${bookIdStr}`
     const booksSetKey = `books:${phone}:${today}`
-    
-    const txId = `${phone}:${today}:${bookIdStr}:${Date.now()}` // 0753520252:2026-06-28:1513:178...
-    const submissionKey = `book_submission:${txId}` // <- This is what your app reads
+    const txId = `${phone}:${today}:${bookIdStr}:${action}`
+    const ssetKey = `book_submission:${txId}`
 
     const user = await redis.hgetall(userKey)
     if (!user?.phone) {
       return NextResponse.json({ error: "User profile missing" }, { status: 404 })
     }
 
-    const vip = Number(user.vip || 0)
+    const vip = toNum(user.vip)
     const vipConfig = VIPS[vip]
     if (!vipConfig) return NextResponse.json({ error: "Invalid VIP level" }, { status: 400 })
 
-    const paymentAmount = Number(vipConfig.perBook)
+    const paymentAmount = vipConfig.perBook
+    const nowMs = String(Date.now())
 
     const tx = {
       id: txId,
       type: 'daily_income',
       bookId: bookIdStr,
-      amount: String(paymentAmount),
-      createdAt: String(Date.now()),
+      amount: paymentAmount,
+      createdAt: nowMs,
       status: 'success',
-      description: `Daily income book submission (VIP ${vip})`,
+      description: `Daily income book submission VIP ${vip}`,
       phone: phone
     }
 
     const res = await redis.eval(
       SUBMIT_LUA,
-      [bookKey, userKey, txKey, lockKey, booksSetKey, submissionKey], // <- 6 keys now
-      [
-        today,
-        bookIdStr,
-        String(paymentAmount),
-        JSON.stringify(tx),
-        txId,
-        String(vipConfig.books),
-        String(Date.now())
-      ]
+      [bookKey, userKey, txKey, ssetKey, booksSetKey],
+      [action, today, bookIdStr, String(paymentAmount), JSON.stringify(tx), txId, String(vipConfig.books), nowMs, title || '', cover || '']
     )
 
     if (res[0] === 0) {
-      return NextResponse.json({ error: res[1] }, { status: 409, headers: { 'Cache-Control': 'no-store' } })
+      const msg = res[1]
+      if (msg === 'ALREADY_PAID') return NextResponse.json({ error: 'Already submitted' }, { status: 409 })
+      if (msg === 'NOT_READ_YET') return NextResponse.json({ error: 'Click Read first' }, { status: 400 })
+      if (msg === 'DAILY_LIMIT') return NextResponse.json({ error: "TODAY'S BOOKS ARE DONE" }, { status: 400 })
+      return NextResponse.json({ error: msg }, { status: 400 })
     }
 
     const updatedUser = await redis.hgetall(userKey)
     return NextResponse.json({
       success: true,
       earned: paymentAmount,
-      txId, // <- return it so frontend can link
+      txId,
       user: {
       ...updatedUser,
-        availableBalance: Number(updatedUser.availableBalance || 0),
-        dailyIncome: Number(updatedUser.dailyIncome || 0),
-        books_read_today: Number(updatedUser.books_read_today || 0),
+        availableBalance: toNum(updatedUser.availableBalance),
+        dailyIncome: toNum(updatedUser.dailyIncome),
+        books_read_today: toNum(updatedUser.books_read_today),
+        vip: toNum(updatedUser.vip)
       }
-    }, { status: 200, headers: { 'Cache-Control': 'no-store' } })
+    }, { headers: { 'Cache-Control': 'no-store' } })
 
   } catch (error) {
     console.error("Submit error:", error)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
   }
 }

@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
-import { VIPS } from '@/app/config/vips' // <- FIX: No /api import
+import { VIPS } from '@/app/config/vips' // <- No /api import = no fs error
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -14,7 +14,7 @@ export default function BooksPage() {
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   
-  const lockRef = useRef(new Set()) // <- Instant lock, no state lag
+  const lockRef = useRef(new Set()) // <- 0ms lock, no re-render lag
 
   const fetchBooks = async (phone, silent = false) => {
     try {
@@ -51,21 +51,19 @@ export default function BooksPage() {
     if (book.status !== 'pending') return
     if (lockRef.current.has(`r-${book.bookId}`)) return
 
-    lockRef.current.add(`r-${book.bookId}`) // <- Lock instantly
-    // 1. GREY + MOVE INSTANTLY
+    lockRef.current.add(`r-${book.bookId}`)
+    // 1. INSTANT UI
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     setReadingBook(book)
     setTimer(10)
 
-    // Fire and forget API
     fetch('/api/books/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
+      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover })
     }).catch(err => {
       console.error('Read error:', err)
-      // Silent rollback if fail
-      setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b))
+      setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)) // rollback only on fail
     }).finally(() => {
       lockRef.current.delete(`r-${book.bookId}`)
     })
@@ -75,10 +73,10 @@ export default function BooksPage() {
     if (book.status !== 'read') return alert('Click Read first')
     if (lockRef.current.has(`s-${book.bookId}`)) return
 
-    lockRef.current.add(`s-${book.bookId}`) // <- Lock instantly
+    lockRef.current.add(`s-${book.bookId}`)
     const earnedAmount = Number(VIPS[user.vip]?.perBook || 0)
 
-    // 2. GREY + MOVE TO COMPLETED + BALANCE + INSTANTLY. No submitting state.
+    // 2. INSTANT UI: Grey + Completed + Balance+
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'submitted'} : b))
     setUser(prev => {
       const newUser = {...prev, availableBalance: Number(prev.availableBalance || 0) + earnedAmount}
@@ -86,21 +84,23 @@ export default function BooksPage() {
       return newUser
     })
 
-    // Fire and forget API
     fetch('/api/books/submit', { 
       method: 'POST', 
       headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' })
+      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover })
     }).then(async res => {
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || data.message)
-      // Sync with server to fix any rounding diff
+      if (!res.ok) {
+        if (res.status === 409 && data.error === 'Already submitted') return // <- Don't rollback if already paid server-side
+        throw new Error(data.error || 'Submit failed')
+      }
+      // Sync server numbers to avoid drift
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
     }).catch(err => {
       console.error('Submit error:', err)
-      alert(err.message) // Only alert on fail
-      // Rollback if API fails
+      alert(err.message)
+      // Rollback only if real error
       setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
       setUser(prev => {
         const newUser = {...prev, availableBalance: Number(prev.availableBalance || 0) - earnedAmount}
@@ -165,7 +165,7 @@ export default function BooksPage() {
                           disabled={isRead} 
                           style={{ 
                             flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-                            background: isRead ? '#9ca3af' : '#00BFFF', // <- GREY when hit
+                            background: isRead ? '#9ca3af' : '#00BFFF', // <- GREY instantly
                             color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' 
                           }}
                         >
@@ -176,7 +176,7 @@ export default function BooksPage() {
                           disabled={!isRead} 
                           style={{ 
                             flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-                            background: isRead ? '#00BFFF' : '#9ca3af', // <- GREY when hit/disabled
+                            background: isRead ? '#00BFFF' : '#9ca3af', // <- GREY instantly
                             color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer' 
                           }}
                         >
