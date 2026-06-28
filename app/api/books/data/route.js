@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
-import books from '../../data/books.json'; // <-- same path
 import { Redis } from '@upstash/redis';
+import fs from 'fs'; // <-- NEW
+import path from 'path'; // <-- NEW
 
 const redis = Redis.fromEnv();
+
+// DELETE THE IMPORT ABOVE. USE THIS INSTEAD:
+const books = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'app/data/books.json'), 'utf8'));
 
 export async function POST(request) {
   try {
