@@ -50,7 +50,7 @@ async function pushTransaction(phone, tx) {
 // GET - Load user's ongoing and expired shares
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url)
+    const { searchParams } = request.nextUrl // <-- FIXED
     let phone = searchParams.get('phone')
 
     if (!phone) return NextResponse.json({ success: false, message: 'Phone required' }, { status: 400 })

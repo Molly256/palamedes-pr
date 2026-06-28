@@ -1,10 +1,12 @@
+import { NextResponse } from 'next/server'
+
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url)
+    const { searchParams } = request.nextUrl // <-- FIXED
     const type = searchParams.get('type')
 
     if (type === 'about') {
-      return Response.json({
+      return NextResponse.json({ // <-- Use NextResponse not Response
         success: true,
         data: {
           title: 'About Palamedes',
@@ -15,7 +17,7 @@ export async function GET(request) {
     }
 
     if (type === 'manager') {
-      return Response.json({
+      return NextResponse.json({ // <-- Use NextResponse not Response
         success: true,
         data: {
           managers: [
@@ -27,8 +29,8 @@ export async function GET(request) {
       })
     }
 
-    return Response.json({ success: false, message: 'Invalid type' })
+    return NextResponse.json({ success: false, message: 'Invalid type' }) // <-- Use NextResponse
   } catch (err) {
-    return Response.json({ success: false, message: err.message }, { status: 500 })
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 }) // <-- Use NextResponse
   }
 }
