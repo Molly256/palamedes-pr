@@ -77,23 +77,36 @@ export async function POST(req) {
         return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 })
       }
       
-      await redis.hset(`tx:${id}`, { status, updatedAt: Date.now() })
+      const userPhone = tx.phone
+      const updatedAt = String(Date.now())
+
+      // 1. Update admin hash copy + remove from pending queue
+      await redis.hset(`tx:${id}`, { status, updatedAt })
       await redis.lrem('pending_tx', 0, id)
       
+      // 2. FIX: Update the JSON inside user's tx:phone list too
+      // This makes the user see 'Success' green instead of 'Pending' grey
+      const listKey = `tx:${userPhone}`
+      const items = await redis.lrange(listKey, 0, 199)
+      const idx = items.findIndex(s => { try { return JSON.parse(s).id === id } catch { return false } })
+
+      if (idx !== -1) {
+        const txObj = JSON.parse(items[idx])
+        txObj.status = status
+        txObj.updatedAt = updatedAt
+        await redis.lset(listKey, idx, JSON.stringify(txObj))
+      }
+
+      // 3. Credit balance if deposit approved
       if (status === 'success' && tx.type === 'deposit') {
-        const userKey = `user:${tx.phone}`
+        const userKey = `user:${userPhone}`
         const user = await redis.hgetall(userKey)
-        
         const amount = Number(tx.amount || 0)
         const currentBalance = Number(user.balance || 0)
-        const currentAvail = Number(user.availableBalance || 0)
-        
-        const newBalance = currentBalance + amount
-        const newAvail = currentAvail + amount
-        
+        const currentAvail = Number(user.availableBalance || currentBalance)
         await redis.hset(userKey, { 
-          balance: newBalance,
-          availableBalance: newAvail 
+          balance: currentBalance + amount,
+          availableBalance: currentAvail + amount 
         })
       }
       
