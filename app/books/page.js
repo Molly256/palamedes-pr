@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
-import { VIPS } from '@/app/config/vips' // <- No /api import = no fs error
+import { VIPS } from '@/app/config/vips'
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -14,7 +14,7 @@ export default function BooksPage() {
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   
-  const lockRef = useRef(new Set()) // <- 0ms lock, no re-render lag
+  const lockRef = useRef(new Set()) // 0ms lock, no re-render lag
 
   const fetchBooks = async (phone, silent = false) => {
     try {
@@ -52,14 +52,14 @@ export default function BooksPage() {
     if (lockRef.current.has(`r-${book.bookId}`)) return
 
     lockRef.current.add(`r-${book.bookId}`)
-    // 1. INSTANT UI
+    // 1. INSTANT UI only for button
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     setReadingBook(book)
     setTimer(10)
 
     fetch('/api/books/submit', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover })
     }).catch(err => {
       console.error('Read error:', err)
@@ -74,42 +74,43 @@ export default function BooksPage() {
     if (lockRef.current.has(`s-${book.bookId}`)) return
 
     lockRef.current.add(`s-${book.bookId}`)
-    const earnedAmount = Number(VIPS[user.vip]?.perBook || 0)
-
-    // 2. INSTANT UI: Grey + Completed + Balance+
+    
+    // 1. INSTANT UI: Only grey the button. DO NOT add balance here.
     setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'submitted'} : b))
-    setUser(prev => {
-      const newUser = {...prev, availableBalance: Number(prev.availableBalance || 0) + earnedAmount}
-      localStorage.setItem('palamedes_user', JSON.stringify(newUser))
-      return newUser
-    })
 
-    fetch('/api/books/submit', { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover })
-    }).then(async res => {
+    try {
+      const res = await fetch('/api/books/submit', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover })
+      })
+      
       const data = await res.json()
       if (!res.ok) {
-        if (res.status === 409 && data.error === 'Already submitted') return // <- Don't rollback if already paid server-side
+        if (res.status === 409) { // Already submitted server-side. Sync UI to server.
+          const u = await fetch(`/api/books/data?phone=${user.phone}&date=${getUgandaDateString()}`, { cache: 'no-store' }).then(r=>r.json())
+          setUser(u.user)
+          localStorage.setItem('palamedes_user', JSON.stringify(u.user))
+          setBooks(u.books || [])
+          return
+        }
         throw new Error(data.error || 'Submit failed')
       }
-      // Sync server numbers to avoid drift
+      
+      // 2. ONLY TRUTH: Set user + books from server response only
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-    }).catch(err => {
+      // Refetch books to confirm status = submitted
+      await fetchBooks(user.phone, true)
+
+    } catch(err) {
       console.error('Submit error:', err)
       alert(err.message)
-      // Rollback only if real error
+      // Rollback button only, no balance touch
       setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
-      setUser(prev => {
-        const newUser = {...prev, availableBalance: Number(prev.availableBalance || 0) - earnedAmount}
-        localStorage.setItem('palamedes_user', JSON.stringify(newUser))
-        return newUser
-      })
-    }).finally(() => {
+    } finally {
       lockRef.current.delete(`s-${book.bookId}`)
-    })
+    }
   }
 
   if (!user) return null
@@ -165,7 +166,7 @@ export default function BooksPage() {
                           disabled={isRead} 
                           style={{ 
                             flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-                            background: isRead ? '#9ca3af' : '#00BFFF', // <- GREY instantly
+                            background: isRead ? '#9ca3af' : '#00BFFF',
                             color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' 
                           }}
                         >
@@ -176,7 +177,7 @@ export default function BooksPage() {
                           disabled={!isRead} 
                           style={{ 
                             flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
-                            background: isRead ? '#00BFFF' : '#9ca3af', // <- GREY instantly
+                            background: isRead ? '#00BFFF' : '#9ca3af',
                             color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer' 
                           }}
                         >
