@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const redis = Redis.fromEnv()
-const COVERS_DIR = path.join(process.cwd(), 'app', 'covers') // <-- app/covers/
+const COVERS_DIR = path.join(process.cwd(), 'app', 'books', 'covers') // FIX 1: Added books/
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -24,7 +24,6 @@ export async function GET(req) {
       return NextResponse.json({ success: true, covers: [] })
     }
 
-    // 1. Read book IDs from Redis: books:phone:YYYY-MM-DD SET
     const setKey = `books:${phone}:${date}`
     const bookIds = await redis.smembers(setKey) // ['45130', '45304', '1342', '43']
     
@@ -32,14 +31,13 @@ export async function GET(req) {
       return NextResponse.json({ success: true, covers: [] })
     }
 
-    // 2. Check app/covers/ for exact files: 45130.jpg, 45304.jpg etc
     const covers = [];
     for (const id of bookIds.slice(0, 4)) {
       const filePath = path.join(COVERS_DIR, `${id}.jpg`);
-      if (fs.existsSync(filePath)) { // Only return if file actually exists
+      if (fs.existsSync(filePath)) { // Now checks app/books/covers/1342.jpg
         covers.push({ 
           id: String(id), 
-          cover: `/covers/${id}.jpg` // <-- public URL = app/covers/
+          cover: `/books/covers/${id}.jpg` // FIX 2: URL matches folder
         })
       }
     }
