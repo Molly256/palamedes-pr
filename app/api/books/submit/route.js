@@ -3,13 +3,13 @@ export const dynamic = 'force-dynamic'
 
 import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
-import { VIPS } from '@/app/config/vips' // No fs here
+import { VIPS } from '@/app/config/vips'
 
 const redis = Redis.fromEnv()
 
 const toNum = (v, f = 0) => {
   const n = Number(v)
-  return Number.isNaN(n)? f : n
+  return Number.isNaN(n) ? f : n
 }
 
 const getUgandaDateString = () => {
@@ -109,14 +109,14 @@ return {0, 'INVALID_ACTION'}
 export async function POST(request) {
   try {
     const { phone, bookId, action, title, cover } = await request.json()
-    if (!phone ||!bookId ||!action) {
+    if (!phone || !bookId || !action) {
       return NextResponse.json({ error: "Missing data" }, { status: 400 })
     }
 
     const today = getUgandaDateString()
     const bookIdStr = String(bookId)
     const txId = `${phone}:${today}:${bookIdStr}:${action}`
-    const payLockKey = `paylock:${txId}` -- NEW: This stops double pay
+    const payLockKey = `paylock:${txId}` // FIXED: // not --
 
     const user = await redis.hgetall(`user:${phone}`)
     if (!user?.phone) {
@@ -148,7 +148,7 @@ export async function POST(request) {
         `tx:${phone}`,
         `book_submission:${txId}`,
         `books:${phone}:${today}`,
-        payLockKey -- 6th key = atomic lock
+        payLockKey // FIXED: // not --
       ],
       [
         action, today, bookIdStr, String(paymentAmount), tx, txId,
@@ -170,7 +170,7 @@ export async function POST(request) {
       earned: paymentAmount,
       txId,
       user: {
-       ...updatedUser,
+        ...updatedUser,
         availableBalance: toNum(updatedUser.availableBalance),
         dailyIncome: toNum(updatedUser.dailyIncome),
         books_read_today: toNum(updatedUser.books_read_today),
