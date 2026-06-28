@@ -26,16 +26,17 @@ export default function BooksPage() {
       const coversJson = await coversRes.json(); 
       const dataJson = await dataRes.json();     
 
-      if (coversJson.success && Array.isArray(dataJson)) {
+      // API returns object: {success: true, books: [...]}
+      if (coversJson.success && dataJson.success) {
         const idSet = new Set(coversJson.covers.map(c => String(c.id)));
-        const mergedBooks = dataJson
+        const mergedBooks = dataJson.books
           .filter(b => idSet.has(String(b.id)))
           .map(b => ({
             bookId: String(b.id),
             title: b.title,
             author: b.author,
-            preview: b.preview || 'No preview',
-            cover: `/books/covers/${String(b.id)}.jpg`, 
+            preview: b.preview_page || 'No preview', // from books.json
+            cover: `/books/covers/${String(b.id)}.jpg`, // public/books/covers/
             status: 'pending' 
           }));
         

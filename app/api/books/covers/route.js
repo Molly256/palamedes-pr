@@ -10,14 +10,16 @@ function getUgandaDateString() {
 }
 
 export async function GET(req) {
-  const { searchParams } = req.nextUrl 
+  const { searchParams } = new URL(req.url)
   const phone = searchParams.get('phone')
   const date = searchParams.get('date') || getUgandaDateString()
   
   if (!phone) return NextResponse.json({ success: true, bookIds: [] })
 
-  const setKey = `books:${phone}:${date}`
-  const bookIds = await redis.smembers(setKey) // ['45130', '45304', '1342', '43']
+  // This is the only Redis read. Whatever is in the set comes out.
+  const bookIds = await redis.smembers(`books:${phone}:${date}`) 
   
-  return NextResponse.json({ success: true, bookIds }) // <--- Just IDs. Nothing else
+  return NextResponse.json({ success: true, bookIds }, { 
+    headers: { 'Cache-Control': 'no-store' } 
+  })
 }
