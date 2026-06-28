@@ -1,40 +1,43 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Login() {
   const router = useRouter()
+  const lockRef = useRef(false) // <- Instant lock, no state lag
+
   const [form, setForm] = useState({ phone: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
 
   const handlePhoneChange = (val) => {
     const cleaned = val.replace(/\D/g, '').slice(0, 10)
-    // FIX: functional update so we never use stale form
     setForm(prev => ({ ...prev, phone: cleaned }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+    if (lockRef.current) return
+    lockRef.current = true
+
     if (!/^07\d{8}$/.test(form.phone)) {
       alert('Phone must start with 07 and be 10 digits')
+      lockRef.current = false
       return
     }
     if (!form.password) {
       alert('Enter your password')
+      lockRef.current = false
       return
     }
 
-    setLoading(true)
-    
     try {
+      // 1. AWAIT REAL REDIS DATA = No fake login
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           action: 'login', 
-          phone: form.phone, // <- Now always 07XXXXXXXX
+          phone: form.phone,
           password: form.password 
         })
       })
@@ -43,11 +46,13 @@ export default function Login() {
 
       if (!res.ok) {
         alert(data.error)
+        lockRef.current = false
         return
       }
 
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
 
+      // 2. GO INSTANTLY after we have real data
       if (data.user.phone === '0753520252') {
         router.push('/admin')
       } else {
@@ -56,46 +61,58 @@ export default function Login() {
       
     } catch (err) {
       alert('Something went wrong. Try again.')
-    } finally {
-      setLoading(false)
+      lockRef.current = false
     }
   }
 
+  const inputStyle = {
+    width: '100%',
+    height: '44px', // <- Same height as Register
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    padding: '0 12px',
+    fontSize: '16px',
+    color: '#000',
+    backgroundColor: '#fff',
+    outline: 'none',
+    boxSizing: 'border-box'
+  }
+
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-center mb-6 text-black">Login</h1>
+    <div style={{ minHeight: '100vh', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+      <div style={{ width: '100%', maxWidth: '380px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: '900', textAlign: 'center', marginBottom: '24px', color: '#000' }}>Login</h1>
         
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label className="text-sm text-black block mb-1">Phone Number</label>
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Phone Number</label>
             <input
               type="tel"
               placeholder="07XXXXXXXX"
               value={form.phone}
               onChange={(e) => handlePhoneChange(e.target.value)}
               maxLength={10}
-              className="w-full border-gray-300 rounded px-3 py-2 text-black bg-white focus:outline-none focus:border-blue-500"
+              style={inputStyle}
               required
             />
           </div>
 
           <div>
-            <label className="text-sm text-black block mb-1">Password</label>
-            <div className="relative">
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Password</label>
+            <div style={{ position: 'relative' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Enter password"
                 value={form.password}
-                onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))} // <- FIXED
+                onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
                 maxLength={6}
-                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-black bg-white focus:outline-none focus:border-blue-500"
+                style={{...inputStyle, paddingRight: '44px'}}
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xl"
+                style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 👁️
               </button>
@@ -104,16 +121,25 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-2 rounded font-medium disabled:opacity-50"
-            style={{ backgroundColor: '#87CEEB', color: '#333' }}
+            style={{ 
+              width: '100%',
+              height: '44px', // <- Same height
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: '#87CEEB', // <- Hot skyblue
+              color: '#000', // <- Black text
+              fontWeight: '500', // <- Light weight
+              fontSize: '16px',
+              cursor: 'pointer',
+              marginTop: '4px'
+            }}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            Login
           </button>
         </form>
         
-        <p className="text-center text-sm text-black mt-4">
-          Don't have an account? <a href="/register" className="text-blue-600 underline">Register</a>
+        <p style={{ textAlign: 'center', fontSize: '15px', color: '#000', marginTop: '16px' }}>
+          Don't have an account? <a href="/register" style={{ color: '#00BFFF', textDecoration: 'underline', fontWeight: '700' }}>Register</a>
         </p>
       </div>
     </div>

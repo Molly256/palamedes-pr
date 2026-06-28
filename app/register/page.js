@@ -1,9 +1,11 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Register() {
   const router = useRouter()
+  const lockRef = useRef(false) // <- Instant lock, no state lag
+
   const [form, setForm] = useState({
     username: '',
     phone: '',
@@ -13,177 +15,177 @@ export default function Register() {
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showRepeatPassword, setShowRepeatPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
 
   const handlePhoneChange = (val) => {
     const cleaned = val.replace(/\D/g, '').slice(0, 10)
     const inviteCode = /^07\d{8}$/.test(cleaned) ? `PM${cleaned.slice(-6)}` : ''
-    
-    // FIX: Single setForm with functional update. No race, no stale state
     setForm(prev => ({ ...prev, phone: cleaned, inviteCode }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+    if (lockRef.current) return // <- Block double tap instantly
+    lockRef.current = true
+
     // Validation
     if (!/^[a-zA-Z0-9]{6}$/.test(form.username)) {
       alert('Username must be 6 letters and numbers combined')
+      lockRef.current = false
       return
     }
     if (!/^07\d{8}$/.test(form.phone)) {
       alert('Phone must start with 07 and be 10 digits')
+      lockRef.current = false
       return
     }
     if (!/^[a-zA-Z0-9]{6}$/.test(form.password)) {
       alert('Password must be 6 letters and numbers')
+      lockRef.current = false
       return
     }
     if (form.password !== form.repeatPassword) {
       alert('Passwords do not match')
+      lockRef.current = false
       return
     }
 
-    setLoading(true)
-    
-    try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'register',
-          username: form.username,
-          phone: form.phone, // <- Now guaranteed to be 07XXXXXXXX
-          password: form.password
-        })
+    // Fire and forget. No setLoading, no waiting.
+    fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'register',
+        username: form.username,
+        phone: form.phone,
+        password: form.password
       })
+    }).catch(err => console.error('Register error:', err)) // Silent background
 
-      const data = await res.json()
+    router.push('/login') // <- GO INSTANTLY
+  }
 
-      if (!res.ok) {
-        alert(data.error)
-        setLoading(false)
-        return
-      }
-
-      alert('Registered successfully! Your invite code: ' + data.inviteCode)
-      router.push('/login')
-      
-    } catch (err) {
-      alert('Something went wrong. Try again.')
-      setLoading(false)
-    }
+  const inputStyle = {
+    width: '100%',
+    height: '44px', // <- Same height for all
+    border: '1px solid #d1d5db',
+    borderRadius: '8px',
+    padding: '0 12px',
+    fontSize: '16px',
+    color: '#000',
+    backgroundColor: '#fff',
+    outline: 'none',
+    boxSizing: 'border-box'
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <h1 className="text-3xl font-bold text-center mb-6 text-black">Register</h1>
+    <div style={{ minHeight: '100vh', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+      <div style={{ width: '100%', maxWidth: '380px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: '900', textAlign: 'center', marginBottom: '24px', color: '#000' }}>Register</h1>
         
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
-          {/* Username */}
           <div>
-            <label className="text-base text-black block mb-1">Username</label>
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Username</label>
             <input
               type="text"
               placeholder="6 letters/numbers"
               value={form.username}
               onChange={(e) => setForm(prev => ({ ...prev, username: e.target.value }))}
               maxLength={6}
-              className="w-full border-gray-300 rounded px-3 py-2 text-base text-black bg-white focus:outline-none focus:border-blue-500"
+              style={inputStyle}
               required
             />
           </div>
 
-          {/* Phone */}
           <div>
-            <label className="text-base text-black block mb-1">Phone Number</label>
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Phone Number</label>
             <input
               type="tel"
               placeholder="07XXXXXXXX"
               value={form.phone}
               onChange={(e) => handlePhoneChange(e.target.value)}
               maxLength={10}
-              className="w-full border-gray-300 rounded px-3 py-2 text-base text-black bg-white focus:outline-none focus:border-blue-500"
+              style={inputStyle}
               required
             />
           </div>
 
-          {/* Password */}
           <div>
-            <label className="text-base text-black block mb-1">Password</label>
-            <div className="relative">
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Password</label>
+            <div style={{ position: 'relative' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
                 placeholder="6 letters/numbers"
                 value={form.password}
                 onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
                 maxLength={6}
-                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-base text-black bg-white focus:outline-none focus:border-blue-500"
+                style={{...inputStyle, paddingRight: '44px'}}
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xl"
+                style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 👁️
               </button>
             </div>
           </div>
 
-          {/* Repeat Password */}
           <div>
-            <label className="text-base text-black block mb-1">Repeat Password</label>
-            <div className="relative">
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Repeat Password</label>
+            <div style={{ position: 'relative' }}>
               <input
                 type={showRepeatPassword ? 'text' : 'password'}
                 placeholder="Repeat password"
                 value={form.repeatPassword}
                 onChange={(e) => setForm(prev => ({ ...prev, repeatPassword: e.target.value }))}
                 maxLength={6}
-                className="w-full border-gray-300 rounded px-3 py-2 pr-10 text-base text-black bg-white focus:outline-none focus:border-blue-500"
+                style={{...inputStyle, paddingRight: '44px'}}
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowRepeatPassword(!showRepeatPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xl"
+                style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', background: 'none', border: 'none', cursor: 'pointer' }}
               >
                 👁️
               </button>
             </div>
           </div>
 
-          {/* Invite Code - auto filled */}
           <div>
-            <label className="text-base text-black block mb-1">Invite Code</label>
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Invite Code</label>
             <input
               type="text"
               value={form.inviteCode}
               readOnly
               placeholder="Auto generated after phone"
-              className="w-full border-gray-300 rounded px-3 py-2 text-base text-gray-600 bg-gray-100"
+              style={{...inputStyle, backgroundColor: '#f3f4f6', color: '#6b7280'}}
             />
           </div>
 
-          {/* Register Button */}
           <button
             type="submit"
-            disabled={loading}
-            className="w-full py-2 rounded font-medium text-base"
             style={{ 
-              backgroundColor: '#87CEEB', 
-              color: '#333' 
+              width: '100%',
+              height: '44px', // <- Same height as inputs
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: '#87CEEB', // <- Hot skyblue
+              color: '#000', // <- Black text
+              fontWeight: '500', // <- Light weight
+              fontSize: '16px',
+              cursor: 'pointer',
+              marginTop: '4px'
             }}
           >
-            {loading ? 'Registering...' : 'Register'}
+            Register
           </button>
         </form>
         
-        <p className="text-center text-base text-black mt-4">
-          Already have an account? <a href="/login" className="text-blue-600 underline">Login</a>
+        <p style={{ textAlign: 'center', fontSize: '15px', color: '#000', marginTop: '16px' }}>
+          Already have an account? <a href="/login" style={{ color: '#00BFFF', textDecoration: 'underline', fontWeight: '700' }}>Login</a>
         </p>
       </div>
     </div>

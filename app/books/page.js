@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
+import { VIPS } from '@/app/api/viplevels/route' // <- For instant balance
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -12,17 +13,17 @@ export default function BooksPage() {
   const [books, setBooks] = useState([])
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
-  const [submittingIds, setSubmittingIds] = useState(new Set()) // <- Frontend lock only
-  const pollIntervalRef = useRef(null)
+  
+  const lockRef = useRef(new Set()) // <- 1 ref for both Read + Submit. Instant lock.
 
-  const fetchBooks = async (phone) => {
+  const fetchBooks = async (phone, silent = false) => {
     try {
       const today = getUgandaDateString()
       const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' })
       const data = await res.json()
       if (data.success) {
         setBooks(data.books || [])
-        if (data.user) {
+        if (data.user && !silent) {
           setUser(data.user)
           localStorage.setItem('palamedes_user', JSON.stringify(data.user))
         }
@@ -37,14 +38,6 @@ export default function BooksPage() {
     if (!userData.phone) return
     setUser(userData)
     fetchBooks(userData.phone)
-
-    pollIntervalRef.current = setInterval(() => fetchBooks(userData.phone), 10000)
-    const handleVisibility = () => { if (document.visibilityState === 'visible') fetchBooks(userData.phone) }
-    document.addEventListener('visibilitychange', handleVisibility)
-    return () => {
-      clearInterval(pollIntervalRef.current)
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
   }, [])
 
   useEffect(() => {
@@ -56,46 +49,67 @@ export default function BooksPage() {
 
   const handleRead = async (book) => {
     if (book.status !== 'pending') return
+    if (lockRef.current.has(`r-${book.bookId}`)) return
+
+    lockRef.current.add(`r-${book.bookId}`) // <- Lock instantly
+    // 1. GREY + MOVE INSTANTLY
+    setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     setReadingBook(book)
     setTimer(10)
-    await fetch('/api/books/submit', {
+
+    // Fire and forget API
+    fetch('/api/books/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
+    }).catch(err => {
+      console.error('Read error:', err)
+      // Silent rollback if fail
+      setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b))
+    }).finally(() => {
+      lockRef.current.delete(`r-${book.bookId}`)
     })
-    await fetchBooks(user.phone)
   }
 
   const handleSubmit = async (book) => {
     if (book.status !== 'read') return alert('Click Read first')
-    if (submittingIds.has(book.bookId)) return // <- Block 2nd tap instantly
+    if (lockRef.current.has(`s-${book.bookId}`)) return
 
-    setSubmittingIds(prev => new Set(prev).add(book.bookId)) // <- Lock UI immediately
+    lockRef.current.add(`s-${book.bookId}`) // <- Lock instantly
+    const earnedAmount = Number(VIPS[user.vip]?.perBook || 0)
 
-    try {
-      const res = await fetch('/api/books/submit', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) // <- NO KEY
-      })
-      
+    // 2. GREY + MOVE TO COMPLETED + BALANCE + INSTANTLY. No submitting state.
+    setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'submitted'} : b))
+    setUser(prev => {
+      const newUser = {...prev, availableBalance: Number(prev.availableBalance || 0) + earnedAmount}
+      localStorage.setItem('palamedes_user', JSON.stringify(newUser))
+      return newUser
+    })
+
+    // Fire and forget API
+    fetch('/api/books/submit', { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' })
+    }).then(async res => {
       const data = await res.json()
-      if (!res.ok) throw new Error(data.message || `Server ${res.status}`)
-      
+      if (!res.ok) throw new Error(data.error || data.message)
+      // Sync with server to fix any rounding diff
       setUser(data.user)
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      await fetchBooks(user.phone)
-      alert(`+${data.earned.toLocaleString()}shs added`)
-    } catch (err) {
+    }).catch(err => {
       console.error('Submit error:', err)
-      alert(err.message)
-    } finally {
-      setSubmittingIds(prev => { // <- Unlock only after finish/error
-        const next = new Set(prev)
-        next.delete(book.bookId)
-        return next
+      alert(err.message) // Only alert on fail
+      // Rollback if API fails
+      setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
+      setUser(prev => {
+        const newUser = {...prev, availableBalance: Number(prev.availableBalance || 0) - earnedAmount}
+        localStorage.setItem('palamedes_user', JSON.stringify(newUser))
+        return newUser
       })
-    }
+    }).finally(() => {
+      lockRef.current.delete(`s-${book.bookId}`)
+    })
   }
 
   if (!user) return null
@@ -120,7 +134,7 @@ export default function BooksPage() {
         <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none', paddingTop: '8px' }}>← Back</Link>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
           <AvatarWithBadge username={user.username} vipLevel={vip} size={60} />
-          <p style={{ margin: '8px 0 0', fontWeight: '900', color: '#000', fontSize: '15px' }}>Balance: {user.availableBalance?.toLocaleString() || 0} shs</p>
+          <p style={{ margin: '8px 0 0', fontWeight: '900', color: '#000', fontSize: '15px' }}>Balance: {Number(user.availableBalance || 0).toLocaleString()} shs</p>
           <Link href="/transactions" style={{ margin: '4px 0 0', fontSize: '12px', color: '#00BFFF', fontWeight: '700', textDecoration: 'none' }}>Transaction History</Link>
         </div>
       </div>
@@ -132,14 +146,13 @@ export default function BooksPage() {
           <Link href="/viplevels"><button style={{ padding: '14px 40px', borderRadius: '50px', border: 'none', background: '#00BFFF', color: '#000', fontWeight: '700', fontSize: '16px', cursor: 'pointer' }}>Buy VIP Level</button></Link>
         </div>
       ) : books.length === 0 ? (
-        <div style={{ textAlign: 'center', marginTop: 20, color: '#666' }}><p style={{ fontSize: '16px', fontWeight: '700', marginBottom: 8, color: '#000' }}>No books for today yet</p><p style={{ fontSize: '12px' }}>Auto-refreshing...</p></div>
+        <div style={{ textAlign: 'center', marginTop: 20, color: '#666' }}><p style={{ fontSize: '16px', fontWeight: '700', marginBottom: 8, color: '#000' }}>No books for today yet</p></div>
       ) : (
         <>
           {pendingBooks.length > 0 && (
             <div style={{ display: 'grid', gap: '20px', marginBottom: '40px' }}>
               {pendingBooks.map(book => {
                 const isRead = book.status === 'read'
-                const isSubmitting = submittingIds.has(book.bookId)
                 return (
                   <div key={book.bookId} style={{ background: '#f5f5f5', borderRadius: '12px', padding: '15px', display: 'flex', gap: '15px', alignItems: 'center' }}>
                     <img src={book.cover} alt={book.title} style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }} />
@@ -147,13 +160,27 @@ export default function BooksPage() {
                       <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
                       <p style={{ margin: '4px 0 10px', fontSize: '13px', color: '#666' }}>{book.author}</p>
                       <div style={{ display: 'flex', gap: '10px' }}>
-                        <button onClick={() => handleRead(book)} disabled={isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#10b981' : '#00BFFF', color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' }}>{isRead ? '✓ Read' : 'Read'}</button>
+                        <button 
+                          onClick={() => handleRead(book)} 
+                          disabled={isRead} 
+                          style={{ 
+                            flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
+                            background: isRead ? '#9ca3af' : '#00BFFF', // <- GREY when hit
+                            color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' 
+                          }}
+                        >
+                          {isRead ? '✓ Read' : 'Read'}
+                        </button>
                         <button 
                           onClick={() => handleSubmit(book)} 
-                          disabled={!isRead || isSubmitting}
-                          style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#00BFFF', color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.6 : 1 }}
+                          disabled={!isRead} 
+                          style={{ 
+                            flex: 1, padding: '10px', borderRadius: '8px', border: 'none', 
+                            background: isRead ? '#00BFFF' : '#9ca3af', // <- GREY when hit/disabled
+                            color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer' 
+                          }}
                         >
-                          {isSubmitting ? 'Submitting...' : 'Submit'} 
+                          Submit 
                         </button>
                       </div>
                     </div>

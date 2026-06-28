@@ -11,23 +11,30 @@ function getUgandaDateString() {
 }
 
 /*
-ATOMIC: All checks + payout in 1 Redis call. Kills race conditions on Vercel.
-Return: [1, 'ok'] = success | [0, 'reason'] = fail
+Keys: EXACT match your Redis
+book:{phone}:{date}:{bookId} -> HSET status
+user:{phone} -> HSET balance
+tx:{phone} -> LPUSH tx JSON = Daily Income tab
+book_submission:{txId} -> HSET tx details = Transaction History tab
+lock:submit:{phone}:{date}:{bookId} -> NX lock
 */
 const SUBMIT_LUA = `
-local bookKey = KEYS[1] -- book:{phone}:{today}:{bookId}
-local userKey = KEYS[2] -- user:{phone}
-local txKey = KEYS[3] -- tx:{phone} = Daily Income list
-local lockKey = KEYS[4] -- lock:submit:{phone}:{today}:{bookId}
+local bookKey = KEYS[1]
+local userKey = KEYS[2]
+local txKey = KEYS[3]
+local lockKey = KEYS[4]
+local booksSetKey = KEYS[5]
+local submissionKey = KEYS[6] -- book_submission:{txId}
 
 local today = ARGV[1]
 local bookIdStr = ARGV[2]
 local earned = tonumber(ARGV[3])
 local txJson = ARGV[4]
-local booksLimit = tonumber(ARGV[5])
-local nowMs = ARGV[6]
+local txId = ARGV[5]
+local booksLimit = tonumber(ARGV[6])
+local nowMs = ARGV[7]
 
--- 1. IDEMPOTENCY: Only 1 request can get the lock
+-- 1. IDEMPOTENCY
 if redis.call('SET', lockKey, '1', 'NX', 'EX', '30') == nil then
   return {0, 'Book already submitted today!'}
 end
@@ -42,7 +49,7 @@ if status ~= 'read' then
   return {0, 'Click Read first'}
 end
 
--- 3. USER + DAILY LIMIT
+-- 3. USER + DAILY LIMIT + RESET
 local user = redis.call('HGETALL', userKey)
 if not user or #user == 0 then
   redis.call('DEL', lockKey)
@@ -68,27 +75,47 @@ redis.call('HSET', bookKey, 'status', 'submitted', 'submittedAt', nowMs)
 redis.call('HINCRBY', userKey, 'availableBalance', earned)
 redis.call('HINCRBY', userKey, 'dailyIncome', earned)
 redis.call('HINCRBY', userKey, 'books_read_today', 1)
-redis.call('LPUSH', txKey, txJson) -- <- tx:phone
+redis.call('LPUSH', txKey, txJson) -- Daily Income tab
+redis.call('SADD', booksSetKey, bookIdStr)
+
+-- 5. WRITE TO book_submission:{txId} HASH = Transaction History tab
+local tx = cjson.decode(txJson)
+redis.call('HSET', submissionKey, 
+  'id', tx.id,
+  'type', tx.type,
+  'bookId', tx.bookId,
+  'amount', tx.amount,
+  'createdAt', tx.createdAt,
+  'status', tx.status,
+  'description', tx.description,
+  'phone', tx.phone
+)
+redis.call('EXPIRE', submissionKey, 2592000) -- 30 days TTL
 
 return {1, 'ok'}
 `
 
 export async function POST(request) {
   try {
-    // 1. Auth: Get phone from body instead of session
-    const { phone, bookId } = await request.json()
+    const { phone, bookId, action } = await request.json()
     if (!phone ||!bookId) {
       return NextResponse.json({ error: "Missing phone or Book ID" }, { status: 400 })
+    }
+    if (action!== 'submit') {
+      return NextResponse.json({ error: "Invalid action" }, { status: 400 })
     }
 
     const today = getUgandaDateString()
     const bookIdStr = String(bookId)
     const bookKey = `book:${phone}:${today}:${bookIdStr}`
     const userKey = `user:${phone}`
-    const txKey = `tx:${phone}` // <- This is your Daily Income tab key
+    const txKey = `tx:${phone}`
     const lockKey = `lock:submit:${phone}:${today}:${bookIdStr}`
+    const booksSetKey = `books:${phone}:${today}`
+    
+    const txId = `${phone}:${today}:${bookIdStr}:${Date.now()}` // 0753520252:2026-06-28:1513:178...
+    const submissionKey = `book_submission:${txId}` // <- This is what your app reads
 
-    // 2. Get VIP + amount
     const user = await redis.hgetall(userKey)
     if (!user?.phone) {
       return NextResponse.json({ error: "User profile missing" }, { status: 404 })
@@ -98,11 +125,11 @@ export async function POST(request) {
     const vipConfig = VIPS[vip]
     if (!vipConfig) return NextResponse.json({ error: "Invalid VIP level" }, { status: 400 })
 
-    const paymentAmount = vipConfig.perBook
+    const paymentAmount = Number(vipConfig.perBook)
 
     const tx = {
-      id: `${phone}:${today}:${bookIdStr}:${Date.now()}`,
-      type: 'daily_income', // <- Filter for Daily Income tab
+      id: txId,
+      type: 'daily_income',
       bookId: bookIdStr,
       amount: String(paymentAmount),
       createdAt: String(Date.now()),
@@ -111,38 +138,39 @@ export async function POST(request) {
       phone: phone
     }
 
-    // 3. Run atomic
     const res = await redis.eval(
       SUBMIT_LUA,
-      [bookKey, userKey, txKey, lockKey],
+      [bookKey, userKey, txKey, lockKey, booksSetKey, submissionKey], // <- 6 keys now
       [
         today,
         bookIdStr,
         String(paymentAmount),
         JSON.stringify(tx),
+        txId,
         String(vipConfig.books),
         String(Date.now())
       ]
     )
 
     if (res[0] === 0) {
-      return NextResponse.json({ error: res[1] }, { status: 409 })
+      return NextResponse.json({ error: res[1] }, { status: 409, headers: { 'Cache-Control': 'no-store' } })
     }
 
     const updatedUser = await redis.hgetall(userKey)
     return NextResponse.json({
       success: true,
       earned: paymentAmount,
+      txId, // <- return it so frontend can link
       user: {
       ...updatedUser,
         availableBalance: Number(updatedUser.availableBalance || 0),
         dailyIncome: Number(updatedUser.dailyIncome || 0),
         books_read_today: Number(updatedUser.books_read_today || 0),
       }
-    }, { status: 200 })
+    }, { status: 200, headers: { 'Cache-Control': 'no-store' } })
 
   } catch (error) {
     console.error("Submit error:", error)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
   }
 }
