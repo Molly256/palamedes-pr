@@ -11,7 +11,7 @@ export default function GenerateBooks() {
 
   const runGenerate = async () => {
     const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    if (localUser.phone!== ADMIN_PHONE) {
+    if (localUser.phone !== ADMIN_PHONE) {
       router.push('/dashboard')
       return
     }
@@ -21,7 +21,10 @@ export default function GenerateBooks() {
     setLoading(true)
     setResult(null)
     try {
-      const res = await fetch('/api/admin/generate-books', { method: 'POST' })
+      const res = await fetch('/api/admin/generate-books', { 
+        method: 'GET', // Changed to GET so you can also open URL manually
+        cache: 'no-store' 
+      })
       const data = await res.json()
       setResult(data)
     } catch (err) {
@@ -40,16 +43,21 @@ export default function GenerateBooks() {
         disabled={loading}
         className="px-6 py-3 bg-blue-600 text-white rounded font-bold disabled:opacity-50"
       >
-        {loading? 'Generating...' : 'Generate 4 Books for Today'}
+        {loading ? 'Generating...' : 'Generate 4 Books for Today'}
       </button>
+
+      <p className="text-gray-500 text-sm mt-2">
+        Or hit manually: <code>/api/admin/generate-books</code>
+      </p>
 
       {result && (
         <div className="mt-6 p-4 bg-gray-50 rounded border">
-          <p className="text-black font-bold">{result.success? 'Success' : 'Failed'}: {result.message}</p>
+          <p className="text-black font-bold">{result.success ? 'Success ✅' : 'Failed ❌'}: {result.message}</p>
+          {result.date && <p className="text-black text-sm">Date: {result.date}</p>}
           {result.bookIds && (
-            <p className="text-black mt-2">Book IDs used: {result.bookIds.join(', ')}</p>
+            <p className="text-black mt-2">Book IDs used: <span className="font-mono">{result.bookIds.join(', ')}</span></p>
           )}
-          {result.usersUpdated && (
+          {result.usersUpdated !== undefined && (
             <p className="text-black">Users updated: {result.usersUpdated}</p>
           )}
         </div>
