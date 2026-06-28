@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
-import books from '../../../public/data/books.json'; // <-- FIXED: Direct import
+import fs from 'fs';
+import path from 'path';
 import { Redis } from '@upstash/redis';
 
 const redis = Redis.fromEnv();
 
 export async function POST(request) {
   try {
-    // 1. books is already parsed, no fs needed
+    // FIX: Vercel-safe path. process.cwd() = project root
+    const jsonPath = path.join(process.cwd(), 'public/data/books.json');
+    const fileData = fs.readFileSync(jsonPath, 'utf8');
+    const books = JSON.parse(fileData);
+
     if (!Array.isArray(books) || books.length < 4) {
       return NextResponse.json({ error: 'Not enough books in JSON file' }, { status: 400 });
     }
@@ -16,11 +21,7 @@ export async function POST(request) {
     const randomBookIds = shuffled.slice(0, 4).map(book => book.id.toString());
 
     // 3. Generate today's date yyyy-mm-dd 
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const today = new Date().toISOString().split('T')[0];
 
     // 4. Find all user profile keys
     const userKeys = await redis.keys('user:*');
@@ -33,9 +34,9 @@ export async function POST(request) {
       if (user && (user.hasBoughtVip === 'true' || user.hasBoughtVip === true)) {
         const phone = key.split(':')[1]; 
         if (phone) {
-          const targetKey = `books:${phone}:${dateStr}`;
+          const targetKey = `books:${phone}:${today}`;
           pipeline.del(targetKey);
-          pipeline.sadd(targetKey, ...randomBookIds);
+          pipeline.sadd(targetKey,...randomBookIds);
           pipeline.expire(targetKey, 172800); 
           updatedCount++;
         }
@@ -49,7 +50,7 @@ export async function POST(request) {
     return NextResponse.json({ 
       success: true, 
       message: `Successfully posted books for ${updatedCount} VIP users.`,
-      date: dateStr,
+      date: today,
       generatedIds: randomBookIds
     });
 
