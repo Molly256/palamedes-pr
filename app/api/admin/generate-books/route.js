@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import { Redis } from '@upstash/redis'; // <-- FIXED: Direct import
+import books from '../../../public/data/books.json'; // <-- FIXED: Direct import
+import { Redis } from '@upstash/redis';
 
-const redis = Redis.fromEnv(); // <-- Uses Vercel env vars UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+const redis = Redis.fromEnv();
 
 export async function POST(request) {
   try {
-    // 1. Read and parse books from public/data/books.json
-    const jsonPath = path.join(process.cwd(), 'public', 'data', 'books.json');
-    const fileData = fs.readFileSync(jsonPath, 'utf8');
-    const books = JSON.parse(fileData);
-
+    // 1. books is already parsed, no fs needed
     if (!Array.isArray(books) || books.length < 4) {
       return NextResponse.json({ error: 'Not enough books in JSON file' }, { status: 400 });
     }
@@ -20,48 +15,33 @@ export async function POST(request) {
     const shuffled = [...books].sort(() => 0.5 - Math.random());
     const randomBookIds = shuffled.slice(0, 4).map(book => book.id.toString());
 
-    // 3. Generate today's date formatted as yyyy-mm-dd 
+    // 3. Generate today's date yyyy-mm-dd 
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
     const dd = String(today.getDate()).padStart(2, '0');
     const dateStr = `${yyyy}-${mm}-${dd}`;
 
-    // 4. Find all user profile keys matching your structure
+    // 4. Find all user profile keys
     const userKeys = await redis.keys('user:*');
     
-    // 5. Initialize Upstash pipeline for batch processing
     const pipeline = redis.pipeline();
     let updatedCount = 0;
 
     for (const key of userKeys) {
-      // Fetch the user object from Upstash Hash
       const user = await redis.hgetall(key);
-
-      // Check VIP status (supports both string and boolean types)
       if (user && (user.hasBoughtVip === 'true' || user.hasBoughtVip === true)) {
-        
-        // Extract phone directly from the key name
         const phone = key.split(':')[1]; 
-        
         if (phone) {
           const targetKey = `books:${phone}:${dateStr}`;
-          
-          // Delete any existing key for today to start fresh
           pipeline.del(targetKey);
-          
-          // Add the 4 IDs to a Redis Set
           pipeline.sadd(targetKey, ...randomBookIds);
-          
-          // Auto cleanup after 48 hours
           pipeline.expire(targetKey, 172800); 
-
           updatedCount++;
         }
       }
     }
 
-    // 6. Execute all commands in one single round-trip
     if (updatedCount > 0) {
       await pipeline.exec();
     }
@@ -75,6 +55,6 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('API Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal Server Error', detail: error.message }, { status: 500 });
   }
 }
