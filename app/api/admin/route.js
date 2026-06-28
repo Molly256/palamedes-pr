@@ -23,10 +23,9 @@ export async function GET(req) {
       const pendingIds = await redis.lrange('pending_tx', 0, 999)
       const pending = []
 
-      // NEW: Find TX by scanning tx:phone lists, not tx:id hash
+      // Find TX by scanning tx:phone lists
       for (const id of pendingIds) {
         let foundTx = null
-        // Scan all user tx lists. Note: KEYS is O(N). OK for <10k users.
         const keys = await redis.keys('tx:07*')
         for (const k of keys) {
           const items = await redis.lrange(k, 0, 199)
@@ -43,12 +42,12 @@ export async function GET(req) {
       if (!phone) {
         return NextResponse.json({ success: false, error: 'Phone required' }, { status: 400 })
       }
-
+      
       const user = await redis.hgetall(`user:${phone}`)
       if (!user || Object.keys(user).length === 0) {
         return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
       }
-
+      
       try {
         user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]')
         user.completedBooks = JSON.parse(user.completedBooks || '[]')
@@ -56,11 +55,11 @@ export async function GET(req) {
         user.unlockedBooks = []
         user.completedBooks = []
       }
-
+      
       user.availableBalance = Number(user.availableBalance || user.balance || 0)
       user.balance = Number(user.balance || 0)
       user.vip = Number(user.vip || 0)
-
+      
       return NextResponse.json({ success: true, user })
     }
 
@@ -78,28 +77,39 @@ export async function POST(req) {
     const { action, id, status, phone, password } = body
 
     if (action === 'updateStatus') {
-      if (!id ||!status ||!phone) { // phone is now required from admin UI
-        return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      if (!id ||!status) {
+        return NextResponse.json({ success: false, error: 'Missing data: id, status' }, { status: 400 })
       }
 
-      // 1. SOURCE OF TRUTH: Update only tx:phone list
-      const listKey = `tx:${phone}`
-      const items = await redis.lrange(listKey, 0, 199)
-      const idx = items.findIndex(s => { try { return JSON.parse(s).id === id } catch { return false } })
-      if (idx === -1) {
-        return NextResponse.json({ success: false, error: 'Transaction not found in user list' }, { status: 404 })
+      // 1. FIND PHONE + TX: Scan tx:07* lists to find the id. No phone needed from UI.
+      let userPhone = null
+      let txObj = null
+      let idx = -1
+      const keys = await redis.keys('tx:07*')
+      for (const k of keys) {
+        const items = await redis.lrange(k, 0, 199)
+        idx = items.findIndex(s => { try { return JSON.parse(s).id === id } catch { return false } })
+        if (idx!== -1) {
+          userPhone = k.replace('tx:', '')
+          txObj = JSON.parse(items[idx])
+          break
+        }
       }
 
-      const txObj = JSON.parse(items[idx])
+      if (!txObj || idx === -1) {
+        return NextResponse.json({ success: false, error: 'Transaction not found' }, { status: 404 })
+      }
+
+      // 2. SOURCE OF TRUTH: Update only tx:phone list
       txObj.status = status
       txObj.updatedAt = String(Date.now())
-      await redis.lset(listKey, idx, JSON.stringify(txObj))
+      await redis.lset(`tx:${userPhone}`, idx, JSON.stringify(txObj))
 
       await redis.lrem('pending_tx', 0, id) // Remove from admin queue
 
-      // 2. Credit balance if deposit approved
+      // 3. Credit balance if deposit approved
       if (status === 'success' && txObj.type === 'deposit') {
-        const userKey = `user:${phone}`
+        const userKey = `user:${userPhone}`
         const user = await redis.hgetall(userKey)
         const amount = Number(txObj.amount || 0)
         const currentBalance = Number(user.balance || 0)
@@ -109,7 +119,7 @@ export async function POST(req) {
           availableBalance: currentAvail + amount
         })
       }
-
+      
       return NextResponse.json({ success: true })
     }
 
@@ -117,12 +127,12 @@ export async function POST(req) {
       if (!phone ||!password) {
         return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
       }
-
+      
       const user = await redis.hgetall(`user:${phone}`)
       if (!user || Object.keys(user).length === 0) {
         return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
       }
-
+      
       await redis.hset(`user:${phone}`, { password })
       return NextResponse.json({ success: true })
     }
