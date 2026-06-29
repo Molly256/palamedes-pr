@@ -44,14 +44,12 @@ export default function BooksPage() {
     if (timer === 0) {
         setReadingBook(null);
         setTimer(10);
-        
-        // FIXED: Added closing }); for map and }); for setBooks
         setBooks(function(prev) { 
             return prev.map(function(b) { 
-                return b.bookId === readingBook.bookId ? { ...b, status: 'completed' } : b; // (or whatever your return logic is)
+                return b.bookId === readingBook.bookId ? { ...b, status: 'read' } : b;
             }); 
         });
-        return; // Prevents the timer below from starting if timer hit 0
+        return; 
     }
 
     const t = setTimeout(function() { 
@@ -61,7 +59,7 @@ export default function BooksPage() {
     return function() { 
         clearTimeout(t); 
     };
-}, [readingBook, timer]);
+  }, [readingBook, timer]);
 
   const handleRead = function(book) {
     if (book.status !== 'pending') return
@@ -77,7 +75,11 @@ export default function BooksPage() {
     if (lockRef.current.has('s-' + book.bookId)) return
     lockRef.current.add('s-' + book.bookId)
     
-    setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'submitted' }) : b })
+    setBooks(function(prev) { 
+        return prev.map(function(b) { 
+            return b.bookId === book.bookId ? { ...b, status: 'submitted' } : b 
+        })
+    });
     
     try {
       const res = await fetch('/api/books/submit', { 
@@ -94,7 +96,11 @@ export default function BooksPage() {
       setUser(newUser)
       localStorage.setItem('palamedes_user', JSON.stringify(newUser))
     } catch(err) {
-      setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'read' }) : b })
+      setBooks(function(prev) { 
+          return prev.map(function(b) { 
+              return b.bookId === book.bookId ? { ...b, status: 'read' } : b 
+          })
+      });
     } finally {
       lockRef.current.delete('s-' + book.bookId)
     }
