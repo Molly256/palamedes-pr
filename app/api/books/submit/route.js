@@ -1,104 +1,64 @@
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+import { NextResponse } from 'next/server';
+import { Redis } from '@upstash/redis';
+import fs from 'fs/promises';
+import path from 'path';
 
-import { Redis } from '@upstash/redis'
-import { NextResponse } from 'next/server'
-import { VIPS } from '@/app/config/vips'
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+const redis = Redis.fromEnv();
 
-const redis = Redis.fromEnv()
-const toNum = (v, f = 0) => { const n = Number(v); return Number.isNaN(n)? f : n }
-const getUgandaDateString = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
+let BOOKS_MAP = null;
+async function getBooksMap() {
+  if (BOOKS_MAP) return BOOKS_MAP;
+  const booksFilePath = path.join(process.cwd(), 'app', 'data', 'books.json');
+  const ALL_BOOKS = JSON.parse(await fs.readFile(booksFilePath, 'utf8'));
+  BOOKS_MAP = new Map(ALL_BOOKS.map(b => [String(b.id), b]));
+  return BOOKS_MAP;
+}
 
-const SUBMIT_LUA = `
-local bookKey,userKey,txKey,ssetKey,booksSetKey,idemKey=KEYS[1],KEYS[2],KEYS[3],KEYS[4],KEYS[5],KEYS[6]
-local action,today,bookIdStr,earned,txJson,txId,booksLimit,nowMs,title,cover=ARGV[1],ARGV[2],ARGV[3],tonumber(ARGV[4]),ARGV[5],ARGV[6],tonumber(ARGV[7]),ARGV[8],ARGV[9],ARGV[10]
+function getUgandaDateString() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
+}
 
-if action=='read' then
- local s=redis.call('HGET',bookKey,'status')
- if s=='submitted' or s=='read' then return {1,'READ',s} end
- redis.call('HSET',bookKey,'status','read','readAt',nowMs)
- return {1,'READ','set'}
-end
-
-if action=='submit' then
- local setNx=redis.call('SET', idemKey, '1', 'NX', 'EX', '86400')
- if setNx==false then return {0,'ALREADY_PAID','idem_exists'} end
-
- local status=redis.call('HGET',bookKey,'status')
- if status~='read' then redis.call('DEL', idemKey) return {0,'ALREADY_PAID','status_not_read:'..tostring(status)} end
- redis.call('HSET',bookKey,'status','submitted','submittedAt',nowMs,'reward',earned)
-
- local user=redis.call('HGETALL',userKey)
- if #user==0 then redis.call('HSET',bookKey,'status','read') redis.call('DEL', idemKey) return {0,'USER_NOT_FOUND','no_user'} end
- local u={} for i=1,#user,2 do u[user[i]]=user[i+1] end
- if u.lastResetDate~=today then redis.call('HSET',userKey,'books_read_today','0','dailyIncome','0','lastResetDate',today) end
- if tonumber(u.books_read_today or 0)>=booksLimit then redis.call('HSET',bookKey,'status','read') redis.call('DEL', idemKey) return {0,'DAILY_LIMIT','limit_hit'} end
-
- -- PAY ONLY availableBalance. DELETED balance field
- redis.call('HINCRBY',userKey,'availableBalance',earned)
- redis.call('HINCRBY',userKey,'dailyIncome',earned)
- redis.call('HINCRBY',userKey,'books_read_today',1)
-
- redis.call('LPUSH',txKey,txJson)
- redis.call('SADD',booksSetKey,bookIdStr)
- redis.call('HSET',ssetKey,'id',txId,'type','daily_income','bookId',bookIdStr,'amount',earned,'createdAt',nowMs,'status','success','phone',u.phone,'title',title,'cover',cover)
- redis.call('EXPIRE',ssetKey,2592000)
- return {1,'OK','PAID'}
-end
-return {0,'INVALID_ACTION','invalid'}
-`
-
-export async function POST(request) {
-  const reqId = crypto.randomUUID().slice(0,8)
+export async function GET(request) {
   try {
-    const { phone, bookId, action, title, cover } = await request.json()
-    if (!phone ||!bookId ||!action) return NextResponse.json({ error: "Missing data" }, { status: 400 })
+    const { searchParams } = new URL(request.url);
+    const phone = searchParams.get('phone'); 
+    const date = searchParams.get('date') || getUgandaDateString();
+    
+    if (!phone) return NextResponse.json({ success: false, books: [] }, { status: 400 });
 
-    const today = getUgandaDateString()
-    const bookIdStr = String(bookId)
-    const txId = `${phone}:${today}:${bookIdStr}:${action}`
-    const idemKey = `idem:${txId}`
+    const bookIds = await redis.smembers(`books:${phone}:${date}`);
+    if (!bookIds?.length) return NextResponse.json({ success: true, books: [] }, { headers: { 'Cache-Control': 'no-store' } });
 
-    const user = await redis.hgetall(`user:${phone}`)
-    if (!user?.phone) return NextResponse.json({ error: "User profile missing" }, { status: 404 })
+    const BOOKS_MAP = await getBooksMap();
+    
+    // Pipeline: get all statuses at once
+    const statusPipe = redis.pipeline();
+    bookIds.forEach(id => statusPipe.hget(`book:${phone}:${date}:${id}`, 'status'));
+    const statuses = await statusPipe.exec();
 
-    const vip = toNum(user.vip)
-    const vipConfig = VIPS[vip]
-    if (!vipConfig) return NextResponse.json({ error: "Invalid VIP level" }, { status: 400 })
+    const booksForToday = bookIds
+      .slice(0, 4)
+      .map((id, i) => {
+        const b = BOOKS_MAP.get(String(id));
+        if (!b) return null;
+        return {
+          bookId: String(id),
+          title: b.title,
+          author: b.author,
+          preview: b.preview || '',
+          status: statuses[i][1] || 'pending' // <- KEY: read real status
+        };
+      })
+      .filter(Boolean);
 
-    const paymentAmount = vipConfig.perBook
-    const nowMs = String(Date.now())
-    const tx = JSON.stringify({ id: txId, type: 'daily_income', bookId: bookIdStr, amount: paymentAmount, createdAt: nowMs, status: 'success', phone })
-
-    const res = await redis.eval(
-      SUBMIT_LUA,
-      [`book:${phone}:${today}:${bookIdStr}`, `user:${phone}`, `tx:${phone}`, `book_submission:${txId}`, `books:${phone}:${today}`, idemKey],
-      [action, today, bookIdStr, String(paymentAmount), tx, txId, String(vipConfig.books), nowMs, title || '', cover || '']
-    )
-
-    if (res[0] === 0) {
-      if (res[1] === 'ALREADY_PAID') return NextResponse.json({ error: 'Already submitted', debug: res[2] }, { status: 409 })
-      if (res[1] === 'DAILY_LIMIT') return NextResponse.json({ error: "TODAY'S BOOKS ARE DONE", debug: res[2] }, { status: 400 })
-      return NextResponse.json({ error: res[1], debug: res[2] }, { status: 400 })
-    }
-
-    const updatedUser = await redis.hgetall(`user:${phone}`)
-    return NextResponse.json({
-      success: true,
-      earned: paymentAmount,
-      txId,
-      debug: res[2],
-      user: {
-       ...updatedUser,
-        availableBalance: toNum(updatedUser.availableBalance),
-        dailyIncome: toNum(updatedUser.dailyIncome),
-        books_read_today: toNum(updatedUser.books_read_today),
-        vip: toNum(updatedUser.vip)
-      }
-    }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json({ success: true, books: booksForToday }, {
+      headers: { 'Cache-Control': 'no-store' }
+    });
 
   } catch (error) {
-    console.error(`[${reqId}] FATAL`, error)
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
+    console.error('API /books/data Error:', error);
+    return NextResponse.json({ success: false, books: [] }, { status: 500 });
   }
 }
