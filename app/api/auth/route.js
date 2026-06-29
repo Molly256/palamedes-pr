@@ -49,6 +49,17 @@ export async function POST(req) {
         createdAt: String(Date.now())
       })
 
+      // ADD: Trigger TX on register success only
+      const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
+      await redis.lpush(`tx:${phone}:${date}`, JSON.stringify({
+        id: crypto.randomUUID(),
+        type: 'system_increase',
+        amount: 2500,
+        note: 'Registration Reward',
+        status: 'completed',
+        createdAt: new Date().toISOString()
+      }));
+
       return NextResponse.json({ success: true, inviteCode })
     }
 

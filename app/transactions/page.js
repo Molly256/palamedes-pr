@@ -85,6 +85,22 @@ export default function Transactions() {
       )
     }
 
+    // ADD ONLY THIS: System Increase render
+    if (typeKey === 'system increase') {
+      return (
+        <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+          <div className="flex justify-between items-start">
+            <p className="text-black text-sm font-light">System Increase</p>
+            <p className="text-black text-base font-light">{amount.toLocaleString()} shs</p>
+            {/* No + sign */}
+          </div>
+          <p className="text-black text-xs font-light mt-1 text-right">
+            {formatUgandaTime(tx.createdAt)} // yy-mm-dd-hh:min Uganda
+          </p>
+        </div>
+      )
+    }
+
     return (
       <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
         <div className="flex justify-between items-start">

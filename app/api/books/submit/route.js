@@ -6,7 +6,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const redis = Redis.fromEnv();
 
-// ONLY VIP 1, 2, 3 ARE OPEN. From your screenshot.
 const VIP_CONFIG = {
  1: { perBook: 625 },
  2: { perBook: 2000 }, 
@@ -29,21 +28,18 @@ export async function POST(request) {
     const userKey = `user:${phone}`;
     const txKey = `tx:${phone}:${date}`;
 
-    // 1. Block double submit
     if (await redis.hget(bookKey, 'status') === 'submitted') {
       return NextResponse.json({ error: 'Already submitted' }, { status: 409 });
     }
 
-    // 2. Get user's VIP level. Only check 1,2,3
     const vipLevel = Number(await redis.hget(userKey, 'vip') || 0);
     const vipData = VIP_CONFIG[vipLevel];
     if (!vipData) {
-      return NextResponse.json({ error: 'VIP not open' }, { status: 403 }); // blocks 4-10
+      return NextResponse.json({ error: 'VIP not open' }, { status: 403 });
     }
 
     const payout = vipData.perBook;
 
-    // 3. Create TX for Daily Income tab
     const tx = {
       id: randomUUID(),
       type: 'book_income',
@@ -54,7 +50,7 @@ export async function POST(request) {
       createdAt: new Date().toISOString()
     };
 
-    // 4. Atomic: mark submitted + add balance + save tx
+    // ONLY availableBalance
     const pipe = redis.pipeline();
     pipe.hset(bookKey, { status: 'submitted' });
     pipe.hincrbyfloat(userKey, 'availableBalance', payout);
