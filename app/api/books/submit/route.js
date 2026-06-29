@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { Redis } from '@upstash/redis';
-import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,12 +7,16 @@ const redis = Redis.fromEnv();
 
 const VIP_CONFIG = {
  1: { perBook: 625 },
- 2: { perBook: 2000 }, 
+ 2: { perBook: 2000 },
  3: { perBook: 6500 },
 };
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
+}
+
+function makeId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
 export async function POST(request) {
@@ -28,6 +31,7 @@ export async function POST(request) {
     const userKey = `user:${phone}`;
     const txKey = `tx:${phone}:${date}`;
 
+    // Block double submit
     if (await redis.hget(bookKey, 'status') === 'submitted') {
       return NextResponse.json({ error: 'Already submitted' }, { status: 409 });
     }
@@ -41,22 +45,22 @@ export async function POST(request) {
     const payout = vipData.perBook;
 
     const tx = {
-      id: randomUUID(),
-      type: 'book_income',
+      id: makeId(),
+      type: 'book_income', // <- FIX: separate from deposits
       amount: payout,
       bookId: bookId,
       vipLevel: vipLevel,
       status: 'completed',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      note: `Book ${bookId} income`
     };
 
-    // ONLY availableBalance
     const pipe = redis.pipeline();
-    pipe.hset(bookKey, { status: 'submitted' });
-    pipe.hincrbyfloat(userKey, 'availableBalance', payout);
+    pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() }); // <- FIX: matches front filter + timestamp
+    pipe.hincrbyfloat(userKey, 'availableBalance', payout); // <- only availableBalance
     pipe.lpush(txKey, JSON.stringify(tx));
     const results = await pipe.exec();
-    
+
     return NextResponse.json({ success: true, availableBalance: results[1][1] });
 
   } catch (error) {

@@ -27,7 +27,7 @@ export async function POST(req) {
       }
 
       const userKey = `user:${phone}`
-      const exists = await redis.hget(userKey, 'phone') // <- 1 call only. No lag.
+      const exists = await redis.hget(userKey, 'phone')
       
       if (exists) {
         return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
@@ -35,7 +35,7 @@ export async function POST(req) {
 
       const inviteCode = `PM${phone.slice(-6)}`
 
-      // All strings for Upstash
+      // All strings for Upstash - no balance field
       await redis.hset(userKey, {
         username,
         phone,
@@ -69,7 +69,7 @@ export async function POST(req) {
       }
 
       const userKey = `user:${phone}`
-      const user = await redis.hgetall(userKey) // <- 1 call only
+      const user = await redis.hgetall(userKey)
 
       if (!user?.phone) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -79,16 +79,15 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      // Migrate old balance -> availableBalance once
+      // Migrate old balance -> availableBalance once, no balance field left
       if (toNum(user.balance) > 0 && toNum(user.availableBalance) === 0) {
         await redis.hset(userKey, { 
-          availableBalance: user.balance,
-          balance: '0'
+          availableBalance: user.balance
         })
         user.availableBalance = user.balance
       }
 
-      // Send numbers to frontend, remove secrets
+      // Send numbers to frontend, remove secrets - no balance
       const safeUser = {
         username: user.username,
         phone: user.phone,
