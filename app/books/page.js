@@ -1,3 +1,4 @@
+So I go with this 
 'use client'
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export default function BooksPage() {
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const lockRef = useRef(new Set())
+  const hasFiredReadRef = useRef(false) // <- prevent double read call
 
   const fetchBooks = async (phone) => {
     try {
@@ -38,44 +40,51 @@ export default function BooksPage() {
     fetchBooks(userData.phone)
   }, [])
 
+  // FIXED SECURE TIMER: fires ONCE only
   useEffect(function() {
-    if (!readingBook) return;
+    if (!readingBook || !user?.phone) return;
+    
     if (timer === 0) {
+        if (hasFiredReadRef.current) return; // <- stop double fire
+        hasFiredReadRef.current = true;
+
+        const finishedBookId = readingBook.bookId;
+
+        fetch('/api/books/submit', { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ phone: user.phone, bookId: finishedBookId, action: 'read' })
+        }).catch(console.error);
+
         setReadingBook(null);
         setTimer(10);
-        // UI only, Redis already saved in handleRead
+        
         setBooks(function(prev) { 
             return prev.map(function(b) { 
-                return b.bookId === readingBook.bookId ? { ...b, status: 'read' } : b;
+                return b.bookId === finishedBookId ? { ...b, status: 'read' } : b;
             }); 
         });
         return; 
     }
 
     const t = setTimeout(function() { 
-        setTimer(timer - 1); 
+        setTimer(function(prev) { return prev - 1 }); // <- functional update, no stale timer
     }, 1000);
 
     return function() { 
         clearTimeout(t); 
     };
-  }, [readingBook, timer]);
+  }, [readingBook, user?.phone]); // <- REMOVED timer from deps
 
   const handleRead = function(book) {
     if (book.status !== 'pending') return
     if (lockRef.current.has('r-' + book.bookId)) return
-    lockRef.current.add('r-' + book.bookId)
-
-    // FIX: Save 'read' to Redis so refresh doesn't bounce it
-    fetch('/api/books/submit', { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
-    }).catch(console.error);
-
+    lockRef.current.add('r-' + book.bookId) // <- add lock
+    
+    hasFiredReadRef.current = false; // <- reset for new book
     setReadingBook(book)
     setTimer(10)
-    lockRef.current.delete('r-' + book.bookId)
+    lockRef.current.delete('r-' + book.bookId) // <- release lock
   }
 
   const handleSubmit = async function(book) {
@@ -93,19 +102,18 @@ export default function BooksPage() {
       const res = await fetch('/api/books/submit', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) // <- explicit
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' })
       })
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data.error || 'Submit failed')
       }
-      const newUser = Object.assign({}, user, { availableBalance: data.availableBalance })
+      const newUser = Object.assign({}, user, { availableBalance: Number(data.availableBalance || 0) }) // <- Number() guard
       setUser(newUser)
       localStorage.setItem('palamedes_user', JSON.stringify(newUser))
     } catch(err) {
       console.error('Submit error:', err)
       alert(err.message || 'Submit failed')
-      // FIX: NO ROLLBACK. Stay on 'read' so it doesn't bounce sections
       setBooks(function(prev) { 
           return prev.map(function(b) { 
               return b.bookId === book.bookId ? { ...b, status: 'read' } : b 
@@ -118,7 +126,7 @@ export default function BooksPage() {
 
   if (!user) return null
   const vip = Number(user.vip || 0)
-  const pendingBooks = books.filter(function(b) { return b.status === 'pending' || b.status === 'read' }) // <- includes read
+  const pendingBooks = books.filter(function(b) { return b.status === 'pending' || b.status === 'read' })
   const completedBooks = books.filter(function(b) { return b.status === 'submitted' })
 
   if (readingBook) {
