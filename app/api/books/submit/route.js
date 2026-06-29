@@ -21,10 +21,9 @@ function makeId() {
 
 export async function POST(request) {
   try {
-    // Action can now be 'read' (timer finished) or 'submit' (money claimed)
     const { phone, bookId, action } = await request.json();
 
-    if (!phone ||!bookId ||!action) {
+    if (!phone || !bookId || !action) {
       return NextResponse.json({ error: 'Missing phone, bookId, or action' }, { status: 400 });
     }
 
@@ -32,8 +31,8 @@ export async function POST(request) {
     const bookKey = `book:${phone}:${date}:${bookId}`;
     const userKey = `user:${phone}`;
     const txKey = `tx:${phone}:${date}`;
+    const incomeKey = `income:${phone}:${date}`; 
 
-    // 1. Verify user exists
     const userExists = await redis.exists(userKey);
     if (!userExists) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -43,9 +42,8 @@ export async function POST(request) {
     // ACTION 1: TIMER HITS 0SEC (Mark as Read)
     // ----------------------------------------------------
     if (action === 'read') {
-      const currentStatus = await redis.hget(bookKey, 'status') || null; // <- ADDED || null
+      const currentStatus = await redis.hget(bookKey, 'status') || null;
 
-      // If already submitted, keep it as submitted so they don't lose progress
       if (currentStatus === 'submitted') {
         return NextResponse.json({ success: true, status: 'submitted' });
       }
@@ -62,20 +60,17 @@ export async function POST(request) {
     // ACTION 2: USER TAPS SUBMIT (Claim Money)
     // ----------------------------------------------------
     if (action === 'submit') {
-      const currentStatus = await redis.hget(bookKey, 'status') || null; // <- ADDED || null
+      const currentStatus = await redis.hget(bookKey, 'status') || null;
 
-      // Idempotency: Prevent double spending if they double tap submit
       if (currentStatus === 'submitted') {
         const currentBal = Number(await redis.hget(userKey, 'availableBalance') || 0);
         return NextResponse.json({ success: true, availableBalance: currentBal, status: 'submitted' });
       }
 
-      // Security check: Ensure they actually waited for the 10sec timer first!
-      if (currentStatus!== 'read') {
+      if (currentStatus !== 'read') {
         return NextResponse.json({ error: 'Book must be read before submitting' }, { status: 400 });
       }
 
-      // Fetch VIP Configurations
       const vipLevel = Number(await redis.hget(userKey, 'vip') || 0);
       const vipData = VIP_CONFIG[vipLevel];
       if (!vipData) {
@@ -84,37 +79,41 @@ export async function POST(request) {
 
       const payout = vipData.perBook;
 
-      // Build transaction object for the "Daily Income" history tab
+      // FIXED: Structuring object properties to exactly match your transaction file mapping
       const tx = {
         id: makeId(),
-        type: 'book_income', // Used by frontend to filter "Daily Income"
-        amount: payout,
-        bookId: bookId,
-        vipLevel: vipLevel,
+        type: 'book_income', // Becomes 'book income' inside your UI formatter
+        amount: String(payout),
         status: 'completed',
-        createdAt: new Date().toISOString(),
-        note: `Book ${bookId} income`
+        createdAt: String(Date.now()), // FIXED: Changed to ms string so sorting algorithm doesn't break
+        phone: phone,
+        vipLevel: String(vipLevel),
+        bookTitle: `Book ${bookId}` // Populates UI bookTitle field safely
       };
 
-      // Ensure availableBalance field exists to prevent mathematical crashes
       await redis.hsetnx(userKey, 'availableBalance', 0);
 
       // Atomic execution via pipeline
       const pipe = redis.pipeline();
       pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() });
       pipe.hincrbyfloat(userKey, 'availableBalance', payout);
-      pipe.lpush(txKey, JSON.stringify(tx));
+      pipe.lpush(txKey, JSON.stringify(tx)); 
+      pipe.lpush(incomeKey, JSON.stringify(tx)); 
+
       const results = await pipe.exec();
 
-      if (results.some(r => r[0])) {
-        console.error('Redis pipeline error:', results);
+      // FIXED: Cleaned Upstash execution check to prevent false 500 crashes
+      if (!results || results.length < 4) {
+        console.error('Redis pipeline failed to return all operations:', results);
         return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
       }
 
-      // Return the newly updated balance directly from the atomic operation
+      // Safe extraction of the new balance from the pipeline return index
+      const updatedBalance = results[1];
+
       return NextResponse.json({
         success: true,
-        availableBalance: results[1][1],
+        availableBalance: typeof updatedBalance === 'number' ? updatedBalance : Number(updatedBalance),
         status: 'submitted'
       });
     }

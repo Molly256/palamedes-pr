@@ -13,6 +13,11 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null } 
 }
 
+// FIXED: Use Uganda date matching your book logic to prevent timezone drift
+function getUgandaDateString() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
+}
+
 export async function POST(req) {
   try {
     const body = await req.json()
@@ -24,14 +29,14 @@ export async function POST(req) {
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success'
-    const today = new Date().toISOString().slice(0, 10) // yy-mm-dd format: 2026-06-29
+    const today = getUgandaDateString(); // FIXED: Uses Uganda date key string
 
     const tx = {
       id, 
       type: type.toLowerCase(), 
       amount: String(amount), 
       status,
-      createdAt: String(Date.now()), // <- ms, works with frontend `new Date()`
+      createdAt: String(Date.now()), // Unix timestamp in ms
       phone, 
       method: method || '',
       withdrawPhone: withdrawPhone || '', 
@@ -40,10 +45,8 @@ export async function POST(req) {
       vipLevel: String(vipLevel || '')
     }
 
-    // 1. SOURCE OF TRUTH: Write to tx:phone:yy-mm-dd
     await redis.lpush(`tx:${phone}:${today}`, JSON.stringify(tx)) 
     
-    // 2. ADMIN QUEUE: Only store the id
     if (status === 'pending') {
       await redis.lpush('pending_tx', id) 
     }
@@ -61,35 +64,40 @@ export async function GET(request) {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    // 1. Get all daily keys: tx:phone:*
     const keys = await redis.keys(`tx:${phone}:*`)
     if (!keys.length) return NextResponse.json({ success: true, transactions: [] })
 
-    // 2. Read all lists
     const all = []
     for (const k of keys) {
-      const items = await redis.lrange(k, 0, 99) // 99 per day max
+      const items = await redis.lrange(k, 0, 99) 
       for (const item of items) {
         const tx = safeParse(item)
         if (tx) all.push(tx)
       }
     }
 
-    // 3. Normalize + sort newest first
     const transactions = all
-      .map(tx => ({
-        id: String(tx.id), 
-        type: toUiType(tx.type), // system_increase -> system increase
-        amount: String(tx.amount),
-        status: tx.status === 'completed' ? 'success' : tx.status,
-        createdAt: String(tx.createdAt), // ms
-        phone: tx.phone, 
-        method: tx.method || '', 
-        withdrawPhone: tx.withdrawPhone || '',
-        withdrawName: tx.withdrawName || '', 
-        bookTitle: tx.bookTitle || '',
-        vipLevel: tx.vipLevel || ''
-      }))
+      .map(tx => {
+        // FIXED: Safe parse timestamp whether it was written as milliseconds or ISO text
+        let msTimestamp = String(Date.now());
+        if (tx.createdAt) {
+          msTimestamp = isNaN(tx.createdAt) ? String(Date.parse(tx.createdAt)) : String(tx.createdAt);
+        }
+
+        return {
+          id: String(tx.id), 
+          type: toUiType(tx.type), 
+          amount: String(tx.amount),
+          status: tx.status === 'completed' ? 'success' : tx.status,
+          createdAt: msTimestamp, // FIXED: Now always a valid numeric string
+          phone: tx.phone, 
+          method: tx.method || '', 
+          withdrawPhone: tx.withdrawPhone || '',
+          withdrawName: tx.withdrawName || '', 
+          bookTitle: tx.bookTitle || '',
+          vipLevel: tx.vipLevel || ''
+        };
+      })
       .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
 
     return NextResponse.json({ 
