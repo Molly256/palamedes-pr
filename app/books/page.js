@@ -44,7 +44,7 @@ export default function BooksPage() {
     if (timer === 0) { 
       setReadingBook(null)
       setTimer(10)
-      // 10s done -> mark as 'read' so Submit enables. UI only.
+      // FIX 1: Added )}; to close map() + setBooks()
       setBooks(function(prev) { return prev.map(function(b) { return b.bookId === readingBook.bookId ? Object.assign({}, b, { status: 'read' }) : b })
       return 
     }
@@ -56,7 +56,7 @@ export default function BooksPage() {
     if (book.status !== 'pending') return
     if (lockRef.current.has('r-' + book.bookId)) return
     lockRef.current.add('r-' + book.bookId)
-    setReadingBook(book) // start timer. No API call
+    setReadingBook(book)
     setTimer(10)
     lockRef.current.delete('r-' + book.bookId)
   }
@@ -66,7 +66,7 @@ export default function BooksPage() {
     if (lockRef.current.has('s-' + book.bookId)) return
     lockRef.current.add('s-' + book.bookId)
     
-    // optimistic UI
+    // FIX 2: Added )}; to close map() + setBooks()
     setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'submitted' }) : b })
     
     try {
@@ -77,15 +77,13 @@ export default function BooksPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        if (res.status === 409) { await fetchBooks(user.phone); return } // already done
+        if (res.status === 409) { await fetchBooks(user.phone); return }
         throw new Error(data.error || 'Submit failed')
       }
-      // API must return: {success: true, reward: 625, availableBalance: 12345}
       const newUser = Object.assign({}, user, { availableBalance: data.availableBalance })
       setUser(newUser)
       localStorage.setItem('palamedes_user', JSON.stringify(newUser))
     } catch(err) {
-      // rollback if API fails
       setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'read' }) : b })
     } finally {
       lockRef.current.delete('s-' + book.bookId)
