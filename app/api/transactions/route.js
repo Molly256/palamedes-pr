@@ -13,7 +13,7 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null } 
 }
 
-// FIXED: Use Uganda date matching your book logic to prevent timezone drift
+// Uses Uganda date matching your book logic to prevent timezone drift
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
 }
@@ -29,7 +29,7 @@ export async function POST(req) {
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success'
-    const today = getUgandaDateString(); // FIXED: Uses Uganda date key string
+    const today = getUgandaDateString();
 
     const tx = {
       id, 
@@ -64,11 +64,18 @@ export async function GET(request) {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    const keys = await redis.keys(`tx:${phone}:*`)
-    if (!keys.length) return NextResponse.json({ success: true, transactions: [] })
+    // 1. FIXED: Scan for BOTH transaction history keys and income tracking keys
+    const [txKeys, incomeKeys] = await Promise.all([
+      redis.keys(`tx:${phone}:*`),
+      redis.keys(`income:${phone}:*`)
+    ])
 
+    const allKeys = [...txKeys, ...incomeKeys]
+    if (!allKeys.length) return NextResponse.json({ success: true, transactions: [] })
+
+    // 2. Read all data arrays across keys
     const all = []
-    for (const k of keys) {
+    for (const k of allKeys) {
       const items = await redis.lrange(k, 0, 99) 
       for (const item of items) {
         const tx = safeParse(item)
@@ -76,21 +83,30 @@ export async function GET(request) {
       }
     }
 
+    // 3. Normalize values, sanitize UI filter naming, and sort newest first
     const transactions = all
       .map(tx => {
-        // FIXED: Safe parse timestamp whether it was written as milliseconds or ISO text
+        // Safe parse timestamp whether it was written as milliseconds or ISO text
         let msTimestamp = String(Date.now());
         if (tx.createdAt) {
           msTimestamp = isNaN(tx.createdAt) ? String(Date.parse(tx.createdAt)) : String(tx.createdAt);
         }
 
+        // FIXED FOR FRONTEND TAB FILTERING: Force book incomes to map cleanly to UI tab keywords
+        let uiType = String(tx.type || '').toLowerCase().trim();
+        if (uiType === 'daily_income' || uiType === 'book_income' || uiType === 'book income') {
+          uiType = 'daily income'; // Matches the text layout on your frontend tab
+        } else {
+          uiType = toUiType(tx.type);
+        }
+
         return {
           id: String(tx.id), 
-          type: toUiType(tx.type), 
+          type: uiType, 
           amount: String(tx.amount),
           status: tx.status === 'completed' ? 'success' : tx.status,
-          createdAt: msTimestamp, // FIXED: Now always a valid numeric string
-          phone: tx.phone, 
+          createdAt: msTimestamp, 
+          phone: tx.phone || phone, 
           method: tx.method || '', 
           withdrawPhone: tx.withdrawPhone || '',
           withdrawName: tx.withdrawName || '', 
@@ -98,6 +114,9 @@ export async function GET(request) {
           vipLevel: tx.vipLevel || ''
         };
       })
+      // Remove duplicate rows if the transaction lives inside both database lists
+      .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
+      // Sort with newest timestamps showing up first
       .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
 
     return NextResponse.json({ 
