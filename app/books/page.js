@@ -24,7 +24,7 @@ export default function BooksPage() {
 
       if (dataJson.success) {
         const mergedBooks = dataJson.books.map(b => ({
-          ...b, // bookId, title, author, preview_page  <- CHANGE 1
+          ...b, // bookId, title, author, preview
           cover: `/books/covers/${b.bookId}.jpg`,
           status: 'pending' 
         }));
@@ -103,7 +103,7 @@ export default function BooksPage() {
       <main style={{ minHeight: '100vh', background: '#000', color: '#fff', padding: '20px', position: 'relative' }}>
         <div style={{ position: 'absolute', top: 20, right: 20, fontSize: '24px', fontWeight: '900' }}>{timer}s</div>
         <h2 style={{ marginBottom: 20 }}>{readingBook.title}</h2>
-        <pre style={{ whiteSpace: 'pre-wrap', fontSize: '14px', lineHeight: 1.6, maxHeight: '80vh', overflowY: 'auto' }}>{readingBook.preview_page}</pre> {/* CHANGE 2 */}
+        <pre style={{ whiteSpace: 'pre-wrap', fontSize: '14px', lineHeight: 1.6, maxHeight: '80vh', overflowY: 'auto' }}>{readingBook.preview}</pre>
         <p style={{ textAlign: 'center', marginTop: 20 }}>Returning to BOOKS in {timer}s...</p>
       </main>
     )
