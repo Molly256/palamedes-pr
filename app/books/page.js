@@ -1,4 +1,4 @@
-So I go with this 
+
 'use client'
 export const dynamic = 'force-dynamic';
 
