@@ -1,6 +1,9 @@
 import { Redis } from '@upstash/redis'
 const redis = Redis.fromEnv()
 
+export const dynamic = 'force-dynamic'; // <- ADD THIS
+export const revalidate = 0;            // <- ADD THIS
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)

@@ -1,6 +1,5 @@
 'use client'
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+export const dynamic = 'force-dynamic'; // only this one
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
@@ -29,7 +28,6 @@ export default function BooksPage() {
       const coversJson = await coversRes.json(); 
       const dataJson = await dataRes.json();     
 
-      // API returns object: {success: true, books: [...]}
       if (coversJson.success && dataJson.success) {
         const idSet = new Set(coversJson.covers.map(c => String(c.id)));
         const mergedBooks = dataJson.books
@@ -38,8 +36,8 @@ export default function BooksPage() {
             bookId: String(b.id),
             title: b.title,
             author: b.author,
-            preview: b.preview_page || 'No preview', // from books.json
-            cover: `/books/covers/${String(b.id)}.jpg`, // public/books/covers/
+            preview: b.preview_page || 'No preview',
+            cover: `/books/covers/${String(b.id)}.jpg`,
             status: 'pending' 
           }));
         
