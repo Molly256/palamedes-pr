@@ -21,7 +21,7 @@ function makeId() {
 
 export async function POST(request) {
   try {
-    const { phone, bookId } = await request.json();
+    const { phone, bookId, action = 'submit' } = await request.json(); // <- action added
     if (!phone ||!bookId) {
       return NextResponse.json({ error: 'Missing phone or bookId' }, { status: 400 });
     }
@@ -37,7 +37,14 @@ export async function POST(request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // 2. Idempotent: If already submitted, just return current balance. NO 409 = NO BOUNCE
+    // ACTION 1: Mark as READ. No money, just status
+    if (action === 'read') {
+      await redis.hset(bookKey, { status: 'read', readAt: new Date().toISOString() });
+      return NextResponse.json({ success: true });
+    }
+
+    // ACTION 2: SUBMIT FOR MONEY
+    // 2.1 Idempotent: If already submitted, just return current balance. NO 409 = NO BOUNCE
     const currentStatus = await redis.hget(bookKey, 'status');
     if (currentStatus === 'submitted') {
       const currentBal = Number(await redis.hget(userKey, 'availableBalance') || 0);
@@ -71,6 +78,12 @@ export async function POST(request) {
     pipe.hincrbyfloat(userKey, 'availableBalance', payout);
     pipe.lpush(txKey, JSON.stringify(tx));
     const results = await pipe.exec();
+
+    // Check for pipeline errors
+    if (results.some(r => r[0])) {
+      console.error('Redis pipeline error:', results);
+      return NextResponse.json({ error: 'DB write failed' }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, availableBalance: results[1][1] });
 

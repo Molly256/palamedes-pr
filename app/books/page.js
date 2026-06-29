@@ -43,6 +43,7 @@ export default function BooksPage() {
     if (timer === 0) {
         setReadingBook(null);
         setTimer(10);
+        // UI only, Redis already saved in handleRead
         setBooks(function(prev) { 
             return prev.map(function(b) { 
                 return b.bookId === readingBook.bookId ? { ...b, status: 'read' } : b;
@@ -64,6 +65,14 @@ export default function BooksPage() {
     if (book.status !== 'pending') return
     if (lockRef.current.has('r-' + book.bookId)) return
     lockRef.current.add('r-' + book.bookId)
+
+    // FIX: Save 'read' to Redis so refresh doesn't bounce it
+    fetch('/api/books/submit', { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read' })
+    }).catch(console.error);
+
     setReadingBook(book)
     setTimer(10)
     lockRef.current.delete('r-' + book.bookId)
@@ -84,13 +93,9 @@ export default function BooksPage() {
       const res = await fetch('/api/books/submit', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId })
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit' }) // <- explicit
       })
       const data = await res.json()
-      if (res.status === 409) { 
-        await fetchBooks(user.phone); // Sync with server, keep it submitted
-        return 
-      }
       if (!res.ok) {
         throw new Error(data.error || 'Submit failed')
       }
@@ -100,7 +105,7 @@ export default function BooksPage() {
     } catch(err) {
       console.error('Submit error:', err)
       alert(err.message || 'Submit failed')
-      // Only rollback on real error, not 409
+      // FIX: NO ROLLBACK. Stay on 'read' so it doesn't bounce sections
       setBooks(function(prev) { 
           return prev.map(function(b) { 
               return b.bookId === book.bookId ? { ...b, status: 'read' } : b 
@@ -113,7 +118,7 @@ export default function BooksPage() {
 
   if (!user) return null
   const vip = Number(user.vip || 0)
-  const pendingBooks = books.filter(function(b) { return b.status === 'pending' || b.status === 'read' })
+  const pendingBooks = books.filter(function(b) { return b.status === 'pending' || b.status === 'read' }) // <- includes read
   const completedBooks = books.filter(function(b) { return b.status === 'submitted' })
 
   if (readingBook) {
@@ -129,7 +134,6 @@ export default function BooksPage() {
 
   return (
     <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
-      {/* REMOVED: Avatar, Balance, Transaction History */}
       <div style={{ marginBottom: '30px' }}>
         <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none' }}>← Back</Link>
       </div>

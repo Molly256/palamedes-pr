@@ -43,9 +43,8 @@ export async function GET(request) {
         if (!b) return null;
         
         const redisStatus = statusResults[i]?.[1];
-        // RULE: Only 2 states from Redis: 'submitted' or default 'pending'
-        // 'reading' never comes from Redis. It's UI only.
-        const status = redisStatus === 'submitted'? 'submitted' : 'pending';
+        // FIX: Allow 3 states from Redis now. Default = pending
+        const status = redisStatus === 'submitted'? 'submitted' : redisStatus === 'read'? 'read' : 'pending';
 
         return {
           bookId: String(id),
@@ -55,7 +54,7 @@ export async function GET(request) {
           status,
         };
       })
-    .filter(Boolean);
+   .filter(Boolean);
 
     return NextResponse.json({ success: true, books: booksForToday }, {
       headers: { 'Cache-Control': 'no-store' }
