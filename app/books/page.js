@@ -16,7 +16,7 @@ export default function BooksPage() {
   const [timer, setTimer] = useState(10)
   const lockRef = useRef(new Set())
 
-  const fetchBooks = async (phone, silent = false) => {
+  const fetchBooks = async (phone) => { // <- removed `silent`
     try {
       const today = getUgandaDateString()
       const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' });
@@ -24,13 +24,12 @@ export default function BooksPage() {
 
       if (dataJson.success) {
         const mergedBooks = dataJson.books.map(b => ({
-          ...b, // bookId, title, author, preview
-          cover: `/books/covers/${b.bookId}.jpg`,
-          status: 'pending' 
+          ...b, // bookId, title, author, preview, status <- API must send status
+          cover: `/books/covers/${b.bookId}.jpg`
+          // status: 'pending' <- DELETED. This was the bounce
         }));
-        
         setBooks(mergedBooks);
-        if (!silent) setUser(JSON.parse(localStorage.getItem('palamedes_user') || '{}'))
+        // if (!silent) setUser(...) <- DELETED. This was why balance didn't update
       }
     } catch (err) {
       console.error('Fetch books error:', err)
@@ -80,12 +79,12 @@ export default function BooksPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        if (res.status === 409) { await fetchBooks(user.phone, true); return }
+        if (res.status === 409) { await fetchBooks(user.phone); return } // <- refetch real status only
         throw new Error(data.error || 'Submit failed')
       }
-      setUser(data.user)
+      setUser(data.user) // <- Trust API. It has new availableBalance
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      await fetchBooks(user.phone, true)
+      // await fetchBooks(user.phone, true) <- DELETED. This was resetting to pending
     } catch(err) {
       setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     } finally {

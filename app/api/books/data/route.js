@@ -23,9 +23,9 @@ function getUgandaDateString() {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const phone = searchParams.get('phone'); 
+    const phone = searchParams.get('phone');
     const date = searchParams.get('date') || getUgandaDateString();
-    
+
     if (!phone) {
       return NextResponse.json({ success: false, books: [] }, { status: 400 });
     }
@@ -36,19 +36,26 @@ export async function GET(request) {
     }
 
     const BOOKS_MAP = await getBooksMap();
-    const booksForToday = bookIds
-      .slice(0, 4)
-      .map(id => {
+
+    // 1. Pipeline: get all statuses in 1 Redis call
+    const pipe = redis.pipeline();
+    const ids = bookIds.slice(0, 4);
+    ids.forEach(id => pipe.hget(`book:${phone}:${date}:${id}`, 'status'));
+    const statusResults = await pipe.exec();
+
+    const booksForToday = ids
+     .map((id, i) => {
         const b = BOOKS_MAP.get(String(id));
         if (!b) return null;
         return {
           bookId: String(id),
           title: b.title,
           author: b.author,
-          preview: b.preview || ''     // <- FIXED: books.json uses "preview"
+          preview: b.preview || '',
+          status: statusResults[i][1] || 'pending' // <- KEY FIX: read real status
         };
       })
-      .filter(Boolean);
+     .filter(Boolean);
 
     return NextResponse.json({ success: true, books: booksForToday }, {
       headers: { 'Cache-Control': 'no-store' }
