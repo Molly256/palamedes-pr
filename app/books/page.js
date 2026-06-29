@@ -1,4 +1,3 @@
-
 'use client'
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +14,6 @@ export default function BooksPage() {
   const [readingBook, setReadingBook] = useState(null)
   const [timer, setTimer] = useState(10)
   const lockRef = useRef(new Set())
-  const hasFiredReadRef = useRef(false) // <- prevent double read call
 
   const fetchBooks = async (phone) => {
     try {
@@ -40,21 +38,21 @@ export default function BooksPage() {
     fetchBooks(userData.phone)
   }, [])
 
-  // FIXED SECURE TIMER: fires ONCE only
+  // FIXED SECURE TIMER: Syncs to database ONLY when 10 seconds genuinely expire
   useEffect(function() {
-    if (!readingBook || !user?.phone) return;
+    if (!readingBook) return;
     
     if (timer === 0) {
-        if (hasFiredReadRef.current) return; // <- stop double fire
-        hasFiredReadRef.current = true;
-
         const finishedBookId = readingBook.bookId;
+        const currentUserPhone = user?.phone;
 
-        fetch('/api/books/submit', { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ phone: user.phone, bookId: finishedBookId, action: 'read' })
-        }).catch(console.error);
+        if (currentUserPhone) {
+          fetch('/api/books/submit', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ phone: currentUserPhone, bookId: finishedBookId, action: 'read' })
+          }).catch(console.error);
+        }
 
         setReadingBook(null);
         setTimer(10);
@@ -68,23 +66,20 @@ export default function BooksPage() {
     }
 
     const t = setTimeout(function() { 
-        setTimer(function(prev) { return prev - 1 }); // <- functional update, no stale timer
+        setTimer(timer - 1); 
     }, 1000);
 
     return function() { 
         clearTimeout(t); 
     };
-  }, [readingBook, user?.phone]); // <- REMOVED timer from deps
+  }, [readingBook, timer, user?.phone]);
 
   const handleRead = function(book) {
     if (book.status !== 'pending') return
     if (lockRef.current.has('r-' + book.bookId)) return
-    lockRef.current.add('r-' + book.bookId) // <- add lock
     
-    hasFiredReadRef.current = false; // <- reset for new book
     setReadingBook(book)
     setTimer(10)
-    lockRef.current.delete('r-' + book.bookId) // <- release lock
   }
 
   const handleSubmit = async function(book) {
@@ -92,6 +87,7 @@ export default function BooksPage() {
     if (lockRef.current.has('s-' + book.bookId)) return
     lockRef.current.add('s-' + book.bookId)
     
+    // Instant smooth move to completed UI section
     setBooks(function(prev) { 
         return prev.map(function(b) { 
             return b.bookId === book.bookId ? { ...b, status: 'submitted' } : b 
@@ -108,12 +104,14 @@ export default function BooksPage() {
       if (!res.ok) {
         throw new Error(data.error || 'Submit failed')
       }
-      const newUser = Object.assign({}, user, { availableBalance: Number(data.availableBalance || 0) }) // <- Number() guard
+      const newUser = Object.assign({}, user, { availableBalance: data.availableBalance })
       setUser(newUser)
       localStorage.setItem('palamedes_user', JSON.stringify(newUser))
     } catch(err) {
       console.error('Submit error:', err)
       alert(err.message || 'Submit failed')
+      
+      // Rollback to read state if request fails
       setBooks(function(prev) { 
           return prev.map(function(b) { 
               return b.bookId === book.bookId ? { ...b, status: 'read' } : b 
