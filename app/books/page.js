@@ -44,7 +44,7 @@ export default function BooksPage() {
     if (timer === 0) { 
       setReadingBook(null)
       setTimer(10)
-      // FIX: Added ));
+      // LINE 48 FIX: 2 x ) at the end
       setBooks(function(prev) { return prev.map(function(b) { return b.bookId === readingBook.bookId ? Object.assign({}, b, { status: 'read' }) : b })
       return 
     }
@@ -66,7 +66,7 @@ export default function BooksPage() {
     if (lockRef.current.has('s-' + book.bookId)) return
     lockRef.current.add('s-' + book.bookId)
     
-    // FIX: Added ));
+    // LINE 85 FIX: 2 x ) at the end
     setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'submitted' }) : b })
     
     try {
@@ -84,7 +84,7 @@ export default function BooksPage() {
       setUser(newUser)
       localStorage.setItem('palamedes_user', JSON.stringify(newUser))
     } catch(err) {
-      // FIX: Added ));
+      // LINE 102 FIX: 2 x ) at the end
       setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'read' }) : b })
     } finally {
       lockRef.current.delete('s-' + book.bookId)
