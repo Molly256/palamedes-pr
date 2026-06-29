@@ -19,23 +19,18 @@ export default function BooksPage() {
   const fetchBooks = async (phone, silent = false) => {
     try {
       const today = getUgandaDateString()
-      // 1 CALL ONLY. API returns: bookId, title, author, preview
       const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' });
       const dataJson = await res.json();     
 
       if (dataJson.success) {
-        // PAGE builds cover path from bookId. 11 -> /books/covers/11.jpg
         const mergedBooks = dataJson.books.map(b => ({
-          ...b, // bookId, title, author, preview
+          ...b, // bookId, title, author, preview_page  <- CHANGE 1
           cover: `/books/covers/${b.bookId}.jpg`,
           status: 'pending' 
         }));
         
         setBooks(mergedBooks);
-        if (!silent) {
-          const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-          setUser(userData)
-        }
+        if (!silent) setUser(JSON.parse(localStorage.getItem('palamedes_user') || '{}'))
       }
     } catch (err) {
       console.error('Fetch books error:', err)
@@ -68,13 +63,8 @@ export default function BooksPage() {
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
       body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover }) 
     })
-      .catch(err => { 
-        console.error('Read error:', err); 
-        setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)) 
-      })
-      .finally(() => { 
-        lockRef.current.delete(`r-${book.bookId}`) 
-      })
+      .catch(err => setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)))
+      .finally(() => lockRef.current.delete(`r-${book.bookId}`))
   }
 
   const handleSubmit = async (book) => {
@@ -97,8 +87,6 @@ export default function BooksPage() {
       localStorage.setItem('palamedes_user', JSON.stringify(data.user))
       await fetchBooks(user.phone, true)
     } catch(err) {
-      console.error('Submit error:', err)
-      alert(err.message)
       setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
     } finally {
       lockRef.current.delete(`s-${book.bookId}`)
@@ -115,7 +103,7 @@ export default function BooksPage() {
       <main style={{ minHeight: '100vh', background: '#000', color: '#fff', padding: '20px', position: 'relative' }}>
         <div style={{ position: 'absolute', top: 20, right: 20, fontSize: '24px', fontWeight: '900' }}>{timer}s</div>
         <h2 style={{ marginBottom: 20 }}>{readingBook.title}</h2>
-        <pre style={{ whiteSpace: 'pre-wrap', fontSize: '14px', lineHeight: 1.6, maxHeight: '80vh', overflowY: 'auto' }}>{readingBook.preview}</pre>
+        <pre style={{ whiteSpace: 'pre-wrap', fontSize: '14px', lineHeight: 1.6, maxHeight: '80vh', overflowY: 'auto' }}>{readingBook.preview_page}</pre> {/* CHANGE 2 */}
         <p style={{ textAlign: 'center', marginTop: 20 }}>Returning to BOOKS in {timer}s...</p>
       </main>
     )
