@@ -24,13 +24,14 @@ export async function POST(req) {
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success'
+    const today = new Date().toISOString().slice(0, 10) // yy-mm-dd format: 2026-06-29
 
     const tx = {
       id, 
       type: type.toLowerCase(), 
       amount: String(amount), 
       status,
-      createdAt: String(Date.now()), 
+      createdAt: String(Date.now()), // <- ms, works with frontend `new Date()`
       phone, 
       method: method || '',
       withdrawPhone: withdrawPhone || '', 
@@ -39,10 +40,10 @@ export async function POST(req) {
       vipLevel: String(vipLevel || '')
     }
 
-    // 1. SOURCE OF TRUTH: Only write to tx:phone list
-    await redis.lpush(`tx:${phone}`, JSON.stringify(tx)) 
+    // 1. SOURCE OF TRUTH: Write to tx:phone:yy-mm-dd
+    await redis.lpush(`tx:${phone}:${today}`, JSON.stringify(tx)) 
     
-    // 2. ADMIN QUEUE: Only store the id, not the full hash
+    // 2. ADMIN QUEUE: Only store the id
     if (status === 'pending') {
       await redis.lpush('pending_tx', id) 
     }
@@ -60,18 +61,28 @@ export async function GET(request) {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    // SOURCE OF TRUTH: ONLY tx:phone LIST for user history
-    const items = await redis.lrange(`tx:${phone}`, 0, 199)
-    
-    const transactions = items
-      .map(safeParse)
-      .filter(Boolean)
+    // 1. Get all daily keys: tx:phone:*
+    const keys = await redis.keys(`tx:${phone}:*`)
+    if (!keys.length) return NextResponse.json({ success: true, transactions: [] })
+
+    // 2. Read all lists
+    const all = []
+    for (const k of keys) {
+      const items = await redis.lrange(k, 0, 99) // 99 per day max
+      for (const item of items) {
+        const tx = safeParse(item)
+        if (tx) all.push(tx)
+      }
+    }
+
+    // 3. Normalize + sort newest first
+    const transactions = all
       .map(tx => ({
         id: String(tx.id), 
-        type: toUiType(tx.type),
+        type: toUiType(tx.type), // system_increase -> system increase
         amount: String(tx.amount),
-        status: tx.status === 'completed' ? 'success' : tx.status, // map old 'completed' -> 'success'
-        createdAt: String(tx.createdAt),
+        status: tx.status === 'completed' ? 'success' : tx.status,
+        createdAt: String(tx.createdAt), // ms
         phone: tx.phone, 
         method: tx.method || '', 
         withdrawPhone: tx.withdrawPhone || '',

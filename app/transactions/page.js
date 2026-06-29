@@ -43,9 +43,9 @@ export default function Transactions() {
   }, [allTxs, activeTab])
 
   const formatUgandaTime = (timestamp) => {
-    const ms = Number(timestamp)
-    if (!ms || isNaN(ms)) return ''
-    const d = new Date(ms)
+    if (!timestamp) return ''
+    const d = new Date(timestamp)
+    if (isNaN(d.getTime())) return ''
     const yy = String(d.getFullYear()).slice(-2)
     const mm = String(d.getMonth() + 1).padStart(2, '0')
     const dd = String(d.getDate()).padStart(2, '0')
@@ -85,17 +85,15 @@ export default function Transactions() {
       )
     }
 
-    // ADD ONLY THIS: System Increase render
     if (typeKey === 'system increase') {
       return (
         <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
           <div className="flex justify-between items-start">
             <p className="text-black text-sm font-light">System Increase</p>
             <p className="text-black text-base font-light">{amount.toLocaleString()} shs</p>
-            {/* No + sign */}
           </div>
           <p className="text-black text-xs font-light mt-1 text-right">
-            {formatUgandaTime(tx.createdAt)} // yy-mm-dd-hh:min Uganda
+            {formatUgandaTime(tx.createdAt)}
           </p>
         </div>
       )
