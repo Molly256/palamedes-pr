@@ -31,9 +31,17 @@ export async function POST(request) {
     const userKey = `user:${phone}`;
     const txKey = `tx:${phone}:${date}`;
 
-    // Block double submit
-    if (await redis.hget(bookKey, 'status') === 'submitted') {
-      return NextResponse.json({ error: 'Already submitted' }, { status: 409 });
+    // 1. Check user exists first
+    const userExists = await redis.exists(userKey);
+    if (!userExists) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // 2. Idempotent: If already submitted, just return current balance. NO 409 = NO BOUNCE
+    const currentStatus = await redis.hget(bookKey, 'status');
+    if (currentStatus === 'submitted') {
+      const currentBal = Number(await redis.hget(userKey, 'availableBalance') || 0);
+      return NextResponse.json({ success: true, availableBalance: currentBal });
     }
 
     const vipLevel = Number(await redis.hget(userKey, 'vip') || 0);
@@ -46,7 +54,7 @@ export async function POST(request) {
 
     const tx = {
       id: makeId(),
-      type: 'book_income', // <- FIX: separate from deposits
+      type: 'book_income',
       amount: payout,
       bookId: bookId,
       vipLevel: vipLevel,
@@ -55,9 +63,12 @@ export async function POST(request) {
       note: `Book ${bookId} income`
     };
 
+    // 3. Ensure availableBalance field exists before incr
+    await redis.hsetnx(userKey, 'availableBalance', 0);
+
     const pipe = redis.pipeline();
-    pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() }); // <- FIX: matches front filter + timestamp
-    pipe.hincrbyfloat(userKey, 'availableBalance', payout); // <- only availableBalance
+    pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() });
+    pipe.hincrbyfloat(userKey, 'availableBalance', payout);
     pipe.lpush(txKey, JSON.stringify(tx));
     const results = await pipe.exec();
 

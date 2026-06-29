@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import AvatarWithBadge from '../../components/AvatarWithBadge'
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -88,14 +87,20 @@ export default function BooksPage() {
         body: JSON.stringify({ phone: user.phone, bookId: book.bookId })
       })
       const data = await res.json()
+      if (res.status === 409) { 
+        await fetchBooks(user.phone); // Sync with server, keep it submitted
+        return 
+      }
       if (!res.ok) {
-        if (res.status === 409) { await fetchBooks(user.phone); return }
         throw new Error(data.error || 'Submit failed')
       }
       const newUser = Object.assign({}, user, { availableBalance: data.availableBalance })
       setUser(newUser)
       localStorage.setItem('palamedes_user', JSON.stringify(newUser))
     } catch(err) {
+      console.error('Submit error:', err)
+      alert(err.message || 'Submit failed')
+      // Only rollback on real error, not 409
       setBooks(function(prev) { 
           return prev.map(function(b) { 
               return b.bookId === book.bookId ? { ...b, status: 'read' } : b 
@@ -124,13 +129,9 @@ export default function BooksPage() {
 
   return (
     <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '30px' }}>
-        <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none', paddingTop: '8px' }}>← Back</Link>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <AvatarWithBadge username={user.username} vipLevel={vip} size={60} />
-          <p style={{ margin: '8px 0 0', fontWeight: '900', color: '#000', fontSize: '15px' }}>Balance: {Number(user.availableBalance || 0).toLocaleString()} shs</p>
-          <Link href="/transactions" style={{ margin: '4px 0 0', fontSize: '12px', color: '#00BFFF', fontWeight: '700', textDecoration: 'none' }}>Transaction History</Link>
-        </div>
+      {/* REMOVED: Avatar, Balance, Transaction History */}
+      <div style={{ marginBottom: '30px' }}>
+        <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none' }}>← Back</Link>
       </div>
 
       <h2 style={{ fontSize: '24px', fontWeight: '900', marginBottom: '20px', color: '#000' }}>BOOKS</h2>
