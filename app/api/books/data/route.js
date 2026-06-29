@@ -26,36 +26,36 @@ export async function GET(request) {
     const phone = searchParams.get('phone');
     const date = searchParams.get('date') || getUgandaDateString();
 
-    if (!phone) {
-      return NextResponse.json({ success: false, books: [] }, { status: 400 });
-    }
+    if (!phone) return NextResponse.json({ success: false, books: [] }, { status: 400 });
 
     const bookIds = await redis.smembers(`books:${phone}:${date}`);
-    if (!bookIds?.length) {
-      return NextResponse.json({ success: true, books: [] }, { headers: { 'Cache-Control': 'no-store' } });
-    }
+    if (!bookIds?.length) return NextResponse.json({ success: true, books: [] }, { headers: { 'Cache-Control': 'no-store' } });
 
     const BOOKS_MAP = await getBooksMap();
-
-    // 1. Pipeline: get all statuses in 1 Redis call
-    const pipe = redis.pipeline();
     const ids = bookIds.slice(0, 4);
+
+    const pipe = redis.pipeline();
     ids.forEach(id => pipe.hget(`book:${phone}:${date}:${id}`, 'status'));
     const statusResults = await pipe.exec();
 
-    const booksForToday = ids
-     .map((id, i) => {
+    const booksForToday = ids.map((id, i) => {
         const b = BOOKS_MAP.get(String(id));
         if (!b) return null;
+        
+        const redisStatus = statusResults[i]?.[1];
+        // RULE: Only 2 states from Redis: 'submitted' or default 'pending'
+        // 'reading' never comes from Redis. It's UI only.
+        const status = redisStatus === 'submitted'? 'submitted' : 'pending';
+
         return {
           bookId: String(id),
           title: b.title,
           author: b.author,
           preview: b.preview || '',
-          status: statusResults[i][1] || 'pending' // <- KEY FIX: read real status
+          status,
         };
       })
-     .filter(Boolean);
+    .filter(Boolean);
 
     return NextResponse.json({ success: true, books: booksForToday }, {
       headers: { 'Cache-Control': 'no-store' }

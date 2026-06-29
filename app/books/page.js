@@ -16,86 +16,86 @@ export default function BooksPage() {
   const [timer, setTimer] = useState(10)
   const lockRef = useRef(new Set())
 
-  const fetchBooks = async (phone) => { // <- removed `silent`
+  const fetchBooks = async (phone) => {
     try {
       const today = getUgandaDateString()
-      const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' });
-      const dataJson = await res.json();     
-
+      const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' })
+      const dataJson = await res.json()
       if (dataJson.success) {
-        const mergedBooks = dataJson.books.map(b => ({
-          ...b, // bookId, title, author, preview, status <- API must send status
-          cover: `/books/covers/${b.bookId}.jpg`
-          // status: 'pending' <- DELETED. This was the bounce
-        }));
-        setBooks(mergedBooks);
-        // if (!silent) setUser(...) <- DELETED. This was why balance didn't update
+        const mergedBooks = dataJson.books.map(function(b) {
+          return Object.assign({}, b, { cover: '/books/covers/' + b.bookId + '.jpg' })
+        })
+        setBooks(mergedBooks)
       }
     } catch (err) {
       console.error('Fetch books error:', err)
     }
   }
 
-  useEffect(() => {
+  useEffect(function() {
     const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!userData.phone) return
     setUser(userData)
     fetchBooks(userData.phone)
   }, [])
 
-  useEffect(() => {
+  useEffect(function() {
     if (!readingBook) return
-    if (timer === 0) { setReadingBook(null); setTimer(10); return }
-    const t = setTimeout(() => setTimer(timer - 1), 1000)
-    return () => clearTimeout(t)
+    if (timer === 0) { 
+      setReadingBook(null)
+      setTimer(10)
+      // 10s done -> mark as 'read' so Submit enables. UI only.
+      setBooks(function(prev) { return prev.map(function(b) { return b.bookId === readingBook.bookId ? Object.assign({}, b, { status: 'read' }) : b })
+      return 
+    }
+    const t = setTimeout(function() { setTimer(timer - 1) }, 1000)
+    return function() { clearTimeout(t) }
   }, [readingBook, timer])
 
-  const handleRead = async (book) => {
+  const handleRead = function(book) {
     if (book.status !== 'pending') return
-    if (lockRef.current.has(`r-${book.bookId}`)) return
-    lockRef.current.add(`r-${book.bookId}`)
-    setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
-    setReadingBook(book)
+    if (lockRef.current.has('r-' + book.bookId)) return
+    lockRef.current.add('r-' + book.bookId)
+    setReadingBook(book) // start timer. No API call
     setTimer(10)
-    fetch('/api/books/submit', { 
-      method: 'POST', 
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
-      body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'read', title: book.title, cover: book.cover }) 
-    })
-      .catch(err => setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'pending'} : b)))
-      .finally(() => lockRef.current.delete(`r-${book.bookId}`))
+    lockRef.current.delete('r-' + book.bookId)
   }
 
-  const handleSubmit = async (book) => {
-    if (book.status !== 'read') return alert('Click Read first')
-    if (lockRef.current.has(`s-${book.bookId}`)) return
-    lockRef.current.add(`s-${book.bookId}`)
-    setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'submitted'} : b))
+  const handleSubmit = async function(book) {
+    if (book.status !== 'read') return alert('Finish reading first')
+    if (lockRef.current.has('s-' + book.bookId)) return
+    lockRef.current.add('s-' + book.bookId)
+    
+    // optimistic UI
+    setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'submitted' }) : b })
+    
     try {
       const res = await fetch('/api/books/submit', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, 
-        body: JSON.stringify({ phone: user.phone, bookId: book.bookId, action: 'submit', title: book.title, cover: book.cover }) 
+        body: JSON.stringify({ phone: user.phone, bookId: book.bookId })
       })
       const data = await res.json()
       if (!res.ok) {
-        if (res.status === 409) { await fetchBooks(user.phone); return } // <- refetch real status only
+        if (res.status === 409) { await fetchBooks(user.phone); return } // already done
         throw new Error(data.error || 'Submit failed')
       }
-      setUser(data.user) // <- Trust API. It has new availableBalance
-      localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      // await fetchBooks(user.phone, true) <- DELETED. This was resetting to pending
+      // API must return: {success: true, reward: 625, availableBalance: 12345}
+      const newUser = Object.assign({}, user, { availableBalance: data.availableBalance })
+      setUser(newUser)
+      localStorage.setItem('palamedes_user', JSON.stringify(newUser))
     } catch(err) {
-      setBooks(prev => prev.map(b => b.bookId === book.bookId ? {...b, status: 'read'} : b))
+      // rollback if API fails
+      setBooks(function(prev) { return prev.map(function(b) { return b.bookId === book.bookId ? Object.assign({}, b, { status: 'read' }) : b })
     } finally {
-      lockRef.current.delete(`s-${book.bookId}`)
+      lockRef.current.delete('s-' + book.bookId)
     }
   }
 
   if (!user) return null
   const vip = Number(user.vip || 0)
-  const pendingBooks = books.filter(b => b.status === 'pending' || b.status === 'read')
-  const completedBooks = books.filter(b => b.status === 'submitted')
+  const pendingBooks = books.filter(function(b) { return b.status === 'pending' || b.status === 'read' })
+  const completedBooks = books.filter(function(b) { return b.status === 'submitted' })
 
   if (readingBook) {
     return (
@@ -131,7 +131,7 @@ export default function BooksPage() {
         <>
           {pendingBooks.length > 0 && (
             <div style={{ display: 'grid', gap: '20px', marginBottom: '40px' }}>
-              {pendingBooks.map(book => {
+              {pendingBooks.map(function(book) {
                 const isRead = book.status === 'read'
                 return (
                   <div key={book.bookId} style={{ background: '#f5f5f5', borderRadius: '12px', padding: '15px', display: 'flex', gap: '15px', alignItems: 'center' }}>
@@ -140,8 +140,8 @@ export default function BooksPage() {
                       <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
                       <p style={{ margin: '4px 0 10px', fontSize: '13px', color: '#666' }}>{book.author}</p>
                       <div style={{ display: 'flex', gap: '10px' }}>
-                        <button onClick={() => handleRead(book)} disabled={isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#9ca3af' : '#00BFFF', color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' }}>{isRead ? '✓ Read' : 'Read'}</button>
-                        <button onClick={() => handleSubmit(book)} disabled={!isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#00BFFF' : '#9ca3af', color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer' }}>Submit </button>
+                        <button onClick={function() { handleRead(book) }} disabled={isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#9ca3af' : '#00BFFF', color: '#000', fontWeight: '700', cursor: isRead ? 'not-allowed' : 'pointer' }}>{isRead ? '✓ Read' : 'Read'}</button>
+                        <button onClick={function() { handleSubmit(book) }} disabled={!isRead} style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: isRead ? '#00BFFF' : '#9ca3af', color: '#000', fontWeight: '700', cursor: !isRead ? 'not-allowed' : 'pointer' }}>Submit</button>
                       </div>
                     </div>
                   </div>
@@ -153,15 +153,17 @@ export default function BooksPage() {
             <>
               <h2 style={{ fontSize: '20px', fontWeight: '900', marginBottom: '16px', color: '#000' }}>COMPLETED TODAY'S BOOKS</h2>
               <div style={{ display: 'grid', gap: '16px', marginBottom: '40px' }}>
-                {completedBooks.map(book => (
-                  <div key={book.bookId} style={{ background: '#f5f5f5', borderRadius: '12px', padding: '15px', display: 'flex', gap: '15px', alignItems: 'center', opacity: 0.7 }}>
-                    <img src={book.cover} alt={book.title} style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }} />
-                    <div style={{ flex: 1 }}>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
-                      <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#666' }}>{book.author}</p>
+                {completedBooks.map(function(book) {
+                  return (
+                    <div key={book.bookId} style={{ background: '#f5f5f5', borderRadius: '12px', padding: '15px', display: 'flex', gap: '15px', alignItems: 'center', opacity: 0.7 }}>
+                      <img src={book.cover} alt={book.title} style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 8 }} />
+                      <div style={{ flex: 1 }}>
+                        <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#000' }}>{book.title}</h3>
+                        <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#666' }}>{book.author}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </>
           )}
