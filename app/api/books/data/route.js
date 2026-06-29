@@ -31,18 +31,27 @@ export async function GET(request) {
       return NextResponse.json({ success: false, books: [] }, { status: 400 });
     }
 
-    // 1. Read IDs live from Redis every time
+    // 1. Read IDs live from Redis: books:phone:yy-mm-dd
     const bookIds = await redis.smembers(`books:${phone}:${date}`);
     if (!bookIds?.length) {
       return NextResponse.json({ success: true, books: [] }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    // 2. Map to books.json: id, title, author, preview_page ONLY
+    // 2. Map to books.json: book id, title, author, preview page ONLY
     const BOOKS_MAP = await getBooksMap();
     const booksForToday = bookIds
       .slice(0, 4) // 4 max
-      .map(id => BOOKS_MAP.get(String(id)))
-      .filter(Boolean); // drop if ID not in books.json
+      .map(id => {
+        const b = BOOKS_MAP.get(String(id));
+        if (!b) return null;
+        return {
+          bookId: String(id),               // book id
+          title: b.title,                   // title
+          author: b.author,                 // author
+          preview: b.preview_page || ''     // preview page
+        };
+      })
+      .filter(Boolean);
 
     // 3. Send to books/page.js 
     return NextResponse.json({ success: true, books: booksForToday }, {

@@ -1,10 +1,9 @@
 'use client'
-export const dynamic = 'force-dynamic'; // only this one
+export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
-import { VIPS } from '@/app/config/vips'
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
@@ -20,26 +19,17 @@ export default function BooksPage() {
   const fetchBooks = async (phone, silent = false) => {
     try {
       const today = getUgandaDateString()
-      const [coversRes, dataRes] = await Promise.all([
-        fetch(`/api/books/covers?phone=${phone}&date=${today}`, { cache: 'no-store' }),
-        fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' })
-      ]);
-      
-      const coversJson = await coversRes.json(); 
-      const dataJson = await dataRes.json();     
+      // 1 CALL ONLY. API returns: bookId, title, author, preview
+      const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' });
+      const dataJson = await res.json();     
 
-      if (coversJson.success && dataJson.success) {
-        const idSet = new Set(coversJson.covers.map(c => String(c.id)));
-        const mergedBooks = dataJson.books
-          .filter(b => idSet.has(String(b.id)))
-          .map(b => ({
-            bookId: String(b.id),
-            title: b.title,
-            author: b.author,
-            preview: b.preview_page || 'No preview',
-            cover: `/books/covers/${String(b.id)}.jpg`,
-            status: 'pending' 
-          }));
+      if (dataJson.success) {
+        // PAGE builds cover path from bookId. 11 -> /books/covers/11.jpg
+        const mergedBooks = dataJson.books.map(b => ({
+          ...b, // bookId, title, author, preview
+          cover: `/books/covers/${b.bookId}.jpg`,
+          status: 'pending' 
+        }));
         
         setBooks(mergedBooks);
         if (!silent) {
