@@ -1,64 +1,70 @@
 import { NextResponse } from 'next/server';
 import { Redis } from '@upstash/redis';
-import fs from 'fs/promises';
-import path from 'path';
+import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const redis = Redis.fromEnv();
 
-let BOOKS_MAP = null;
-async function getBooksMap() {
-  if (BOOKS_MAP) return BOOKS_MAP;
-  const booksFilePath = path.join(process.cwd(), 'app', 'data', 'books.json');
-  const ALL_BOOKS = JSON.parse(await fs.readFile(booksFilePath, 'utf8'));
-  BOOKS_MAP = new Map(ALL_BOOKS.map(b => [String(b.id), b]));
-  return BOOKS_MAP;
-}
+// ONLY VIP 1, 2, 3 ARE OPEN. From your screenshot.
+const VIP_CONFIG = {
+ 1: { perBook: 625 },
+ 2: { perBook: 2000 }, 
+ 3: { perBook: 6500 },
+};
 
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
 }
 
-export async function GET(request) {
+export async function POST(request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const phone = searchParams.get('phone'); 
-    const date = searchParams.get('date') || getUgandaDateString();
+    const { phone, bookId } = await request.json();
+    if (!phone ||!bookId) {
+      return NextResponse.json({ error: 'Missing phone or bookId' }, { status: 400 });
+    }
+
+    const date = getUgandaDateString();
+    const bookKey = `book:${phone}:${date}:${bookId}`;
+    const userKey = `user:${phone}`;
+    const txKey = `tx:${phone}:${date}`;
+
+    // 1. Block double submit
+    if (await redis.hget(bookKey, 'status') === 'submitted') {
+      return NextResponse.json({ error: 'Already submitted' }, { status: 409 });
+    }
+
+    // 2. Get user's VIP level. Only check 1,2,3
+    const vipLevel = Number(await redis.hget(userKey, 'vip') || 0);
+    const vipData = VIP_CONFIG[vipLevel];
+    if (!vipData) {
+      return NextResponse.json({ error: 'VIP not open' }, { status: 403 }); // blocks 4-10
+    }
+
+    const payout = vipData.perBook;
+
+    // 3. Create TX for Daily Income tab
+    const tx = {
+      id: randomUUID(),
+      type: 'book_income',
+      amount: payout,
+      bookId: bookId,
+      vipLevel: vipLevel,
+      status: 'completed',
+      createdAt: new Date().toISOString()
+    };
+
+    // 4. Atomic: mark submitted + add balance + save tx
+    const pipe = redis.pipeline();
+    pipe.hset(bookKey, { status: 'submitted' });
+    pipe.hincrbyfloat(userKey, 'availableBalance', payout);
+    pipe.lpush(txKey, JSON.stringify(tx));
+    const results = await pipe.exec();
     
-    if (!phone) return NextResponse.json({ success: false, books: [] }, { status: 400 });
-
-    const bookIds = await redis.smembers(`books:${phone}:${date}`);
-    if (!bookIds?.length) return NextResponse.json({ success: true, books: [] }, { headers: { 'Cache-Control': 'no-store' } });
-
-    const BOOKS_MAP = await getBooksMap();
-    
-    // Pipeline: get all statuses at once
-    const statusPipe = redis.pipeline();
-    bookIds.forEach(id => statusPipe.hget(`book:${phone}:${date}:${id}`, 'status'));
-    const statuses = await statusPipe.exec();
-
-    const booksForToday = bookIds
-      .slice(0, 4)
-      .map((id, i) => {
-        const b = BOOKS_MAP.get(String(id));
-        if (!b) return null;
-        return {
-          bookId: String(id),
-          title: b.title,
-          author: b.author,
-          preview: b.preview || '',
-          status: statuses[i][1] || 'pending' // <- KEY: read real status
-        };
-      })
-      .filter(Boolean);
-
-    return NextResponse.json({ success: true, books: booksForToday }, {
-      headers: { 'Cache-Control': 'no-store' }
-    });
+    return NextResponse.json({ success: true, availableBalance: results[1][1] });
 
   } catch (error) {
-    console.error('API /books/data Error:', error);
-    return NextResponse.json({ success: false, books: [] }, { status: 500 });
+    console.error('API /books/submit Error:', error);
+    return NextResponse.json({ error: 'Submit failed' }, { status: 500 });
   }
 }
