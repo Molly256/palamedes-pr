@@ -21,9 +21,9 @@ export async function GET(req) {
       const pendingIds = await redis.lrange('pending_tx', 0, 999)
       if (pendingIds.length === 0) return NextResponse.json({ success: true, pending: [] })
 
-      const pendingSet = new Set(pendingIds) // O(1) lookup vs includes O(n)
+      const pendingSet = new Set(pendingIds)
       const pending = []
-      const txKeys = await redis.keys('tx:*') // gets all tx:phone only
+      const txKeys = await redis.keys('tx:*')
 
       for (const key of txKeys) {
         const items = await redis.lrange(key, 0, 199)
@@ -43,8 +43,7 @@ export async function GET(req) {
       if (!user || !Object.keys(user).length) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
       
       try { user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]'); user.completedBooks = JSON.parse(user.completedBooks || '[]') } catch { user.unlockedBooks = []; user.completedBooks = [] }
-      user.availableBalance = Number(user.availableBalance || user.balance || 0)
-      user.balance = Number(user.balance || 0)
+      user.availableBalance = Number(user.availableBalance || 0) // <- ONLY this
       user.vip = Number(user.vip || 0)
       return NextResponse.json({ success: true, user })
     }
@@ -60,37 +59,46 @@ export async function POST(req) {
     if (action === 'updateStatus') {
       if (!id ||!status) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
 
-      let userPhone = null; let idx = -1; let txObj = null
-      const txKeys = await redis.keys('tx:*') // only tx:phone lists
+      let userPhone = null; let keyFound = null; let idx = -1; let txObj = null
+      const txKeys = await redis.keys('tx:*')
 
       for (const key of txKeys) {
         const items = await redis.lrange(key, 0, 199)
         for (let i = 0; i < items.length; i++) {
           const tx = safeParse(items[i])
           if (tx?.id === id) {
-            userPhone = key.replace('tx:', '')
+            keyFound = key
+            userPhone = key.replace('tx:', '').split(':')[0]
             idx = i
             txObj = tx
             break
           }
         }
-        if (idx !== -1) break
+        if (idx!== -1) break
       }
 
       if (!txObj) return NextResponse.json({ success: false, error: `Transaction not found: ${id}` }, { status: 404 })
 
       txObj.status = status
       txObj.updatedAt = String(Date.now())
-      await redis.lset(`tx:${userPhone}`, idx, JSON.stringify(txObj)) // update the list item
-      await redis.lrem('pending_tx', 0, id) // remove from queue
+      await redis.lset(keyFound, idx, JSON.stringify(txObj))
+      await redis.lrem('pending_tx', 0, id)
 
-      if (status === 'success' && txObj.type === 'deposit') {
-        const user = await redis.hgetall(`user:${userPhone}`)
-        const amount = Number(txObj.amount || 0) // handles "1000000" string
-        await redis.hset(`user:${userPhone}`, { 
-          balance: Number(user.balance || 0) + amount, 
-          availableBalance: Number(user.availableBalance || user.balance || 0) + amount 
-        })
+      if (status === 'success') {
+        const user = await redis.hgetall(`user:${userPhone}`) || {}
+        const avail = Number(user.availableBalance || 0) // <- ONLY this, no balance
+        const amount = Number(txObj.amount || 0)
+
+        if (txObj.type === 'deposit') {
+          await redis.hset(`user:${userPhone}`, { 
+            availableBalance: avail + amount 
+          })
+        } else if (txObj.type === 'withdraw') {
+          if (avail < amount) return NextResponse.json({ success: false, error: 'Insufficient availableBalance' }, { status: 400 })
+          await redis.hset(`user:${userPhone}`, { 
+            availableBalance: avail - amount 
+          })
+        }
       }
       return NextResponse.json({ success: true })
     }
