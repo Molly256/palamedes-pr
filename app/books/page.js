@@ -40,16 +40,28 @@ export default function BooksPage() {
   }, [])
 
   useEffect(function() {
-    if (!readingBook) return
-    if (timer === 0) { 
-      setReadingBook(null)
-      setTimer(10)
-      setBooks(function(prev) { return prev.map(function(b) { return b.bookId === readingBook.bookId ? Object.assign({}, b, { status: 'read' }) : b })
-      return 
+    if (!readingBook) return;
+    if (timer === 0) {
+        setReadingBook(null);
+        setTimer(10);
+        
+        // FIXED: Added closing }); for map and }); for setBooks
+        setBooks(function(prev) { 
+            return prev.map(function(b) { 
+                return b.bookId === readingBook.bookId ? { ...b, status: 'completed' } : b; // (or whatever your return logic is)
+            }); 
+        });
+        return; // Prevents the timer below from starting if timer hit 0
     }
-    const t = setTimeout(function() { setTimer(timer - 1) }, 1000)
-    return function() { clearTimeout(t) }
-  }, [readingBook, timer])
+
+    const t = setTimeout(function() { 
+        setTimer(timer - 1); 
+    }, 1000);
+
+    return function() { 
+        clearTimeout(t); 
+    };
+}, [readingBook, timer]);
 
   const handleRead = function(book) {
     if (book.status !== 'pending') return
