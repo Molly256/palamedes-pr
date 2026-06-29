@@ -43,7 +43,7 @@ export async function GET(req) {
       if (!user || !Object.keys(user).length) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
       
       try { user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]'); user.completedBooks = JSON.parse(user.completedBooks || '[]') } catch { user.unlockedBooks = []; user.completedBooks = [] }
-      user.availableBalance = Number(user.availableBalance || 0) // <- ONLY this
+      user.availableBalance = Number(user.availableBalance || 0)
       user.vip = Number(user.vip || 0)
       return NextResponse.json({ success: true, user })
     }
@@ -86,17 +86,17 @@ export async function POST(req) {
 
       if (status === 'success') {
         const user = await redis.hgetall(`user:${userPhone}`) || {}
-        const avail = Number(user.availableBalance || 0) // <- ONLY this, no balance
-        const amount = Number(txObj.amount || 0)
+        const avail = Number(user.availableBalance || 0)
+        const amount = Number(String(txObj.amount || 0).replace(/,/g, '')) // <- FIX: force number, strip commas
 
         if (txObj.type === 'deposit') {
           await redis.hset(`user:${userPhone}`, { 
-            availableBalance: avail + amount 
+            availableBalance: String(avail + amount) // <- FIX: force string
           })
         } else if (txObj.type === 'withdraw') {
           if (avail < amount) return NextResponse.json({ success: false, error: 'Insufficient availableBalance' }, { status: 400 })
           await redis.hset(`user:${userPhone}`, { 
-            availableBalance: avail - amount 
+            availableBalance: String(avail - amount) // <- FIX: force string
           })
         }
       }
