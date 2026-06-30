@@ -12,8 +12,8 @@ const getTodayDateStr = () => {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yy}-${mm}-${dd}`;
 };
-const txListKey = (phone) => `tx:${phone}:${getTodayDateStr()}`; // <- List only
-const txHashKey = (phone) => `tx:${phone}:${getTodayDateStr()}:data`; // <- Hash only
+const txListKey = (phone) => `tx:${phone}:${getTodayDateStr()}`; 
+const txHashKey = (phone) => `tx:${phone}:${getTodayDateStr()}:data`; 
 
 export async function GET(request) {
   try {
@@ -29,8 +29,8 @@ export async function GET(request) {
 
     const [userProfile, dailyHash, history] = await Promise.all([
       redis.hgetall(rootUserKey),
-      redis.hgetall(hashKey), // <- CHANGED: Hash for shares
-      redis.lrange(listKey, 0, -1) // <- CHANGED: List for tx
+      redis.hgetall(hashKey),
+      redis.lrange(listKey, 0, -1)
     ]);
     
     if (!userProfile || Object.keys(userProfile).length === 0) {
@@ -40,7 +40,8 @@ export async function GET(request) {
     const wallet = toNum(userProfile.availableBalance);
     const ongoing = JSON.parse(dailyHash?.hot_ongoing || '[]');
     const expired = JSON.parse(dailyHash?.hot_expired || '[]');
-    const parsedHistory = history.map(h => JSON.parse(h));
+    // FIXED: Don't parse. Upstash already gave us objects
+    const parsedHistory = Array.isArray(history) ? history : [];
 
     return NextResponse.json({ success: true, wallet, ongoing, expired, history: parsedHistory });
   } catch (err) {
@@ -79,23 +80,23 @@ export async function POST(request) {
       wallet = wallet - price;
       ongoing.push(payload.newHotInstance);
       
-      const txItem = JSON.stringify({
+      const txItem = { // <- CHANGED: Push object, not string
         id: crypto.randomUUID(),
         type: 'buy_hot',
         amount: String(-price),
         note: `Bought share ${payload.newHotInstance?.title || payload.hotId}`,
         status: 'completed',
         createdAt: new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).replace(',', '').slice(0,16)
-      });
+      };
 
       await Promise.all([
         redis.hset(rootUserKey, { availableBalance: String(wallet) }),
-        redis.hset(hashKey, { hot_ongoing: JSON.stringify(ongoing) }), // <- Hash
-        redis.lpush(listKey, txItem) // <- List
+        redis.hset(hashKey, { hot_ongoing: JSON.stringify(ongoing) }),
+        redis.lpush(listKey, txItem) // <- Upstash will stringify it
       ]);
 
       const history = await redis.lrange(listKey, 0, -1);
-      return NextResponse.json({ success: true, wallet, history: history.map(h => JSON.parse(h)) });
+      return NextResponse.json({ success: true, wallet, history }); // <- no map/parse
     }
 
     if (action === 'COLLECT_HOT') {
@@ -107,23 +108,23 @@ export async function POST(request) {
       ongoing = ongoing.filter(i => i.hotId !== payload.hotId);
       expired.push(hot);
       
-      const txItem = JSON.stringify({
+      const txItem = { // <- CHANGED: Push object
         id: crypto.randomUUID(),
         type: 'collect_hot',
         amount: String(payout),
         note: `Collected share ${hot.title}`,
         status: 'completed',
         createdAt: new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).replace(',', '').slice(0,16)
-      });
+      };
 
       await Promise.all([
         redis.hset(rootUserKey, { availableBalance: String(wallet) }),
-        redis.hset(hashKey, { hot_ongoing: JSON.stringify(ongoing), hot_expired: JSON.stringify(expired) }), // <- Hash
-        redis.lpush(listKey, txItem) // <- List
+        redis.hset(hashKey, { hot_ongoing: JSON.stringify(ongoing), hot_expired: JSON.stringify(expired) }),
+        redis.lpush(listKey, txItem)
       ]);
 
       const history = await redis.lrange(listKey, 0, -1);
-      return NextResponse.json({ success: true, wallet, history: history.map(h => JSON.parse(h)) });
+      return NextResponse.json({ success: true, wallet, history }); // <- no map/parse
     }
 
     return NextResponse.json({ success: false, error: "Action error" }, { status: 400 });
