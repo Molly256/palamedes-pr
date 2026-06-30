@@ -17,16 +17,16 @@ const toNum = (v, f = 0) => {
 const getUgandanShortDate = () => {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Kampala',
-    year: '2-digit',   // 👈 Forces 2-digit Year (e.g. 26)
-    month: '2-digit',  // 👈 Forces 2-digit Month (e.g. 06)
-    day: '2-digit'     // 👈 Forces 2-digit Day (e.g. 30)
+    year: '2-digit',   
+    month: '2-digit',  
+    day: '2-digit'     
   }).formatToParts(new Date())
 
   const year = parts.find(p => p.type === 'year').value
   const month = parts.find(p => p.type === 'month').value
   const day = parts.find(p => p.type === 'day').value
 
-  return `${year}-${month}-${day}` // 👈 Returns exactly: YY-MM-DD
+  return `${year}-${month}-${day}` 
 }
 
 export async function POST(req) {
@@ -55,8 +55,6 @@ export async function POST(req) {
       }
 
       const inviteCode = `PM${phone.slice(-6)}`
-      
-      // FIXED: Locks dates directly to strict Ugandan YY-MM-DD string structure
       const date = getUgandanShortDate() 
       const pipeline = redis.pipeline()
 
@@ -92,7 +90,7 @@ export async function POST(req) {
         completedBooks: '[]',
         unlockedBooks: '[]',
         lastResetDate: String(date),
-        createdAt: String(date) // 👈 Automatically saved in DB as YY-MM-DD
+        createdAt: String(date) 
       }
 
       if (directInviterPhone && directInviterPhone !== phone) {
@@ -135,17 +133,16 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      const currentAvailable = user.availableBalance ? String(user.availableBalance) : '0'
-
+      // FIXED: Safely reads the original parameter type directly into your number processing utility
       const safeUser = {
         username: String(user.username),
         phone: String(user.phone),
-        inviteCode: String(user.inviteCode),
+        inviteCode: String(user.inviteCode || ''),
         vip: toNum(user.vip),
-        availableBalance: toNum(currentAvailable),
+        availableBalance: toNum(user.availableBalance, 2500), // Default value match if empty
         books_read_today: toNum(user.books_read_today),
         dailyIncome: toNum(user.dailyIncome),
-        createdAt: String(user.createdAt) // 👈 Passes the short clean YY-MM-DD date directly to the client app
+        createdAt: String(user.createdAt || getUgandanShortDate()) 
       }
 
       return NextResponse.json({ success: true, user: safeUser })

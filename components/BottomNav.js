@@ -6,14 +6,13 @@ import Link from 'next/link'
 export default function BottomNav() {
   const pathname = usePathname()
 
-  // FIXED: Expanded safety array blocks the bar on the Admin panel or deep dynamic auth routes
   const hideOnRoutes = ['/', '/login', '/register', '/admin']
   if (hideOnRoutes.includes(pathname) || pathname.startsWith('/admin')) {
     return null
   }
 
   const navItems = [
-    { href: '/dashboard', icon: '🏠', label: 'Home', color: '#FFB800' },
+    { href: '/dashboard', icon: '🏠', label: 'Home', color: '#FFB800' }, // FIXED: Label set strictly to 'Home'
     { href: '/books', icon: '📋', label: 'BOOKS', color: '#00D26A' },
     { href: '/hot', icon: '🔥', label: 'Hot', color: '#FF2E2E' },
     { href: '/settings', icon: '⚙️', label: 'Settings', color: '#BF5AF2' },
@@ -21,31 +20,31 @@ export default function BottomNav() {
 
   return (
     <>
-      {/* FIXED: Ghost spacing block pushes scrollable content up so nothing is covered by the nav bar */}
-      <div style={{ height: '85px', width: '100%', clear: 'both' }} />
+      {/* Spacer block to prevent layout overlap */}
+      <div style={{ height: '90px', width: '100%', display: 'block', clear: 'both' }} />
 
       <nav style={{
         position: 'fixed',
         bottom: 0,
-        left: '50%', // 👈 FIXED: Center alignment anchor for desktop monitor previews
-        transform: 'translateX(-50%)', // 👈 FIXED: Perfectly centers the container frame
+        left: 0,
+        right: 0,
         width: '100%',
-        maxWidth: '480px', // 👈 FIXED: Matches your dashboard width limit exactly
+        maxWidth: '480px', 
         height: '75px',
-        background: '#FFFFFF',
+        background: '#FFFFFF', 
         display: 'flex',
         justifyContent: 'space-around', 
         alignItems: 'center',
         border: 'none',
-        borderTop: '1px solid #F1F5F9', // Subtle top separator rule line
-        boxShadow: '0 -4px 16px rgba(0,0,0,0.04)', // Elegant upward glow shadow
-        margin: '0 auto',
-        padding: '0 8px',
-        zIndex: 9999,
-        boxSizing: 'border-box'
+        borderTop: '1px solid #F1F5F9', 
+        boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', 
+        margin: '0 auto', 
+        padding: '0 12px 10px 12px', 
+        zIndex: 99999, 
+        boxSizing: 'border-box',
+        gap: '8px' 
       }}>
         {navItems.map(item => {
-          // FIXED: Use path string matching patterns to keep home tab active on child layouts
           const isActive = pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/dashboard/'))
           
           return (
@@ -57,19 +56,24 @@ export default function BottomNav() {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '5px',
-                background: 'transparent',
-                padding: '6px 12px',
-                transform: isActive ? 'scale(1.1)' : 'scale(1)',
-                transition: 'transform 0.2s ease-in-out',
-                WebkitTapHighlightColor: 'transparent' // Kills native mobile tapping box overlay
+                justifyContent: 'center',
+                gap: '4px',
+                flex: 1,
+                height: '56px', 
+                borderRadius: '12px', 
+                background: isActive ? '#F8FAFC' : 'transparent', 
+                transform: isActive ? 'scale(1.03)' : 'scale(1)',
+                transition: 'all 0.2s ease-in-out',
+                WebkitTapHighlightColor: 'transparent',
+                boxSizing: 'border-box',
+                padding: '4px 0'
               }}
             >
               <span style={{ 
-                fontSize: '26px',
+                fontSize: '22px',
                 lineHeight: '1',
                 filter: isActive 
-                  ? `drop-shadow(0 4px 8px ${item.color}40)` 
+                  ? `drop-shadow(0 2px 6px ${item.color}40)` 
                   : 'brightness(0.6) grayscale(0.3)',
                 transition: 'filter 0.2s ease'
               }}>
@@ -77,9 +81,9 @@ export default function BottomNav() {
               </span>
               <span style={{ 
                 fontSize: '11px',
-                fontWeight: '800',
+                fontWeight: '900',
                 color: isActive ? item.color : '#8E8E93',
-                letterSpacing: '0.2px',
+                letterSpacing: '0.1px',
                 lineHeight: '1',
                 transition: 'color 0.2s ease'
               }}>

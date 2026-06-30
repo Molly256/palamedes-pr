@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 
 export default function Login() {
   const router = useRouter()
-  const lockRef = useRef(false) // <- Instant lock, no state lag
+  const lockRef = useRef(false) 
 
   const [form, setForm] = useState({ phone: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
@@ -31,7 +31,7 @@ export default function Login() {
     }
 
     try {
-      // 1. AWAIT REAL REDIS DATA = No fake login
+      // FIXED: Strictly calls /api/auth to verify system credentials
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -45,17 +45,16 @@ export default function Login() {
       const data = await res.json()
 
       if (!res.ok) {
+        // FIXED: Reads data.error to match your /api/auth backend file structure
         alert(data.error || 'Authentication failed')
-        lockRef.current = false // <- Clear lock so user can try retyping password
+        lockRef.current = false 
         return
       }
 
-      // FIXED: Safely verify that user data exists before committing to LocalStorage
       if (data && data.user) {
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
 
-        // 2. GO INSTANTLY after we have real data verified
-        if (data.user.phone === '0753520252') {
+        if (String(data.user.phone) === '0753520252') {
           router.push('/admin')
         } else {
           router.push('/dashboard')
@@ -68,13 +67,13 @@ export default function Login() {
     } catch (err) {
       console.error('Login submit error:', err)
       alert('Something went wrong. Check connection and try again.')
-      lockRef.current = false // <- Always release lock on network failure
+      lockRef.current = false 
     }
   }
 
   const inputStyle = {
     width: '100%',
-    height: '44px', // <- Same height as Register
+    height: '44px', 
     border: '1px solid #d1d5db',
     borderRadius: '8px',
     padding: '0 12px',

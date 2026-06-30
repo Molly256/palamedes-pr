@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import Link from 'next/link' // 👈 FIXED: Correct Next.js link import to resolve Webpack error
+import Link from 'next/link' 
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 import Card from '../../components/Card'
 import { useRouter } from 'next/navigation'
@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 export default function Dashboard() {
   const router = useRouter()
 
-  // FIXED: Load cache instantly during state initialization to kill visual page flashing completely!
+  // Load from local storage instantly so the screen doesn't flicker or show loading screens
   const [user, setUser] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -21,7 +21,6 @@ export default function Dashboard() {
     return null
   })
 
-  // FIXED: If we already have cached data, start loading as false so the screen renders instantly
   const [loading, setLoading] = useState(!user)
 
   const ADMIN_PHONE = '0753520252'
@@ -34,34 +33,34 @@ export default function Dashboard() {
   }
 
   const loadUser = async (isFocusEvent = false) => {
-    // Read fresh cache pointer
+    if (typeof window === 'undefined') return
+
     const cachedData = localStorage.getItem('palamedes_user')
-    let localUser = {}
+    let localUser = null
     
     try {
       if (cachedData) localUser = JSON.parse(cachedData)
     } catch {
-      localUser = {}
+      localUser = null
     }
     
-    if (!localUser.phone) {
-      setUser(null)
+    // SAFE LAYERING: Only kick out to register if there is absolutely NO user data in state AND cache
+    if (!localUser && !user) {
       setLoading(false)
       router.replace('/register')
       return
     }
 
-    // Only set loading to true on a completely empty state boot, never on page transitions
-    if (!isFocusEvent && !user) setLoading(true)
+    const currentPhone = localUser?.phone || user?.phone
+    const cleanPhone = normalizePhone(currentPhone)
 
-    const cleanPhone = normalizePhone(localUser.phone)
     if (!cleanPhone) {
-      setLoading(false)
-      router.replace('/register')
+      if (!user) router.replace('/register')
       return
     }
     
     try {
+      // CALLS API USER AS REQUESTED
       const res = await fetch(`/api/user?action=getDashboard&phone=${cleanPhone}&_t=${Date.now()}`)
       const data = await res.json()
       
@@ -72,12 +71,10 @@ export default function Dashboard() {
         }
         localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
         setUser(updatedUser)
-      } else {
-        setUser(localUser)
       }
     } catch (e) {
       console.log('Dashboard sync failed:', e)
-      setUser(localUser) // Fallback to cache during network dropouts
+      // If server drops or errors out, keep showing the user cached data instead of kicking them out!
     } finally {
       setLoading(false)
     }
@@ -134,7 +131,6 @@ export default function Dashboard() {
             <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
               Welcome to PALAMEDES PR
             </h2>
-            {/* FIXED: Uses your cached state data right away to prevent flashing "Loading..." */}
             <p style={{ margin: '8px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
               Username: {user?.username || 'User'}
             </p>
