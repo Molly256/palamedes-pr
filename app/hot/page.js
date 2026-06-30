@@ -14,21 +14,36 @@ export default function Hot() {
   const formatDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const getCoverPath = (id) => `/books/covers/${id}.jpg`;
 
+  const refreshFromServer = async () => {
+    try {
+      const res = await fetch(`/api/hot?phone=${phone}`);
+      if (!res.ok) throw new Error(`Server returned status ${res.status}`);
+      const data = await res.json();
+      if (data.success) {
+        setAvailableBalance(Number(data.wallet || 0));
+        setOngoingHots(Array.isArray(data.ongoing)? data.ongoing : []); // <- Ongoing Shares section
+        setExpiredHots(Array.isArray(data.expired)? data.expired : []); // <- Expired Shares section
+      }
+    } catch (err) {
+      console.error("Failed to refresh data:", err);
+    }
+  };
+
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}');
     if (!user.phone) { setLoading(false); return; }
     setPhone(user.phone);
 
     fetch(`/api/hot?phone=${user.phone}`)
-    .then(res => {
+   .then(res => {
         if (!res.ok) throw new Error(`Server returned status ${res.status}`);
         return res.json();
     })
-    .then(data => {
+   .then(data => {
         if (data.success) {
           setAvailableBalance(Number(data.wallet || 0));
-          setOngoingHots(Array.isArray(data.ongoing) ? data.ongoing : []);
-          setExpiredHots(Array.isArray(data.expired) ? data.expired : []);
+          setOngoingHots(Array.isArray(data.ongoing)? data.ongoing : []);
+          setExpiredHots(Array.isArray(data.expired)? data.expired : []);
         }
         setLoading(false);
       }).catch((err) => {
@@ -73,7 +88,6 @@ export default function Hot() {
         body: JSON.stringify({ phone: String(phone), action: 'BUY_HOT', payload: { price: Number(cost), newHotInstance: newHot } })
       });
 
-      // Guard Clause: Handle 500 server crash without breaking json parser
       if (!res.ok) {
         const errorText = await res.text().catch(() => "Unknown Server Error");
         console.error("Server Error Payload:", errorText);
@@ -83,8 +97,8 @@ export default function Hot() {
       const data = await res.json();
       if (!data.success) return alert(data.error || "Buy failed");
 
-      setAvailableBalance(Number(data.wallet));
-      setOngoingHots(p => [...p, newHot]);
+      // KEY CHANGE: Re-fetch from server. This puts it in Ongoing Shares for real
+      await refreshFromServer();
       setQuantities(p => ({...p, [book.id]: 1}));
     } catch (err) {
       alert("Buy failed to execute: " + err.message);
@@ -107,9 +121,8 @@ export default function Hot() {
       const data = await res.json();
       if (!data.success) return alert(data.error || "Collect failed");
 
-      setAvailableBalance(Number(data.wallet));
-      setOngoingHots(p => p.filter(i => i.hotId !== hot.hotId));
-      setExpiredHots(p => [...p, hot]);
+      // KEY CHANGE: Re-fetch from server. This moves it to Expired Shares for real
+      await refreshFromServer();
     } catch (err) {
       alert("Collection request error: " + err.message);
     }
@@ -155,7 +168,7 @@ export default function Hot() {
             <h4>{hot.title}</h4>
             <p style={{ fontSize: '13px' }}>Price Paid: {Number(hot.pricePaid).toLocaleString()}shs ({hot.quantity} Units)</p>
             <p style={{ color: '#0056b3', fontSize: '14px' }}>Expected Return: <strong>{Number(hot.expectedReturn).toLocaleString()}shs</strong></p>
-            <button disabled={!matured} onClick={() => handleCollect(hot)} style={{ marginTop: '8px', background: matured? '#0056b3' : '#fff', color: matured? '#fff' : '#000', border: matured? 'none' : '1px solid #ccc', padding: '6px 12px', borderRadius: '4px', cursor: matured? 'pointer' : 'not-allowed' }}>Collect Hot Income</button>
+            <button disabled={!matured} onClick={() => handleCollect(hot)} style={{ marginTop: '8px', background: matured? '#0056b3' : '#ccc', color: matured? '#fff' : '#000', border: matured? 'none' : '1px solid #ccc', padding: '6px 12px', borderRadius: '4px', cursor: matured? 'pointer' : 'not-allowed' }}>Collect Hot Income</button>
           </div>
         </div>;
       })}
