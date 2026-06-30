@@ -10,9 +10,12 @@ const redis = Redis.fromEnv();
 let BOOKS_MAP = null;
 async function getBooksMap() {
   if (BOOKS_MAP) return BOOKS_MAP;
-  const booksFilePath = path.join(process.cwd(), 'app', 'data', 'books.json');
+  
+  // FIX: Path modified to look directly inside your root directory to find 'data/books.json'
+  const booksFilePath = path.join(process.cwd(), 'data', 'books.json');
   const rawData = await fs.readFile(booksFilePath, 'utf8');
   const parsedData = JSON.parse(rawData);
+  
   // Support both a standard root array or a wrapped { books: [...] } structure
   const ALL_BOOKS = Array.isArray(parsedData) ? parsedData : (parsedData.books || []);
   BOOKS_MAP = new Map(ALL_BOOKS.map(b => [String(b.id || b._id), b]));
