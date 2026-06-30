@@ -13,7 +13,6 @@ const toNum = (v, f = 0) => {
   return Number.isNaN(n) ? f : n
 }
 
-// SIMPLIFIED: Generates pure Ugandan YY-MM-DD right at registration
 const getUgandanShortDate = () => {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Kampala',
@@ -31,11 +30,10 @@ const getUgandanShortDate = () => {
 
 export async function POST(req) {
   try {
-    const { action, username, phone, password, referrerCode } = await req.json()
+    // 1. CHANGED: Accept inviterCode from frontend. Rename to referrerCode for backend
+    const { action, username, phone, password, inviterCode } = await req.json() 
+    const referrerCode = inviterCode // <- Map it
     
-    // ==========================================
-    // ACTION: REGISTER
-    // ==========================================
     if (action === 'register') {
       if (!/^[a-zA-Z0-9]{6}$/.test(username)) {
         return NextResponse.json({ error: 'Username must be 6 alphanumeric chars' }, { status: 400 })
@@ -54,25 +52,26 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
       }
 
-      const inviteCode = `PM${phone.slice(-6)}`
+      const inviteCode = `PM${phone.slice(-6)}` // <- John's own code: PM185973
       const date = getUgandanShortDate() 
       const pipeline = redis.pipeline()
 
       let directInviterPhone = null
 
+      // 2. NO CHANGE: Your A/B/C logic is correct
       if (referrerCode && /^PM\d{6}$/.test(referrerCode)) {
-        directInviterPhone = await redis.get(`invite_code_map:${referrerCode}`)
+        directInviterPhone = await redis.get(`invite_code_map:${referrerCode}`) // Find Sara by PM530252
         
         if (directInviterPhone && directInviterPhone !== phone) {
-          pipeline.hset(`downlines:${directInviterPhone}`, phone, '1')
+          pipeline.hset(`downlines:${directInviterPhone}`, phone, '1') // <- John = 1 = Team A of Sara
 
           const grandparentPhone = await redis.hget(`user:${directInviterPhone}`, 'invited_by')
           if (grandparentPhone) {
-            pipeline.hset(`downlines:${grandparentPhone}`, phone, '2')
+            pipeline.hset(`downlines:${grandparentPhone}`, phone, '2') // <- John = 2 = Team B
 
             const greatGrandparentPhone = await redis.hget(`user:${grandparentPhone}`, 'invited_by')
             if (greatGrandparentPhone) {
-              pipeline.hset(`downlines:${greatGrandparentPhone}`, phone, '3')
+              pipeline.hset(`downlines:${greatGrandparentPhone}`, phone, '3') // <- John = 3 = Team C
             }
           }
         }
@@ -82,7 +81,7 @@ export async function POST(req) {
         username: String(username),
         phone: String(phone),
         password: String(password),
-        inviteCode: String(inviteCode),
+        inviteCode: String(inviteCode), // <- Save John's code
         availableBalance: '2500',
         vip: '0',
         books_read_today: '0',
@@ -94,11 +93,11 @@ export async function POST(req) {
       }
 
       if (directInviterPhone && directInviterPhone !== phone) {
-        userProfile.invited_by = String(directInviterPhone)
+        userProfile.invited_by = String(directInviterPhone) // <- Save Sara's phone on John
       }
 
       pipeline.hset(userKey, userProfile)
-      pipeline.set(`invite_code_map:${inviteCode}`, phone)
+      pipeline.set(`invite_code_map:${inviteCode}`, phone) // <- Map PM185973 -> 0753185973
 
       pipeline.lpush(`tx:${phone}:${date}`, JSON.stringify({
         id: crypto.randomUUID(),
@@ -111,12 +110,9 @@ export async function POST(req) {
 
       await pipeline.exec()
 
-      return NextResponse.json({ success: true, inviteCode })
+      return NextResponse.json({ success: true, inviteCode }) // <- Return John's PM185973
     }
 
-    // ==========================================
-    // ACTION: LOGIN
-    // ==========================================
     if (action === 'login') {
       if (!/^07\d{8}$/.test(phone) || !password) {
         return NextResponse.json({ error: 'Invalid phone or password' }, { status: 400 })
@@ -133,13 +129,12 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      // FIXED: Safely reads the original parameter type directly into your number processing utility
       const safeUser = {
         username: String(user.username),
         phone: String(user.phone),
-        inviteCode: String(user.inviteCode || ''),
+        inviteCode: String(user.inviteCode || ''), // <- John's PM185973
         vip: toNum(user.vip),
-        availableBalance: toNum(user.availableBalance, 2500), // Default value match if empty
+        availableBalance: toNum(user.availableBalance, 2500),
         books_read_today: toNum(user.books_read_today),
         dailyIncome: toNum(user.dailyIncome),
         createdAt: String(user.createdAt || getUgandanShortDate()) 

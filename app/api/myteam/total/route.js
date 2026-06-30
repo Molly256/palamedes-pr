@@ -18,86 +18,53 @@ const toNum = (v, f = 0) => {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const phone = searchParams.get('phone'); // <- CHANGED: was userId
 
-    if (!userId) {
-      return NextResponse.json({ success: false, error: 'User ID parameter is required' }, { status: 400 });
+    if (!phone) { // <- CHANGED
+      return NextResponse.json({ success: false, error: 'Phone parameter is required' }, { status: 400 }); // <- CHANGED
     }
 
-    const userKey = `user:${userId}`;
+    const userKey = `user:${phone}`; // <- CHANGED
 
-    // Fetch the balance, transaction log list array, ongoing shares, and expired items in parallel
-    const [rawBalance, rawHistory, rawOngoing, rawExpired] = await Promise.all([
-      redis.hget(userKey, 'available_balance'),
-      redis.lrange(`user:${userId}:tx_history`, 0, -1),
-      redis.hgetall(`user:${userId}:ongoing_hots`),
-      redis.hgetall(`user:${userId}:expired_hots`)
-    ]);
+    // 1. INSERTED: Get A/B/C phone numbers from downlines hash
+    const downlines = await redis.hgetall(`downlines:${phone}`) || {}; // <- CHANGED
+    
+    const listA = [];
+    const listB = [];
+    const listC = [];
+    Object.entries(downlines).forEach(([p, level]) => {
+      if (level === '1') listA.push(p); // Direct
+      if (level === '2') listB.push(p); // A invited
+      if (level === '3') listC.push(p); // B invited
+    });
 
-    // Parse data blocks safely into arrays
+    // 2. INSERTED: Sum REAL commission from Transaction History tab
+    const rawHistory = await redis.lrange(`user:${phone}:tx_history`, 0, -1); // <- CHANGED
     const history = (rawHistory || []).map(item => (typeof item === 'string' ? JSON.parse(item) : item));
-    const ongoing = rawOngoing ? Object.values(rawOngoing).map(item => (typeof item === 'string' ? JSON.parse(item) : item)) : [];
-    const expired = rawExpired ? Object.values(rawExpired).map(item => (typeof item === 'string' ? JSON.parse(item) : item)) : [];
+
+    const total = history.reduce((sum, tx) => {
+      // Count only commission + registration reward from Invitation Reward tab
+      if (tx.type === 'commission' || (tx.type === 'system_increase' && tx.note === 'Registration Reward')) {
+        return sum + toNum(tx.amount, 0);
+      }
+      return sum;
+    }, 0);
 
     return NextResponse.json({
       success: true,
-      availableBalance: toNum(rawBalance, 0),
-      history,
-      ongoing,
-      expired
+      total, // <- Real sum from tx history for the big box
+      breakdown: {
+        teamA: listA.length, 
+        teamB: listB.length, 
+        teamC: listC.length,
+      },
+      listA, // <- Phones for A row
+      listB, // <- Phones for B row 
+      listC  // <- Phones for C row
     }, { status: 200 });
 
   } catch (error) {
-    console.error('Fatal API endpoint crash in GET /api/hot:', error);
-    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
-  }
-}
-
-/**
- * POST: Handles immediate balance deductions, logs transaction history, and pushes to ongoing sections
- */
-export async function POST(request) {
-  try {
-    const body = await request.json();
-    const { userId, action, payload } = body;
-
-    if (!userId || !action || !payload) {
-      return NextResponse.json({ success: false, error: 'Payload properties are invalid' }, { status: 400 });
-    }
-
-    const userKey = `user:${userId}`;
-    
-    // Create an atomic pipeline transaction block for Upstash
-    const pipeline = redis.pipeline();
-
-    if (action === 'BUY_HOT') {
-      const { updatedAvailableBalance, newHotInstance, newTx } = payload;
-
-      // Deduct balance, add transaction record, and store to ongoing shares
-      pipeline.hset(userKey, { available_balance: updatedAvailableBalance });
-      pipeline.lpush(`user:${userId}:tx_history`, JSON.stringify(newTx));
-      pipeline.hset(`user:${userId}:ongoing_hots`, { [newHotInstance.hotId]: JSON.stringify(newHotInstance) });
-
-    } else if (action === 'COLLECT_HOT') {
-      const { updatedAvailableBalance, hotId, hot, newTx } = payload;
-
-      // Add collected profits, log transaction, remove from ongoing, and push to expired
-      pipeline.hset(userKey, { available_balance: updatedAvailableBalance });
-      pipeline.lpush(`user:${userId}:tx_history`, JSON.stringify(newTx));
-      pipeline.hdel(`user:${userId}:ongoing_hots`, hotId);
-      pipeline.hset(`user:${userId}:expired_hots`, { [hotId]: JSON.stringify(hot) });
-			
-    } else {
-      return NextResponse.json({ success: false, error: 'Action type requested is unhandled' }, { status: 400 });
-    }
-
-    // Execute pipeline queries atomically on Upstash
-    await pipeline.exec();
-
-    return NextResponse.json({ success: true, message: 'Database synced successfully' }, { status: 200 });
-
-  } catch (error) {
-    console.error('Fatal API endpoint crash in POST /api/hot:', error);
+    console.error('Fatal API endpoint crash in GET /api/myteam/total:', error);
     return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }

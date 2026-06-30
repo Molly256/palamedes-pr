@@ -24,14 +24,13 @@ export default function ReferralRedirect() {
       return
     }
 
-    // Save to both storages for Safari/iOS compatibility
+    // Save inviter code for Register page to read
     try {
-      localStorage.setItem('referrer_code', code)
-      sessionStorage.setItem('referrer_code', code)
+      localStorage.setItem('referrer_code', code) // <- Sara's PM530252
+      sessionStorage.setItem('referrer_code', code) // Safari backup
       setStatus('success')
       
-      // Small delay ensures storage is committed before redirect
-      setTimeout(() => router.push('/register'), 300)
+      setTimeout(() => router.push('/register'), 300) // Only redirect here
     } catch (err) {
       console.error('Storage failed:', err)
       router.push('/register')

@@ -1,33 +1,43 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react' // <- 1. Added useEffect
 import { useRouter } from 'next/navigation'
 
 export default function Register() {
   const router = useRouter()
-  const lockRef = useRef(false) // <- Instant lock, no state lag
+  const lockRef = useRef(false)
 
   const [form, setForm] = useState({
     username: '',
     phone: '',
     password: '',
     repeatPassword: '',
-    inviteCode: ''
+    inviterCode: '', // <- 2. Rename: This is Sara's code from URL
+    myInviteCode: '' // <- 3. New: This will be John's code after register
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showRepeatPassword, setShowRepeatPassword] = useState(false)
+  const [isLocked, setIsLocked] = useState(false) // <- lock the field if inviter exists
+
+  // 2. INSERTED LOGIC: Read inviter code from /r/PM530252
+  useEffect(() => {
+    const code = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
+    if (code) {
+      setForm(prev => ({ ...prev, inviterCode: code }))
+      setIsLocked(true) // lock it
+    }
+  }, [])
 
   const handlePhoneChange = (val) => {
     const cleaned = val.replace(/\D/g, '').slice(0, 10)
-    const inviteCode = /^07\d{8}$/.test(cleaned) ? `PM${cleaned.slice(-6)}` : ''
-    setForm(prev => ({ ...prev, phone: cleaned, inviteCode }))
+    // 3. REMOVED: no more `inviteCode` generation here
+    setForm(prev => ({ ...prev, phone: cleaned }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (lockRef.current) return // <- Block double tap instantly
+    if (lockRef.current) return
     lockRef.current = true
 
-    // Validation
     if (!/^[a-zA-Z0-9]{6}$/.test(form.username)) {
       alert('Username must be 6 letters and numbers combined')
       lockRef.current = false
@@ -50,7 +60,6 @@ export default function Register() {
     }
 
     try {
-      // FIXED: We now await the network response instead of skipping ahead immediately
       const response = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -58,24 +67,22 @@ export default function Register() {
           action: 'register',
           username: form.username,
           phone: form.phone,
-          password: form.password
+          password: form.password,
+          inviterCode: form.inviterCode // <- 4. INSERTED: Send Sara's code to backend for A team
         })
       })
 
       const data = await response.json()
 
       if (data.success) {
-        // FIXED: Construct a localized temporary storage object matching your invite lookup key
         const userSession = {
           username: form.username,
           phone: form.phone,
-          inviteCode: data.inviteCode // 👈 Takes the live registered key from the server
+          inviteCode: data.inviteCode // <- 5. This is John's own PM185973 from backend
         }
-
-        // FIXED: Write it to local storage right now so the invite system displays it
         localStorage.setItem('palamedes_user', JSON.stringify(userSession))
-
-        // Redirect to login only after data is securely cached
+        localStorage.removeItem('referrer_code') // 6. INSERTED: Clear after use
+        sessionStorage.removeItem('referrer_code')
         router.push('/login')
       } else {
         alert(data.error || 'Registration failed')
@@ -90,7 +97,7 @@ export default function Register() {
 
   const inputStyle = {
     width: '100%',
-    height: '44px', // <- Same height for all
+    height: '44px',
     border: '1px solid #d1d5db',
     borderRadius: '8px',
     padding: '0 12px',
@@ -110,100 +117,44 @@ export default function Register() {
           
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Username</label>
-            <input
-              type="text"
-              placeholder="6 letters/numbers"
-              value={form.username}
-              onChange={(e) => setForm(prev => ({ ...prev, username: e.target.value }))}
-              maxLength={6}
-              style={inputStyle}
-              required
-            />
+            <input type="text" placeholder="6 letters/numbers" value={form.username} onChange={(e) => setForm(prev => ({ ...prev, username: e.target.value }))} maxLength={6} style={inputStyle} required />
           </div>
 
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Phone Number</label>
-            <input
-              type="tel"
-              placeholder="07XXXXXXXX"
-              value={form.phone}
-              onChange={(e) => handlePhoneChange(e.target.value)}
-              maxLength={10}
-              style={inputStyle}
-              required
-            />
+            <input type="tel" placeholder="07XXXXXXXX" value={form.phone} onChange={(e) => handlePhoneChange(e.target.value)} maxLength={10} style={inputStyle} required />
           </div>
 
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Password</label>
             <div style={{ position: 'relative' }}>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                placeholder="6 letters/numbers"
-                value={form.password}
-                onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))}
-                maxLength={6}
-                style={{...inputStyle, paddingRight: '44px'}}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                👁️
-              </button>
+              <input type={showPassword ? 'text' : 'password'} placeholder="6 letters/numbers" value={form.password} onChange={(e) => setForm(prev => ({ ...prev, password: e.target.value }))} maxLength={6} style={{...inputStyle, paddingRight: '44px'}} required />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', background: 'none', border: 'none', cursor: 'pointer' }}>👁️</button>
             </div>
           </div>
 
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Repeat Password</label>
             <div style={{ position: 'relative' }}>
-              <input
-                type={showRepeatPassword ? 'text' : 'password'}
-                placeholder="Repeat password"
-                value={form.repeatPassword}
-                onChange={(e) => setForm(prev => ({ ...prev, repeatPassword: e.target.value }))}
-                maxLength={6}
-                style={{...inputStyle, paddingRight: '44px'}}
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowRepeatPassword(!showRepeatPassword)}
-                style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                👁️
-              </button>
+              <input type={showRepeatPassword ? 'text' : 'password'} placeholder="Repeat password" value={form.repeatPassword} onChange={(e) => setForm(prev => ({ ...prev, repeatPassword: e.target.value }))} maxLength={6} style={{...inputStyle, paddingRight: '44px'}} required />
+              <button type="button" onClick={() => setShowRepeatPassword(!showRepeatPassword)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '18px', background: 'none', border: 'none', cursor: 'pointer' }}>👁️</button>
             </div>
           </div>
 
           <div>
-            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Invite Code</label>
+            <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
+              Invite Code {isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>} // <- 7. INSERTED: Show inviter
+            </label>
             <input
               type="text"
-              value={form.inviteCode}
-              readOnly
-              placeholder="Auto generated after phone"
-              style={{...inputStyle, backgroundColor: '#f3f4f6', color: '#6b7280'}}
+              value={form.inviterCode} // <- 8. CHANGED: was form.inviteCode
+              readOnly // <- 9. INSERTED: Locked
+              placeholder="No inviter"
+              style={{...inputStyle, backgroundColor: isLocked? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: isLocked? '900' : '400'}} // <- 10. INSERTED: Yellow if locked
             />
           </div>
 
-          <button
-            type="submit"
-            style={{ 
-              width: '100%',
-              height: '44px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: '#87CEEB',
-              color: '#000',
-              fontWeight: '500',
-              fontSize: '16px',
-              cursor: 'pointer',
-              marginTop: '4px'
-            }}
-          >
+          <button type="submit" style={{ width: '100%', height: '44px', borderRadius: '8px', border: 'none', backgroundColor: '#87CEEB', color: '#000', fontWeight: '500', fontSize: '16px', cursor: 'pointer', marginTop: '4px' }}>
             Register
           </button>
         </form>

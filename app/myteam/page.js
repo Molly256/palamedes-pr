@@ -12,19 +12,34 @@ export default function MyTeamPage() {
       window.location.href = '/login'
       return
     }
-    
+
     // Fetches live tracking arrays from our optimized backend endpoint
     fetch(`/api/myteam/total?phone=${userData.phone}`)
-      .then(r => r.json())
-      .then(res => {
+     .then(r => r.json())
+     .then(res => {
         if (res.success) setData(res)
         setLoading(false)
       })
-      .catch(() => setLoading(false))
+     .catch(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-white text-gray-500 font-medium">Loading network tree...</div>
   if (!data) return null
+
+  // INSERTED: Reusable phone list component
+  const PhoneList = ({ list }) => (
+    list && list.length > 0? (
+      <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-gray-100">
+        {list.map(p => (
+          <span key={p} className="bg-gray-100 text-gray-700 text-[11px] font-bold px-2 py-1 rounded-full">
+            {p}
+          </span>
+        ))}
+      </div>
+    ) : (
+      <p className="text-[11px] text-gray-400 font-medium mt-3 pt-3 border-t border-gray-100">No members yet</p>
+    )
+  )
 
   return (
     <main className="min-h-screen bg-gray-50 p-4">
@@ -47,25 +62,31 @@ export default function MyTeamPage() {
 
         {/* Breakdown - Tracks ALL registered members based on your explicit requirement */}
         <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
+          <div className="bg-white rounded-xl border-gray-100 p-4 text-center">
             <p className="text-xs font-bold text-gray-400 uppercase">Team A</p>
             <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown.teamA}</p>
             <p className="text-[10px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full inline-block">Direct (5%)</p>
+            {/* INSERTED: Show A phones */}
+            <PhoneList list={data.listA} />
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
+          <div className="bg-white rounded-xl border-gray-100 p-4 text-center">
             <p className="text-xs font-bold text-gray-400 uppercase">Team B</p>
             <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown.teamB}</p>
             <p className="text-[10px] font-bold bg-green-50 text-green-600 px-1.5 py-0.5 rounded-full inline-block">Indirect (2%)</p>
+            {/* INSERTED: Show B phones */}
+            <PhoneList list={data.listB} />
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
+          <div className="bg-white rounded-xl border-gray-100 p-4 text-center">
             <p className="text-xs font-bold text-gray-400 uppercase">Team C</p>
             <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown.teamC}</p>
             <p className="text-[10px] font-bold bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full inline-block">Indirect (1%)</p>
+            {/* INSERTED: Show C phones */}
+            <PhoneList list={data.listC} />
           </div>
         </div>
 
         {/* Informational Policy Box */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5">
+        <div className="bg-white rounded-xl border-gray-100 p-5">
           <h2 className="text-sm font-black text-gray-800 mb-3">Network Commission Rules</h2>
           <div className="space-y-2.5 text-xs text-gray-600 font-semibold">
             <div className="flex justify-between items-center py-1.5 border-b border-gray-50">
