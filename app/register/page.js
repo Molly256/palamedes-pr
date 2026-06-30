@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useEffect } from 'react' // <- 1. Added useEffect
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Register() {
@@ -11,14 +11,14 @@ export default function Register() {
     phone: '',
     password: '',
     repeatPassword: '',
-    inviterCode: '', // <- 2. Rename: This is Sara's code from URL
-    myInviteCode: '' // <- 3. New: This will be John's code after register
+    inviterCode: '', // <- Sara's code from URL
+    myInviteCode: '' // <- John's code after register
   })
   const [showPassword, setShowPassword] = useState(false)
   const [showRepeatPassword, setShowRepeatPassword] = useState(false)
   const [isLocked, setIsLocked] = useState(false) // <- lock the field if inviter exists
 
-  // 2. INSERTED LOGIC: Read inviter code from /r/PM530252
+  // Read inviter code from /r/PM530252
   useEffect(() => {
     const code = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
     if (code) {
@@ -29,7 +29,6 @@ export default function Register() {
 
   const handlePhoneChange = (val) => {
     const cleaned = val.replace(/\D/g, '').slice(0, 10)
-    // 3. REMOVED: no more `inviteCode` generation here
     setForm(prev => ({ ...prev, phone: cleaned }))
   }
 
@@ -68,7 +67,7 @@ export default function Register() {
           username: form.username,
           phone: form.phone,
           password: form.password,
-          inviterCode: form.inviterCode // <- 4. INSERTED: Send Sara's code to backend for A team
+          inviterCode: form.inviterCode // <- Send Sara's code to backend for A team
         })
       })
 
@@ -78,10 +77,10 @@ export default function Register() {
         const userSession = {
           username: form.username,
           phone: form.phone,
-          inviteCode: data.inviteCode // <- 5. This is John's own PM185973 from backend
+          inviteCode: data.inviteCode // <- John's own PM185973 from backend
         }
         localStorage.setItem('palamedes_user', JSON.stringify(userSession))
-        localStorage.removeItem('referrer_code') // 6. INSERTED: Clear after use
+        localStorage.removeItem('referrer_code') // Clear after use
         sessionStorage.removeItem('referrer_code')
         router.push('/login')
       } else {
@@ -143,14 +142,14 @@ export default function Register() {
 
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
-              Invite Code {isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>} // <- 7. INSERTED: Show inviter
+              Invite Code {isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>} {/* 7. INSERTED: Show inviter */}
             </label>
             <input
               type="text"
-              value={form.inviterCode} // <- 8. CHANGED: was form.inviteCode
-              readOnly // <- 9. INSERTED: Locked
+              value={form.inviterCode} // <- was form.inviteCode
+              readOnly // <- Locked
               placeholder="No inviter"
-              style={{...inputStyle, backgroundColor: isLocked? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: isLocked? '900' : '400'}} // <- 10. INSERTED: Yellow if locked
+              style={{...inputStyle, backgroundColor: isLocked? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: isLocked? '900' : '400'}} // <- Yellow if locked
             />
           </div>
 

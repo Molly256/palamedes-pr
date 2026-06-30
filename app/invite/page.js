@@ -23,7 +23,7 @@ export default function InvitePage() {
 
   const getInviteLink = () => {
     if (!user || !user.inviteCode) return 'Loading your code...'
-    return `https://www.palamedes-pr.co.uk/${user.inviteCode}` // <- fixed: ${} + www. + /
+    return `https://www.palamedes-pr.co.uk/r/${user.inviteCode}` // <- CHANGED: added /r/
   }
 
   const handleCopy = async () => {
