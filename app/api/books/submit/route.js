@@ -6,9 +6,9 @@ export const dynamic = 'force-dynamic';
 const redis = Redis.fromEnv();
 
 const VIP_CONFIG = {
- 1: { perBook: 625 },
- 2: { perBook: 2000 },
- 3: { perBook: 6500 },
+  1: { perBook: 625 },
+  2: { perBook: 2000 },
+  3: { perBook: 6500 },
 };
 
 function getUgandaDateString() {
@@ -89,10 +89,6 @@ export async function POST(request) {
         currentCompleted.push(String(bookId));
       }
 
-      // Increment counters systematically for evaluation inside Upstash dashboard console
-      const nextDailyCount = String(Number(userData.books_read_today || 0) + 1);
-      const nextDailyIncome = String(Number(userData.dailyIncome || 0) + payout);
-
       const tx = {
         id: makeId(),
         type: 'book_income', 
@@ -104,42 +100,46 @@ export async function POST(request) {
         bookTitle: `Book ${bookId}` 
       };
 
-      await redis.hsetnx(userKey, 'availableBalance', 0);
+      // Initialize base parameters safely without erasing current settings
+      await redis.hsetnx(userKey, 'availableBalance', '0');
+      await redis.hsetnx(userKey, 'books_read_today', '0');
+      await redis.hsetnx(userKey, 'dailyIncome', '0');
 
       const pipe = redis.pipeline();
       
       // Index 0: Update book hash status
       pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() });
       
-      // Index 1: Safely increment availableBalance exclusively
+      // Index 1, 2, 3: Atomic increments avoid out-of-sync calculations
       pipe.hincrbyfloat(userKey, 'availableBalance', payout);
+      pipe.hincrby(userKey, 'books_read_today', 1);
+      pipe.hincrbyfloat(userKey, 'dailyIncome', payout);
       
-      // Index 2: Save tracking variables inside user profile boundaries
+      // Index 4: Save tracked books array string
       pipe.hset(userKey, {
-        completedBooks: JSON.stringify(currentCompleted),
-        books_read_today: nextDailyCount,
-        dailyIncome: nextDailyIncome
+        completedBooks: JSON.stringify(currentCompleted)
       });
 
-      // Indexes 3 and 4: Push to histories
+      // Indexes 5 and 6: Push to history streams
       pipe.lpush(txKey, JSON.stringify(tx)); 
       pipe.lpush(incomeKey, JSON.stringify(tx)); 
 
       const results = await pipe.exec();
 
-      if (!results || results.length < 5) {
+      if (!results || results.length < 7) {
         console.error('Redis pipeline failed:', results);
         return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
       }
 
-      // FIXED: Extract index 1 to fetch the numerical result of your availableBalance addition
-      const updatedBalance = results[1];
+      // Safely parse pipeline array indices to return back to user view state
+      const updatedBalance = Number(results[1]);
+      const nextDailyCount = Number(results[2]);
 
       return NextResponse.json({
         success: true,
-        availableBalance: typeof updatedBalance === 'number' ? updatedBalance : Number(updatedBalance),
+        availableBalance: isNaN(updatedBalance) ? (Number(userData.availableBalance || 0) + payout) : updatedBalance,
         status: 'submitted',
-        books_read_today: Number(nextDailyCount),
+        books_read_today: isNaN(nextDailyCount) ? (Number(userData.books_read_today || 0) + 1) : nextDailyCount,
         completedBooks: currentCompleted
       });
     }
