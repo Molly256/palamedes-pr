@@ -23,7 +23,7 @@ export default function InvitePage() {
 
   const getInviteLink = () => {
     if (!user || !user.inviteCode) return 'Loading your code...'
-    return `https://palamedes-pr.co.uk{user.inviteCode}`
+    return `https://www.palamedes-pr.co.uk/${user.inviteCode}` // <- fixed: ${} + www. + /
   }
 
   const handleCopy = async () => {
@@ -67,8 +67,8 @@ export default function InvitePage() {
     fontSize: '10px', 
     fontWeight: '400', 
     background: '#87CEEB', 
-    border: '1px solid #000000', 
-    color: '#000000', 
+    border: '1px solid #000', 
+    color: '#000', 
     textAlign: 'center',
     whiteSpace: 'nowrap'
   }
@@ -77,7 +77,7 @@ export default function InvitePage() {
     padding: '5px 3px', 
     fontSize: '9.5px', 
     fontWeight: '700', 
-    border: '1px solid #000000', 
+    border: '1px solid #000', 
     color: '#1E293B', 
     textAlign: 'center',
     whiteSpace: 'nowrap'
