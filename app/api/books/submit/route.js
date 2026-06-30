@@ -19,8 +19,15 @@ function makeId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
+// FIXED: Upgraded parser enforces array validation to neutralize type crashes
 function safeParse(str, fallback = []) {
-  try { return JSON.parse(str || '[]') } catch { return fallback }
+  if (!str) return fallback;
+  try { 
+    const parsed = JSON.parse(str);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch { 
+    return fallback; 
+  }
 }
 
 export async function POST(request) {
@@ -83,7 +90,7 @@ export async function POST(request) {
 
       const payout = vipData.perBook;
 
-      // Handle the completed books array tracking seamlessly
+      // Safe extraction ensures this is always an array
       const currentCompleted = safeParse(userData.completedBooks);
       if (!currentCompleted.includes(String(bookId))) {
         currentCompleted.push(String(bookId));
@@ -100,46 +107,31 @@ export async function POST(request) {
         bookTitle: `Book ${bookId}` 
       };
 
-      // Initialize base parameters safely without erasing current settings
-      await redis.hsetnx(userKey, 'availableBalance', '0');
-      await redis.hsetnx(userKey, 'books_read_today', '0');
-      await redis.hsetnx(userKey, 'dailyIncome', '0');
+      // Calculate new math states inside node memory space safely
+      const updatedBalance = Number(userData.availableBalance || 0) + payout;
+      const nextDailyCount = Number(userData.books_read_today || 0) + 1;
+      const nextDailyIncome = Number(userData.dailyIncome || 0) + payout;
 
-      const pipe = redis.pipeline();
-      
-      // Index 0: Update book hash status
-      pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() });
-      
-      // Index 1, 2, 3: Atomic increments avoid out-of-sync calculations
-      pipe.hincrbyfloat(userKey, 'availableBalance', payout);
-      pipe.hincrby(userKey, 'books_read_today', 1);
-      pipe.hincrbyfloat(userKey, 'dailyIncome', payout);
-      
-      // Index 4: Save tracked books array string
-      pipe.hset(userKey, {
+      // 1. Mark the individual book identifier state as submitted
+      await redis.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() });
+
+      // 2. Overwrite target field strings onto user mapping hash profiles
+      await redis.hset(userKey, {
+        availableBalance: String(updatedBalance),
+        books_read_today: String(nextDailyCount),
+        dailyIncome: String(nextDailyIncome),
         completedBooks: JSON.stringify(currentCompleted)
       });
 
-      // Indexes 5 and 6: Push to history streams
-      pipe.lpush(txKey, JSON.stringify(tx)); 
-      pipe.lpush(incomeKey, JSON.stringify(tx)); 
-
-      const results = await pipe.exec();
-
-      if (!results || results.length < 7) {
-        console.error('Redis pipeline failed:', results);
-        return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
-      }
-
-      // Safely parse pipeline array indices to return back to user view state
-      const updatedBalance = Number(results[1]);
-      const nextDailyCount = Number(results[2]);
+      // 3. Document logs to ledger histories
+      await redis.lpush(txKey, JSON.stringify(tx)); 
+      await redis.lpush(incomeKey, JSON.stringify(tx)); 
 
       return NextResponse.json({
         success: true,
-        availableBalance: isNaN(updatedBalance) ? (Number(userData.availableBalance || 0) + payout) : updatedBalance,
+        availableBalance: updatedBalance,
         status: 'submitted',
-        books_read_today: isNaN(nextDailyCount) ? (Number(userData.books_read_today || 0) + 1) : nextDailyCount,
+        books_read_today: nextDailyCount,
         completedBooks: currentCompleted
       });
     }
