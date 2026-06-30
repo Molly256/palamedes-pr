@@ -20,20 +20,30 @@ export async function GET(request) {
     const phone = searchParams.get('phone');
     if (!phone) return NextResponse.json({ success: false, error: "Missing phone" }, { status: 400 });
 
+    const rootUserKey = `user:${phone}`;
     const todayKey = getTodayKey(phone);
-    console.log('[HOT GET] Reading key:', todayKey); // <- check Vercel logs
 
-    const daily = await redis.hgetall(todayKey);
+    console.log('[HOT GET] Reading profile:', rootUserKey, 'and daily:', todayKey);
+
+    // Read profile balance and daily records concurrently
+    const [userProfile, daily] = await Promise.all([
+      redis.hgetall(rootUserKey),
+      redis.hgetall(todayKey)
+    ]);
     
-    if (!daily || Object.keys(daily).length === 0) {
-      console.log('[HOT GET] Key empty/missing:', todayKey);
-      return NextResponse.json({ success: true, wallet: 0, ongoing: [], expired: [], history: [] }); // <- don't 404
+    // Check if the actual user profile exists
+    if (!userProfile || Object.keys(userProfile).length === 0) {
+      console.log('[HOT GET] User account missing:', rootUserKey);
+      return NextResponse.json({ success: true, wallet: 0, ongoing: [], expired: [], history: [] });
     }
 
-    const wallet = toNum(daily.availableBalance);
-    const ongoing = JSON.parse(daily.hot_ongoing || '[]');
-    const expired = JSON.parse(daily.hot_expired || '[]');
-    const history = JSON.parse(daily.hot_history || '[]');
+    // Extract balance from root profile hash map
+    const wallet = toNum(userProfile.availableBalance);
+    
+    // Extract investment blocks from tracking timeline
+    const ongoing = JSON.parse(daily?.hot_ongoing || '[]');
+    const expired = JSON.parse(daily?.hot_expired || '[]');
+    const history = JSON.parse(daily?.hot_history || '[]');
 
     return NextResponse.json({ success: true, wallet, ongoing, expired, history });
   } catch (err) {
@@ -47,15 +57,23 @@ export async function POST(request) {
     const { phone, action, payload } = await request.json();
     if (!phone) return NextResponse.json({ success: false, error: "Missing phone" }, { status: 400 });
 
+    const rootUserKey = `user:${phone}`;
     const todayKey = getTodayKey(phone);
-    console.log('[HOT POST] Key:', todayKey, 'Action:', action); // <- check Vercel logs
+    console.log('[HOT POST] Action:', action, 'Keys Profile:', rootUserKey, 'Daily:', todayKey);
 
-    const daily = await redis.hgetall(todayKey) || {};
+    const [userProfile, dailyData] = await Promise.all([
+      redis.hgetall(rootUserKey),
+      redis.hgetall(todayKey)
+    ]);
+
+    if (!userProfile || Object.keys(userProfile).length === 0) {
+      return NextResponse.json({ success: false, error: "User account not found" }, { status: 404 });
+    }
     
-    let wallet = toNum(daily.availableBalance);
-    let ongoing = JSON.parse(daily.hot_ongoing || '[]');
-    let expired = JSON.parse(daily.hot_expired || '[]');
-    let history = JSON.parse(daily.hot_history || '[]');
+    let wallet = toNum(userProfile.availableBalance);
+    let ongoing = JSON.parse(dailyData?.hot_ongoing || '[]');
+    let expired = JSON.parse(dailyData?.hot_expired || '[]');
+    let history = JSON.parse(dailyData?.hot_history || '[]');
 
     if (action === 'BUY_HOT') {
       const price = toNum(payload.price); 
@@ -75,11 +93,14 @@ export async function POST(request) {
         createdAt: new Date().toISOString().slice(0,10).replaceAll('-','/')
       });
 
-      await redis.hset(todayKey, {
-        availableBalance: String(wallet),
-        hot_ongoing: JSON.stringify(ongoing),
-        hot_history: JSON.stringify(history)
-      });
+      // Write changes back split across both distinct database objects
+      await Promise.all([
+        redis.hset(rootUserKey, { availableBalance: String(wallet) }),
+        redis.hset(todayKey, {
+          hot_ongoing: JSON.stringify(ongoing),
+          hot_history: JSON.stringify(history)
+        })
+      ]);
 
       return NextResponse.json({ success: true, wallet });
     }
@@ -102,12 +123,15 @@ export async function POST(request) {
         createdAt: new Date().toISOString().slice(0,10).replaceAll('-','/')
       });
 
-      await redis.hset(todayKey, {
-        availableBalance: String(wallet),
-        hot_ongoing: JSON.stringify(ongoing),
-        hot_expired: JSON.stringify(expired),
-        hot_history: JSON.stringify(history)
-      });
+      // Write payouts back split across both distinct database objects
+      await Promise.all([
+        redis.hset(rootUserKey, { availableBalance: String(wallet) }),
+        redis.hset(todayKey, {
+          hot_ongoing: JSON.stringify(ongoing),
+          hot_expired: JSON.stringify(expired),
+          hot_history: JSON.stringify(history)
+        })
+      ]);
 
       return NextResponse.json({ success: true, wallet });
     }
