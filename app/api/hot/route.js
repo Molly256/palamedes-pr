@@ -11,7 +11,7 @@ const getTodayKey = (phone) => {
   const yy = String(d.getFullYear()).slice(-2);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  return `user:${phone}:${yy}-${mm}-${dd}`;
+  return `tx:${phone}:${yy}-${mm}-${dd}`; // <- Redis List key
 };
 
 export async function GET(request) {
@@ -25,27 +25,22 @@ export async function GET(request) {
 
     console.log('[HOT GET] Reading profile:', rootUserKey, 'and daily:', todayKey);
 
-    // Read profile balance and daily records concurrently
-    const [userProfile, daily] = await Promise.all([
+    const [userProfile, daily, history] = await Promise.all([ // <- ADDED lrange
       redis.hgetall(rootUserKey),
-      redis.hgetall(todayKey)
+      redis.hgetall(todayKey),
+      redis.lrange(todayKey, 0, -1) // <- CHANGED: Get list, not hgetall.hot_history
     ]);
     
-    // Check if the actual user profile exists
     if (!userProfile || Object.keys(userProfile).length === 0) {
-      console.log('[HOT GET] User account missing:', rootUserKey);
       return NextResponse.json({ success: true, wallet: 0, ongoing: [], expired: [], history: [] });
     }
 
-    // Extract balance from root profile hash map
     const wallet = toNum(userProfile.availableBalance);
-    
-    // Extract investment blocks from tracking timeline
     const ongoing = JSON.parse(daily?.hot_ongoing || '[]');
     const expired = JSON.parse(daily?.hot_expired || '[]');
-    const history = JSON.parse(daily?.hot_history || '[]');
+    const parsedHistory = history.map(h => JSON.parse(h)); // <- Parse list items
 
-    return NextResponse.json({ success: true, wallet, ongoing, expired, history });
+    return NextResponse.json({ success: true, wallet, ongoing, expired, history: parsedHistory });
   } catch (err) {
     console.error('[HOT GET] Error:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -73,36 +68,33 @@ export async function POST(request) {
     let wallet = toNum(userProfile.availableBalance);
     let ongoing = JSON.parse(dailyData?.hot_ongoing || '[]');
     let expired = JSON.parse(dailyData?.hot_expired || '[]');
-    let history = JSON.parse(dailyData?.hot_history || '[]');
 
     if (action === 'BUY_HOT') {
-      const price = toNum(payload.price); 
-      
+      const price = toNum(payload.price);
       if (wallet < price) {
         return NextResponse.json({ success: false, error: "Insufficient balance" }, { status: 400 });
       }
 
       wallet = wallet - price;
       ongoing.push(payload.newHotInstance);
-      history.unshift({
+      
+      const txItem = JSON.stringify({ // <- CHANGED: Build item for list
         id: crypto.randomUUID(),
         type: 'buy_hot',
         amount: String(-price),
-        note: `Bought Hot ${payload.newHotInstance?.title || payload.hotId}`,
+        note: `Bought share ${payload.newHotInstance?.title || payload.hotId}`, // <- "share" not "Hot"
         status: 'completed',
-        createdAt: new Date().toISOString().slice(0,10).replaceAll('-','/')
+        createdAt: new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).replace(',', '').slice(0,16) // <- yy-mm-dd HH:MM
       });
 
-      // Write changes back split across both distinct database objects
       await Promise.all([
         redis.hset(rootUserKey, { availableBalance: String(wallet) }),
-        redis.hset(todayKey, {
-          hot_ongoing: JSON.stringify(ongoing),
-          hot_history: JSON.stringify(history)
-        })
+        redis.hset(todayKey, { hot_ongoing: JSON.stringify(ongoing) }),
+        redis.lpush(todayKey, txItem) // <- CHANGED: LPUSH to list
       ]);
 
-      return NextResponse.json({ success: true, wallet });
+      const history = await redis.lrange(todayKey, 0, -1);
+      return NextResponse.json({ success: true, wallet, history: history.map(h => JSON.parse(h)) });
     }
 
     if (action === 'COLLECT_HOT') {
@@ -114,26 +106,24 @@ export async function POST(request) {
 
       ongoing = ongoing.filter(i => i.hotId !== payload.hotId);
       expired.push(hot);
-      history.unshift({
+      
+      const txItem = JSON.stringify({ // <- CHANGED: Build item for list
         id: crypto.randomUUID(),
         type: 'collect_hot',
         amount: String(payout),
-        note: `Collected ${hot.title}`,
+        note: `Collected share ${hot.title}`, // <- "share" not "Hot"
         status: 'completed',
-        createdAt: new Date().toISOString().slice(0,10).replaceAll('-','/')
+        createdAt: new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).replace(',', '').slice(0,16) // <- yy-mm-dd HH:MM
       });
 
-      // Write payouts back split across both distinct database objects
       await Promise.all([
         redis.hset(rootUserKey, { availableBalance: String(wallet) }),
-        redis.hset(todayKey, {
-          hot_ongoing: JSON.stringify(ongoing),
-          hot_expired: JSON.stringify(expired),
-          hot_history: JSON.stringify(history)
-        })
+        redis.hset(todayKey, { hot_ongoing: JSON.stringify(ongoing), hot_expired: JSON.stringify(expired) }),
+        redis.lpush(todayKey, txItem) // <- CHANGED: LPUSH to list
       ]);
 
-      return NextResponse.json({ success: true, wallet });
+      const history = await redis.lrange(todayKey, 0, -1);
+      return NextResponse.json({ success: true, wallet, history: history.map(h => JSON.parse(h)) });
     }
 
     return NextResponse.json({ success: false, error: "Action error" }, { status: 400 });

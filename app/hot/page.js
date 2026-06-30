@@ -8,24 +8,25 @@ export default function Hot() {
   const [expiredHots, setExpiredHots] = useState([]);
   const [quantities, setQuantities] = useState({ 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 });
   const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState(''); // <- 1. Real user
+  const [phone, setPhone] = useState('');
 
   const getUgandanTime = () => new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" }));
   const formatDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const getCoverPath = (id) => `/books/covers/${id}.jpg`;
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}'); // <- 2. Read real user
+    const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}');
     if (!user.phone) { setLoading(false); return; }
     setPhone(user.phone);
 
-    fetch(`/api/hot?phone=${user.phone}`) // <- 3. Use phone not user_101
-   .then(res => res.json())
-   .then(data => {
+    fetch(`/api/hot?phone=${user.phone}`)
+.then(res => res.json())
+.then(data => {
         if (data.success) {
-          setAvailableBalance(Number(data.wallet || 0)); // <- 4. wallet not availableBalance
+          setAvailableBalance(Number(data.wallet || 0));
           if (data.ongoing) setOngoingHots(data.ongoing);
           if (data.expired) setExpiredHots(data.expired);
+          // REMOVED: setTx(data.history)
         }
         setLoading(false);
       }).catch(() => setLoading(false));
@@ -38,7 +39,7 @@ export default function Hot() {
   const handleBuy = async (book) => {
     const qty = quantities[book.id] || 1;
     const price = 50000;
-    const cost = price * qty; // Total price depending on number of shares
+    const cost = price * qty;
     if (availableBalance < cost) return alert("❌ Insufficient available balance");
 
     const nowUg = getUgandanTime();
@@ -57,16 +58,16 @@ export default function Hot() {
       const res = await fetch('/api/hot', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        // FIXED: Sending 'cost' instead of 'price' so the backend reads the exact amount
-        body: JSON.stringify({ phone, action: 'BUY_HOT', payload: { price: cost, newHotInstance: newHot } }) 
+        body: JSON.stringify({ phone, action: 'BUY_HOT', payload: { price: cost, newHotInstance: newHot } })
       });
-      
+
       const data = await res.json();
       if (!data.success) return alert(data.error || "Buy failed");
 
-      setAvailableBalance(data.wallet); // updates balance layout
+      setAvailableBalance(data.wallet);
       setOngoingHots(p => [].concat(p, [newHot]));
-      setQuantities(p => Object.assign({}, p, { [book.id]: 1 })); // reset picker to 1 after buy
+      // REMOVED: setTx(data.history || [])
+      setQuantities(p => Object.assign({}, p, { [book.id]: 1 }));
     } catch (err) {
       alert("Buy failed: Connection or Server Error");
       console.error(err);
@@ -77,27 +78,23 @@ export default function Hot() {
     const res = await fetch('/api/hot', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ phone, action: 'COLLECT_HOT', payload: { hotId: hot.hotId, hot } }) // <- phone
+      body: JSON.stringify({ phone, action: 'COLLECT_HOT', payload: { hotId: hot.hotId, hot } })
     });
     const data = await res.json();
     if (!data.success) return alert(data.error || "Collect failed");
 
-    setAvailableBalance(data.wallet); // <- wallet
+    setAvailableBalance(data.wallet);
     setOngoingHots(p => p.filter(i => i.hotId!== hot.hotId));
     setExpiredHots(p => [].concat(p, [hot]));
+    // REMOVED: setTx(data.history || [])
   };
 
   if (loading) return React.createElement('div', { style: { textAlign: 'center', padding: '50px' } }, 'Loading...');
 
   return React.createElement('div', { style: { maxWidth: '750px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' } },
-    React.createElement('div', { style: { borderBottom: '2px solid #222', paddingBottom: '12px', marginBottom: '20px' } },
-      React.createElement('h2', null, 'HOT'),
-      React.createElement('p', null, 'Available Balance: ', React.createElement('strong', { style: { color: '#0056b3' } }, availableBalance.toLocaleString() + 'shs')), // <- FIXED
-      React.createElement('div', { style: { display: 'flex', gap: '10px', marginTop: '10px' } },
-        React.createElement('button', { style: { background: '#222', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '13px' } }, '🛒 Marketplace')
-      )
-    ),
+    // REMOVED: Shares header + Tx button + Tx list
     React.createElement(React.Fragment, null,
+      // 1. HOT TAB: Buy only. Clean.
       React.createElement('div', null,
         React.createElement('h3', null, '🔥 Hot Marketplace'),
         booksData.slice(0, 5).map(book =>
@@ -122,28 +119,30 @@ export default function Hot() {
           )
         )
       ),
+      // 2. ONGOING SHARES: Only shares. Clean.
       React.createElement('div', { style: { marginTop: '30px' } },
-        React.createElement('h3', null, '⏳ Ongoing Hots'),
+        React.createElement('h3', null, '⏳ Ongoing Shares'),
         ongoingHots.length === 0? React.createElement('p', { style: { color: '#888', fontStyle: 'italic' } }, 'No active investments.') : ongoingHots.map(hot => {
           const matured = getUgandanTime().getTime() >= hot.expirationTimestamp;
           return React.createElement('div', { key: hot.hotId, style: { display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px' } },
             React.createElement('div', { style: { flexGrow: 1 } },
               React.createElement('h4', null, hot.title),
-              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + 'shs (' + hot.quantity + ' Units)'), // <- FIXED
-              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + 'shs')), // <- FIXED
+              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + 'shs (' + hot.quantity + ' Units)'),
+              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + 'shs')),
               React.createElement('button', { disabled:!matured, onClick: () => handleCollect(hot), style: { marginTop: '8px', background: matured? '#0056b3' : '#ccc', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: matured? 'pointer' : 'not-allowed' } }, 'Collect Hot Income')
             )
           );
         })
       ),
+      // 3. EXPIRED SHARES
       React.createElement('div', { style: { marginTop: '30px' } },
-        React.createElement('h3', null, '✅ Expired Hots'),
+        React.createElement('h3', null, '✅ Expired Shares'),
         expiredHots.length === 0? React.createElement('p', { style: { color: '#888', fontStyle: 'italic' } }, 'No completed investments.') : expiredHots.map(hot =>
           React.createElement('div', { key: hot.hotId, style: { display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px', opacity: 0.7 } },
             React.createElement('div', { style: { flexGrow: 1 } },
               React.createElement('h4', null, hot.title),
-              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + 'shs (' + hot.quantity + ' Units)'), // <- FIXED
-              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + 'shs')) // <- FIXED
+              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + 'shs (' + hot.quantity + ' Units)'),
+              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + 'shs'))
             )
           )
         )
