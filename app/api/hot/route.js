@@ -15,6 +15,21 @@ const getTodayDateStr = () => {
 const txListKey = (phone) => `tx:${phone}:${getTodayDateStr()}`; 
 const txHashKey = (phone) => `tx:${phone}:${getTodayDateStr()}:data`; 
 
+// Helper function to guarantee safe serialization across Upstash versions
+const safeParseHistory = (historyArray) => {
+  if (!Array.isArray(historyArray)) return [];
+  return historyArray.map(item => {
+    if (typeof item === 'string') {
+      try {
+        return JSON.parse(item);
+      } catch {
+        return { error: "Failed to parse history item string", raw: item };
+      }
+    }
+    return item; // If Upstash already parsed it into an object, return it cleanly
+  });
+};
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -40,8 +55,9 @@ export async function GET(request) {
     const wallet = toNum(userProfile.availableBalance);
     const ongoing = JSON.parse(dailyHash?.hot_ongoing || '[]');
     const expired = JSON.parse(dailyHash?.hot_expired || '[]');
-    // FIXED: Don't parse. Upstash already gave us objects
-    const parsedHistory = Array.isArray(history) ? history : [];
+    
+    // Safely format the array to keep structures pure for Next.js JSON conversion
+    const parsedHistory = safeParseHistory(history);
 
     return NextResponse.json({ success: true, wallet, ongoing, expired, history: parsedHistory });
   } catch (err) {
@@ -52,7 +68,13 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { phone, action, payload } = await request.json();
+    // Prevent unhandled JSON extraction crashes
+    const body = await request.json().catch(() => null);
+    if (!body) {
+      return NextResponse.json({ success: false, error: "Invalid or missing JSON payload" }, { status: 400 });
+    }
+
+    const { phone, action, payload } = body;
     if (!phone) return NextResponse.json({ success: false, error: "Missing phone" }, { status: 400 });
 
     const rootUserKey = `user:${phone}`;
@@ -80,7 +102,7 @@ export async function POST(request) {
       wallet = wallet - price;
       ongoing.push(payload.newHotInstance);
       
-      const txItem = { // <- CHANGED: Push object, not string
+      const txItem = { 
         id: crypto.randomUUID(),
         type: 'buy_hot',
         amount: String(-price),
@@ -92,11 +114,14 @@ export async function POST(request) {
       await Promise.all([
         redis.hset(rootUserKey, { availableBalance: String(wallet) }),
         redis.hset(hashKey, { hot_ongoing: JSON.stringify(ongoing) }),
-        redis.lpush(listKey, txItem) // <- Upstash will stringify it
+        // Explicitly stringify to avoid pipeline object parsing ambiguity
+        redis.lpush(listKey, JSON.stringify(txItem)) 
       ]);
 
       const history = await redis.lrange(listKey, 0, -1);
-      return NextResponse.json({ success: true, wallet, history }); // <- no map/parse
+      const parsedHistory = safeParseHistory(history);
+      
+      return NextResponse.json({ success: true, wallet, history: parsedHistory });
     }
 
     if (action === 'COLLECT_HOT') {
@@ -108,7 +133,7 @@ export async function POST(request) {
       ongoing = ongoing.filter(i => i.hotId !== payload.hotId);
       expired.push(hot);
       
-      const txItem = { // <- CHANGED: Push object
+      const txItem = { 
         id: crypto.randomUUID(),
         type: 'collect_hot',
         amount: String(payout),
@@ -120,11 +145,13 @@ export async function POST(request) {
       await Promise.all([
         redis.hset(rootUserKey, { availableBalance: String(wallet) }),
         redis.hset(hashKey, { hot_ongoing: JSON.stringify(ongoing), hot_expired: JSON.stringify(expired) }),
-        redis.lpush(listKey, txItem)
+        redis.lpush(listKey, JSON.stringify(txItem))
       ]);
 
       const history = await redis.lrange(listKey, 0, -1);
-      return NextResponse.json({ success: true, wallet, history }); // <- no map/parse
+      const parsedHistory = safeParseHistory(history);
+      
+      return NextResponse.json({ success: true, wallet, history: parsedHistory });
     }
 
     return NextResponse.json({ success: false, error: "Action error" }, { status: 400 });

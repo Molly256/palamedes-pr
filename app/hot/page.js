@@ -20,7 +20,10 @@ export default function Hot() {
     setPhone(user.phone);
 
     fetch(`/api/hot?phone=${user.phone}`)
-    .then(res => res.json())
+    .then(res => {
+        if (!res.ok) throw new Error(`Server returned status ${res.status}`);
+        return res.json();
+    })
     .then(data => {
         if (data.success) {
           setAvailableBalance(Number(data.wallet || 0));
@@ -28,7 +31,10 @@ export default function Hot() {
           setExpiredHots(Array.isArray(data.expired) ? data.expired : []);
         }
         setLoading(false);
-      }).catch(() => setLoading(false));
+      }).catch((err) => {
+        console.error("Failed to load initial data:", err);
+        setLoading(false);
+      });
   }, []);
 
   const handleQty = (id, type) => {
@@ -67,6 +73,13 @@ export default function Hot() {
         body: JSON.stringify({ phone: String(phone), action: 'BUY_HOT', payload: { price: Number(cost), newHotInstance: newHot } })
       });
 
+      // Guard Clause: Handle 500 server crash without breaking json parser
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => "Unknown Server Error");
+        console.error("Server Error Payload:", errorText);
+        return alert(`Server Error (${res.status}): Please check backend logs.`);
+      }
+
       const data = await res.json();
       if (!data.success) return alert(data.error || "Buy failed");
 
@@ -74,31 +87,45 @@ export default function Hot() {
       setOngoingHots(p => [...p, newHot]);
       setQuantities(p => ({...p, [book.id]: 1}));
     } catch (err) {
-      alert("Buy failed: " + err.message);
+      alert("Buy failed to execute: " + err.message);
       console.error(err);
     }
   };
 
   const handleCollect = async (hot) => {
-    // FIX 1: Only send hotId, not the whole object
-    const res = await fetch('/api/hot', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ phone: String(phone), action: 'COLLECT_HOT', payload: { hotId: String(hot.hotId) } })
-    });
-    const data = await res.json();
-    if (!data.success) return alert(data.error || "Collect failed");
+    try {
+      const res = await fetch('/api/hot', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ phone: String(phone), action: 'COLLECT_HOT', payload: { hotId: String(hot.hotId) } })
+      });
 
-    setAvailableBalance(Number(data.wallet));
-    setOngoingHots(p => p.filter(i => i.hotId !== hot.hotId));
-    setExpiredHots(p => [...p, hot]);
+      if (!res.ok) {
+        return alert(`Collection failed with server status ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (!data.success) return alert(data.error || "Collect failed");
+
+      setAvailableBalance(Number(data.wallet));
+      setOngoingHots(p => p.filter(i => i.hotId !== hot.hotId));
+      setExpiredHots(p => [...p, hot]);
+    } catch (err) {
+      alert("Collection request error: " + err.message);
+    }
   };
 
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>Loading...</div>;
 
   return <div style={{ maxWidth: '750px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
-    <div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #eee', paddingBottom: '10px' }}>
       <h3>🔥 Hot Marketplace</h3>
+      <div style={{ background: '#f5f5f5', padding: '8px 15px', borderRadius: '20px', fontWeight: 'bold' }}>
+        Balance: <span style={{ color: '#2e7d32' }}>{availableBalance.toLocaleString()} shs</span>
+      </div>
+    </div>
+    
+    <div>
       {booksData.slice(0, 5).map(book =>
         <div key={book.id} style={{ display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px' }}>
           <img src={getCoverPath(book.id)} alt={book.title} style={{ width: '90px', height: '125px', objectFit: 'cover', marginRight: '15px' }} />
@@ -128,7 +155,7 @@ export default function Hot() {
             <h4>{hot.title}</h4>
             <p style={{ fontSize: '13px' }}>Price Paid: {Number(hot.pricePaid).toLocaleString()}shs ({hot.quantity} Units)</p>
             <p style={{ color: '#0056b3', fontSize: '14px' }}>Expected Return: <strong>{Number(hot.expectedReturn).toLocaleString()}shs</strong></p>
-            <button disabled={!matured} onClick={() => handleCollect(hot)} style={{ marginTop: '8px', background: matured? '#0056b3' : '#ccc', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: matured? 'pointer' : 'not-allowed' }}>Collect Hot Income</button>
+            <button disabled={!matured} onClick={() => handleCollect(hot)} style={{ marginTop: '8px', background: matured? '#0056b3' : '#fff', color: matured? '#fff' : '#000', border: matured? 'none' : '1px solid #ccc', padding: '6px 12px', borderRadius: '4px', cursor: matured? 'pointer' : 'not-allowed' }}>Collect Hot Income</button>
           </div>
         </div>;
       })}
