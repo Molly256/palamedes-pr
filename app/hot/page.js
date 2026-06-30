@@ -38,7 +38,7 @@ export default function Hot() {
   const handleBuy = async (book) => {
     const qty = quantities[book.id] || 1;
     const price = 50000;
-    const cost = price * qty;
+    const cost = price * qty; // Total price depending on number of shares
     if (availableBalance < cost) return alert("❌ Insufficient available balance");
 
     const nowUg = getUgandanTime();
@@ -53,17 +53,24 @@ export default function Hot() {
       purchaseDateStr: formatDate(nowUg), expirationTimestamp: exp.getTime()
     };
 
-    const res = await fetch('/api/hot', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ phone, action: 'BUY_HOT', payload: { price, newHotInstance: newHot } }) // <- phone
-    });
-    const data = await res.json();
-    if (!data.success) return alert(data.error || "Buy failed");
+    try {
+      const res = await fetch('/api/hot', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        // FIXED: Sending 'cost' instead of 'price' so the backend reads the exact amount
+        body: JSON.stringify({ phone, action: 'BUY_HOT', payload: { price: cost, newHotInstance: newHot } }) 
+      });
+      
+      const data = await res.json();
+      if (!data.success) return alert(data.error || "Buy failed");
 
-    setAvailableBalance(data.wallet); // <- wallet
-    setOngoingHots(p => [].concat(p, [newHot]));
-    setQuantities(p => Object.assign({}, p, { [book.id]: 1 }));
+      setAvailableBalance(data.wallet); // updates balance layout
+      setOngoingHots(p => [].concat(p, [newHot]));
+      setQuantities(p => Object.assign({}, p, { [book.id]: 1 })); // reset picker to 1 after buy
+    } catch (err) {
+      alert("Buy failed: Connection or Server Error");
+      console.error(err);
+    }
   };
 
   const handleCollect = async (hot) => {
