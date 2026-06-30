@@ -45,23 +45,30 @@ export default function Login() {
       const data = await res.json()
 
       if (!res.ok) {
-        alert(data.error)
-        lockRef.current = false
+        alert(data.error || 'Authentication failed')
+        lockRef.current = false // <- Clear lock so user can try retyping password
         return
       }
 
-      localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+      // FIXED: Safely verify that user data exists before committing to LocalStorage
+      if (data && data.user) {
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
 
-      // 2. GO INSTANTLY after we have real data
-      if (data.user.phone === '0753520252') {
-        router.push('/admin')
+        // 2. GO INSTANTLY after we have real data verified
+        if (data.user.phone === '0753520252') {
+          router.push('/admin')
+        } else {
+          router.push('/dashboard')
+        }
       } else {
-        router.push('/dashboard')
+        alert('Server returned an incomplete user session. Please try again.')
+        lockRef.current = false
       }
       
     } catch (err) {
-      alert('Something went wrong. Try again.')
-      lockRef.current = false
+      console.error('Login submit error:', err)
+      alert('Something went wrong. Check connection and try again.')
+      lockRef.current = false // <- Always release lock on network failure
     }
   }
 
@@ -123,12 +130,12 @@ export default function Login() {
             type="submit"
             style={{ 
               width: '100%',
-              height: '44px', // <- Same height
+              height: '44px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: '#87CEEB', // <- Hot skyblue
-              color: '#000', // <- Black text
-              fontWeight: '500', // <- Light weight
+              backgroundColor: '#87CEEB',
+              color: '#000',
+              fontWeight: '500',
               fontSize: '16px',
               cursor: 'pointer',
               marginTop: '4px'

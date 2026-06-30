@@ -1,14 +1,28 @@
 'use client'
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import Link from 'next/navigation' // FIXED: Cleaner client route link processing
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 import Card from '../../components/Card'
 import { useRouter } from 'next/navigation'
 
 export default function Dashboard() {
   const router = useRouter()
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
+
+  // FIXED: Load cache instantly during state initialization to kill visual page flashing completely!
+  const [user, setUser] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('palamedes_user')
+        return cached ? JSON.parse(cached) : null
+      } catch {
+        return null
+      }
+    }
+    return null
+  })
+
+  // FIXED: If we already have cached data, start loading as false so the screen renders instantly
+  const [loading, setLoading] = useState(!user)
 
   const ADMIN_PHONE = '0753520252'
 
@@ -19,9 +33,8 @@ export default function Dashboard() {
     return phone
   }
 
-  // FIXED: Optimized high-speed rendering wrapper
   const loadUser = async (isFocusEvent = false) => {
-    // 1. Instantly parse current local session state to bypass network wait time entirely
+    // Read fresh cache pointer
     const cachedData = localStorage.getItem('palamedes_user')
     let localUser = {}
     
@@ -34,11 +47,11 @@ export default function Dashboard() {
     if (!localUser.phone) {
       setUser(null)
       setLoading(false)
-      router.replace('/register') // FIXED: Clean safety bounce out
+      router.replace('/register')
       return
     }
 
-    // Only show loading spinner on initial cold boot, never on focus refreshes
+    // Only set loading to true on a completely empty state boot, never on page transitions
     if (!isFocusEvent && !user) setLoading(true)
 
     const cleanPhone = normalizePhone(localUser.phone)
@@ -53,7 +66,6 @@ export default function Dashboard() {
       const data = await res.json()
       
       if (data.success && data.user) {
-        // FIXED: Explicitly use your pure availableBalance database parameter
         const updatedUser = {
           ...data.user,
           availableBalance: Number(data.user.availableBalance || 0)
@@ -65,13 +77,12 @@ export default function Dashboard() {
       }
     } catch (e) {
       console.log('Dashboard sync failed:', e)
-      setUser(localUser) // Fallback to cache safely during network cuts
+      setUser(localUser) // Fallback to cache during network dropouts
     } finally {
       setLoading(false)
     }
   }
 
-  // FIXED: Clean event handler cycle initialization wrapper
   useEffect(() => {
     loadUser(false)
 
@@ -123,8 +134,9 @@ export default function Dashboard() {
             <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#00BFFF' }}>
               Welcome to PALAMEDES PR
             </h2>
+            {/* FIXED: Uses your cached state data right away to prevent flashing "Loading..." */}
             <p style={{ margin: '8px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
-              Username: {loading ? 'Loading...' : user?.username || 'User'}
+              Username: {user?.username || 'User'}
             </p>
             <p style={{ margin: '6px 0 0', fontSize: '16px', fontWeight: '800', color: '#000' }}>
               Phone number: {user?.phone || 'Not registered'}
@@ -133,7 +145,7 @@ export default function Dashboard() {
               Available balance
             </p>
             <p style={{ margin: '0', fontSize: '32px', fontWeight: '900', color: '#000' }}>
-              {loading ? '0' : displayBalance.toLocaleString()} shs
+              {displayBalance.toLocaleString()} shs
             </p>
             <p style={{ margin: '6px 0 0', fontSize: '14px', fontWeight: '700', color: '#000' }}>
               {vipName}

@@ -49,19 +49,43 @@ export default function Register() {
       return
     }
 
-    // Fire and forget. No setLoading, no waiting.
-    fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'register',
-        username: form.username,
-        phone: form.phone,
-        password: form.password
+    try {
+      // FIXED: We now await the network response instead of skipping ahead immediately
+      const response = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register',
+          username: form.username,
+          phone: form.phone,
+          password: form.password
+        })
       })
-    }).catch(err => console.error('Register error:', err)) // Silent background
 
-    router.push('/login') // <- GO INSTANTLY
+      const data = await response.json()
+
+      if (data.success) {
+        // FIXED: Construct a localized temporary storage object matching your invite lookup key
+        const userSession = {
+          username: form.username,
+          phone: form.phone,
+          inviteCode: data.inviteCode // 👈 Takes the live registered key from the server
+        }
+
+        // FIXED: Write it to local storage right now so the invite system displays it
+        localStorage.setItem('palamedes_user', JSON.stringify(userSession))
+
+        // Redirect to login only after data is securely cached
+        router.push('/login')
+      } else {
+        alert(data.error || 'Registration failed')
+        lockRef.current = false
+      }
+    } catch (err) {
+      console.error('Register error:', err)
+      alert('A network connection error occurred. Please try again.')
+      lockRef.current = false
+    }
   }
 
   const inputStyle = {
@@ -169,12 +193,12 @@ export default function Register() {
             type="submit"
             style={{ 
               width: '100%',
-              height: '44px', // <- Same height as inputs
+              height: '44px',
               borderRadius: '8px',
               border: 'none',
-              backgroundColor: '#87CEEB', // <- Hot skyblue
-              color: '#000', // <- Black text
-              fontWeight: '500', // <- Light weight
+              backgroundColor: '#87CEEB',
+              color: '#000',
+              fontWeight: '500',
               fontSize: '16px',
               cursor: 'pointer',
               marginTop: '4px'

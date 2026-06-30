@@ -5,19 +5,25 @@ export default function InvitePage() {
   const [user, setUser] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  // Load cached profile to generate real links
   useEffect(() => {
     try {
       const cached = localStorage.getItem('palamedes_user')
-      if (cached) setUser(JSON.parse(cached))
+      if (cached) {
+        const parsedData = JSON.parse(cached)
+        if (parsedData && parsedData.user) {
+          setUser(parsedData.user)
+        } else {
+          setUser(parsedData)
+        }
+      }
     } catch (e) {
-      console.error(e)
+      console.error('LocalStorage parsing error:', e)
     }
   }, [])
 
   const getInviteLink = () => {
     if (!user || !user.inviteCode) return 'Loading your code...'
-    return `${window.location.origin}/r/${user.inviteCode}`
+    return `https://palamedes-pr.co.uk{user.inviteCode}`
   }
 
   const handleCopy = async () => {
@@ -44,27 +50,50 @@ export default function InvitePage() {
     { level: 10, perBook: 60000, books: 5 },
   ]
 
+  const MONTHLY_SALARY_DATA = [
+    { team: 'A +BC', people: '50 +50', salary: '1,000,000 shs' },
+    { team: 'A +BC', people: '100 +100', salary: '2,000,000 shs' },
+    { team: 'A +BC', people: '200 +200', salary: '3,500,000 shs' },
+  ]
+
   const COMMISSIONS = [
     { level: 'Level 1 (Direct)', rate: '5%', desc: 'Your direct team setup' },
     { level: 'Level 2 (Sub)', rate: '2%', desc: 'Invited by Level 1' },
     { level: 'Level 3 (Indirect)', rate: '1%', desc: 'Invited by Level 2' },
   ]
 
-  // Micro-styles to block horizontal scrolling and tighten content layout padding
-  const tableHeaderStyle = { padding: '6px 4px', fontSize: '11px', fontWeight: '800', background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#64748B', whiteSpace: 'nowrap' }
-  const tableCellStyle = { padding: '6px 4px', fontSize: '11px', fontWeight: '700', borderBottom: '1px solid #F1F5F9', color: '#1E293B', whiteSpace: 'nowrap' }
+  const tableHeaderStyle = { 
+    padding: '5px 3px', 
+    fontSize: '10px', 
+    fontWeight: '400', 
+    background: '#87CEEB', 
+    border: '1px solid #000000', 
+    color: '#000000', 
+    textAlign: 'center',
+    whiteSpace: 'nowrap'
+  }
+
+  const tableCellStyle = { 
+    padding: '5px 3px', 
+    fontSize: '9.5px', 
+    fontWeight: '700', 
+    border: '1px solid #000000', 
+    color: '#1E293B', 
+    textAlign: 'center',
+    whiteSpace: 'nowrap'
+  }
 
   return (
     <div style={{ maxWidth: '480px', margin: '0 auto', padding: '12px', background: '#FFFFFF', boxSizing: 'border-box' }}>
       
       {/* 1. TOP REFERRAL MARKETING INTERFACE PANEL CARD */}
-      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '16px', textAnimate: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.02)', marginBottom: '16px', textAlign: 'center' }}>
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.02)', marginBottom: '16px', textAlign: 'center' }}>
         <h2 style={{ margin: '0 0 4px 0', fontSize: '18px', fontWeight: '900', color: '#00BFFF' }}>Invite & Earn Salary</h2>
         <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#64748B', fontWeight: '600' }}>Share links below to claim network tier cash directly</p>
         
         <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '10px', border: '1px dashed #00BFFF', marginBottom: '14px' }}>
-          <span style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', display: 'block', trackingWidth: '1px' }}>MY EXCLUSIVE INVITE CODE</span>
-          <span style={{ fontSize: '20px', fontBlack: '900', color: '#00BFFF', fontWeight: '900', letterSpacing: '2px' }}>{user?.inviteCode || '...'}</span>
+          <span style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', display: 'block', letterSpacing: '1px' }}>MY EXCLUSIVE INVITE CODE</span>
+          <span style={{ fontSize: '20px', color: '#00BFFF', fontWeight: '900', letterSpacing: '2px' }}>{user?.inviteCode || '...'}</span>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -72,7 +101,7 @@ export default function InvitePage() {
             type="text" 
             readOnly 
             value={getInviteLink()} 
-            style={{ flex: 1, bg: '#F8FAFC', border: '1px solid #E2E8F0', padding: '8px 12px', borderRadius: '10px', fontSize: '11px', color: '#64748B', outline: 'none', background: '#F8FAFC' }}
+            style={{ flex: 1, border: '1px solid #E2E8F0', padding: '8px 12px', borderRadius: '10px', fontSize: '11px', color: '#64748B', outline: 'none', background: '#F8FAFC' }}
           />
           <button 
             onClick={handleCopy}
@@ -83,48 +112,90 @@ export default function InvitePage() {
         </div>
       </div>
 
-      {/* 2. REVENUE DICTIONARY MATRIX TABLE (COMPRESSED TEXT FOR MOBILE SCREEN FIT) */}
+      {/* 2. REVENUE DICTIONARY MATRIX TABLE */}
       <h3 style={{ margin: '0 0 8px 4px', fontSize: '13px', fontWeight: '900', color: '#1E293B' }}>💼 VIP Task Salary Rates</h3>
-      <div style={{ width: '100%', overflowX: 'hidden', border: '1px solid #E2E8F0', borderRadius: '12px', marginBottom: '20px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      <div style={{ width: '100%', overflowX: 'hidden', marginBottom: '20px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={tableHeaderStyle}>VIP Level</th>
-              <th style={tableHeaderStyle}>Tasks</th>
-              <th style={tableHeaderStyle}>Per Task</th>
-              <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Daily Total</th>
+              <th style={{ ...tableHeaderStyle, width: '11%' }}>VIP</th>
+              <th style={{ ...tableHeaderStyle, width: '15%' }}>Tasks</th>
+              <th style={{ ...tableHeaderStyle, width: '14%' }}>Each</th>
+              <th style={{ ...tableHeaderStyle, width: '18%' }}>Daily</th>
+              <th style={{ ...tableHeaderStyle, width: '21%' }}>Monthly</th>
+              <th style={{ ...tableHeaderStyle, width: '21%' }}>Annual</th>
             </tr>
           </thead>
           <tbody>
-            {VIPS.map(vip => (
-              <tr key={vip.level} style={{ backgroundColor: vip.level % 2 === 0 ? '#F8FAFC' : '#FFFFFF' }}>
-                <td style={tableCellStyle}>VIP {vip.level}</td>
-                <td style={tableCellStyle}>{vip.books} bks</td>
-                <td style={tableCellStyle}>{vip.perBook.toLocaleString()}</td>
-                <td style={{ ...tableCellStyle, textAlign: 'right', color: '#00BFFF', fontWeight: '900' }}>{(vip.perBook * vip.books).toLocaleString()} shs</td>
+            {VIPS.map(vip => {
+              const daily = vip.perBook * vip.books
+              const monthly = daily * 30
+              const annual = daily * 365
+              return (
+                <tr key={vip.level}>
+                  <td style={tableCellStyle}>V{vip.level}</td>
+                  <td style={tableCellStyle}>{vip.books} bks</td>
+                  <td style={tableCellStyle}>{vip.perBook}</td>
+                  <td style={{ ...tableCellStyle, color: '#00BFFF' }}>{daily.toLocaleString()}</td>
+                  <td style={{ ...tableCellStyle, color: '#10B981' }}>{monthly.toLocaleString()}</td>
+                  <td style={{ ...tableCellStyle, color: '#FF4500' }}>{annual.toLocaleString()}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 3. FIXED: ADDED MONTHLY FIXED TEAM SALARY BONUS MATRIX HERE */}
+      <h3 style={{ margin: '0 0 8px 4px', fontSize: '13px', fontWeight: '900', color: '#1E293B' }}>💰 MONTHLY SALARY</h3>
+      <div style={{ width: '100%', overflowX: 'hidden', marginBottom: '8px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <thead>
+            <tr>
+              <th style={{ ...tableHeaderStyle, width: '30%' }}>Team</th>
+              <th style={{ ...tableHeaderStyle, width: '35%' }}>Number of people</th>
+              <th style={{ ...tableHeaderStyle, width: '35%' }}>Salary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {MONTHLY_SALARY_DATA.map((row, idx) => (
+              <tr key={idx}>
+                <td style={tableCellStyle}>{row.team}</td>
+                <td style={tableCellStyle}>{row.people}</td>
+                <td style={{ ...tableCellStyle, color: '#10B981', fontWeight: '900' }}>{row.salary}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      
+      {/* 4. TEAM SALARY SYSTEM CONDITIONS DISCLOSURE PANEL */}
+      <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '10px', marginBottom: '20px' }}>
+        <p style={{ margin: '0 0 6px 0', fontSize: '10.5px', color: '#1E293B', fontWeight: '700', lineHeight: '1.4' }}>
+          <span style={{ color: '#FF4500', fontWeight: '900' }}>Note:</span> Each employee to qualify for the monthly salary must have only 30% of vip level 1 on his A level.
+        </p>
+        <p style={{ margin: 0, fontSize: '11px', color: '#00BFFF', fontWeight: '800' }}>
+          ℹ️ Salary is paid every month on 10th.
+        </p>
+      </div>
 
-      {/* 3. AFFILIATE COMMISSIONS TEAMS DOWNLINES BREAKDOWN MATRIX */}
+      {/* 5. AFFILIATE COMMISSIONS TEAMS DOWNLINES BREAKDOWN MATRIX */}
       <h3 style={{ margin: '0 0 8px 4px', fontSize: '13px', fontWeight: '900', color: '#1E293B' }}>👥 Network Share Commission</h3>
-      <div style={{ width: '100%', overflowX: 'hidden', border: '1px solid #E2E8F0', borderRadius: '12px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+      <div style={{ width: '100%', overflowX: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={tableHeaderStyle}>Team Generation</th>
-              <th style={tableHeaderStyle}>Details</th>
-              <th style={{ ...tableHeaderStyle, textAlign: 'right' }}>Bonus Rate</th>
+              <th style={{ ...tableHeaderStyle, width: '35%' }}>Generation</th>
+              <th style={{ ...tableHeaderStyle, width: '45%' }}>Details</th>
+              <th style={{ ...tableHeaderStyle, width: '20%' }}>Rate</th>
             </tr>
           </thead>
           <tbody>
             {COMMISSIONS.map((comm, idx) => (
-              <tr key={idx} style={{ backgroundColor: idx % 2 === 1 ? '#F8FAFC' : '#FFFFFF' }}>
-                <td style={{ ...tableCellStyle, fontWeight: '900' }}>{comm.level}</td>
-                <td style={{ ...tableCellStyle, color: '#64748B', fontWeight: '500' }}>{comm.desc}</td>
-                <td style={{ ...tableCellStyle, textAlign: 'right', color: '#10B981', fontWeight: '900', fontSize: '12px' }}>{comm.rate}</td>
+              <tr key={idx}>
+                <td style={{ ...tableCellStyle, textAlign: 'left', fontWeight: '900' }}>{comm.level}</td>
+                <td style={{ ...tableCellStyle, textAlign: 'left', color: '#64748B', fontWeight: '500' }}>{comm.desc}</td>
+                <td style={{ ...tableCellStyle, color: '#10B981', fontWeight: '900' }}>{comm.rate}</td>
               </tr>
             ))}
           </tbody>

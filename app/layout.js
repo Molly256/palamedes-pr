@@ -30,22 +30,34 @@ export default function RootLayout({ children }) {
         margin: 0, 
         padding: 0, 
         overflowX: 'hidden', 
-        background: '#FFFFFF',
+        background: '#F8FAFC', // Elegant soft gray background for desktop side gutters
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
       }}>
         <SWRegister />
         
-        <div style={{ 
-          paddingBottom: '85px',
-          minHeight: 'auto',
-          background: '#FFFFFF',
-          padding: '0 20px 85px',
-          boxSizing: 'border-box',
-          width: '100%'
+        {/* FIXED: Center containment framework forces full mobile application rendering on all devices */}
+        <div style={{
+          maxWidth: '480px',
+          margin: '0 auto',
+          minHeight: '100vh',
+          background: '#FFFFFF', // Pristine base canvas for application content layout 
+          position: 'relative',
+          boxSizing: 'border-box'
         }}>
-          {children}
+          
+          {/* FIXED: Removed double padding metrics to align perfectly with the updated BottomNav bar */}
+          <div style={{ 
+            minHeight: 'auto',
+            background: '#FFFFFF',
+            padding: '0', 
+            boxSizing: 'border-box',
+            width: '100%'
+          }}>
+            {children}
+          </div>
+          
+          <BottomNav />
         </div>
-        <BottomNav />
       </body>
     </html>
   )

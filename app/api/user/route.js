@@ -1,15 +1,13 @@
 import { Redis } from '@upstash/redis'
 
-// FIXED: Enforce absolute dynamic execution engine processing to bypass build-time route caching
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-})
+// FIXED: Using standard fromEnv initializer prevents configuration sync mismatches
+const redis = Redis.fromEnv()
 
 function safeNumber(val, fallback = 0) {
+  if (val === undefined || val === null) return fallback
   const n = Number(val)
   return isNaN(n) ? fallback : n
 }
@@ -18,11 +16,15 @@ function isEmptyHash(user) {
   return !user || Array.isArray(user) || Object.keys(user).length === 0
 }
 
-// GET: used by dashboard to fetch user data
+// ==========================================
+// GET: Used by dashboard to fetch user data
+// ==========================================
 export async function GET(request) {
   try {
-    const action = request.nextUrl.searchParams.get('action')
-    const phone = request.nextUrl.searchParams.get('phone')
+    // FIXED: Safely parse standard request URL parameters to prevent nextUrl crashes
+    const { searchParams } = new URL(request.url)
+    const action = searchParams.get('action')
+    const phone = searchParams.get('phone')
 
     if (!phone) {
       return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
@@ -35,17 +37,16 @@ export async function GET(request) {
         return Response.json({ success: false, message: 'User not found' }, { status: 404 })
       }
 
-      // Use availableBalance. Fallback to balance for old legacy accounts
-      const availableBalance = safeNumber(user.availableBalance) || safeNumber(user.balance)
+      // FIXED: Strictly extracts availableBalance only
+      const currentAvailable = safeNumber(user.availableBalance, 0)
 
-      // FIXED: Forward ironclad anti-caching response headers downstream to mobile devices
       return Response.json({ 
         success: true, 
         user: {
-          phone: user.phone,
-          username: user.username,
-          balance: availableBalance, 
-          availableBalance: availableBalance, 
+          phone: user.phone ? String(user.phone) : '',
+          username: user.username ? String(user.username) : '',
+          inviteCode: user.inviteCode ? String(user.inviteCode) : '', // 👈 Crucial fallback anchor for your invite page links!
+          availableBalance: currentAvailable, 
           vip: safeNumber(user.vip),
           avatar: user.avatar || ''
         }
@@ -61,11 +62,13 @@ export async function GET(request) {
     return Response.json({ success: false, message: 'Invalid action' }, { status: 400 })
   } catch (err) {
     console.error('GET /api/user error:', err)
-    return Response.json({ success: false, message: err.message }, { status: 500 })
+    return Response.json({ success: false, message: 'Server error parsing dashboard data' }, { status: 500 })
   }
 }
 
-// POST: used for login, update profile, etc.
+// ==========================================
+// POST: Used for login, update profile, etc.
+// ==========================================
 export async function POST(request) {
   try {
     const body = await request.json()
@@ -88,15 +91,15 @@ export async function POST(request) {
         return Response.json({ success: false, message: 'Wrong password' }, { status: 401 })
       }
 
-      const availableBalance = safeNumber(user.availableBalance) || safeNumber(user.balance)
+      const currentAvailable = safeNumber(user.availableBalance, 0)
 
       return Response.json({ 
         success: true, 
         user: {
-          phone: user.phone,
-          username: user.username,
-          balance: availableBalance, 
-          availableBalance: availableBalance,
+          phone: user.phone ? String(user.phone) : '',
+          username: user.username ? String(user.username) : '',
+          inviteCode: user.inviteCode ? String(user.inviteCode) : '',
+          availableBalance: currentAvailable,
           vip: safeNumber(user.vip),
           avatar: user.avatar || ''
         }
@@ -105,20 +108,25 @@ export async function POST(request) {
 
     if (action === 'update') {
       const updateData = {}
-      if (username) updateData.username = username
-      if (password) updateData.password = password
+      if (username) updateData.username = String(username)
+      if (password) updateData.password = String(password)
+
+      // FIXED: Stop empty hash writes from crashing your database execution pipeline
+      if (Object.keys(updateData).length === 0) {
+        return Response.json({ success: false, message: 'No update data provided' }, { status: 400 })
+      }
 
       await redis.hset(userKey, updateData)
       const updatedUser = await redis.hgetall(userKey)
-      const availableBalance = safeNumber(updatedUser.availableBalance) || safeNumber(updatedUser.balance)
+      const currentAvailable = safeNumber(updatedUser.availableBalance, 0)
 
       return Response.json({ 
         success: true, 
         user: {
-          phone: updatedUser.phone,
-          username: updatedUser.username,
-          balance: availableBalance, 
-          availableBalance: availableBalance,
+          phone: updatedUser.phone ? String(updatedUser.phone) : '',
+          username: updatedUser.username ? String(updatedUser.username) : '',
+          inviteCode: updatedUser.inviteCode ? String(updatedUser.inviteCode) : '',
+          availableBalance: currentAvailable,
           vip: safeNumber(updatedUser.vip),
           avatar: updatedUser.avatar || ''
         }
@@ -128,6 +136,6 @@ export async function POST(request) {
     return Response.json({ success: false, message: 'Invalid action' }, { status: 400 })
   } catch (err) {
     console.error('POST /api/user error:', err)
-    return Response.json({ success: false, message: err.message }, { status: 500 })
+    return Response.json({ success: false, message: 'Server processing error during update' }, { status: 500 })
   }
 }
