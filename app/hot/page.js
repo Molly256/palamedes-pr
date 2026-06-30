@@ -8,18 +8,22 @@ export default function Hot() {
   const [expiredHots, setExpiredHots] = useState([]);
   const [quantities, setQuantities] = useState({ 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 });
   const [loading, setLoading] = useState(true);
-  const userId = "user_101";
+  const [phone, setPhone] = useState(''); // <- 1. Real user
 
   const getUgandanTime = () => new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" }));
   const formatDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const getCoverPath = (id) => `/books/covers/${id}.jpg`;
 
   useEffect(() => {
-    fetch(`/api/hot?userId=${userId}`)
-    .then(res => res.json())
-    .then(data => {
+    const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}'); // <- 2. Read real user
+    if (!user.phone) { setLoading(false); return; }
+    setPhone(user.phone);
+
+    fetch(`/api/hot?phone=${user.phone}`) // <- 3. Use phone not user_101
+   .then(res => res.json())
+   .then(data => {
         if (data.success) {
-          setAvailableBalance(Number(data.availableBalance || 0));
+          setAvailableBalance(Number(data.wallet || 0)); // <- 4. wallet not availableBalance
           if (data.ongoing) setOngoingHots(data.ongoing);
           if (data.expired) setExpiredHots(data.expired);
         }
@@ -51,12 +55,13 @@ export default function Hot() {
 
     const res = await fetch('/api/hot', {
       method: 'POST',
-      body: JSON.stringify({ userId, action: 'BUY_HOT', payload: { price, newHotInstance: newHot } })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ phone, action: 'BUY_HOT', payload: { price, newHotInstance: newHot } }) // <- phone
     });
     const data = await res.json();
     if (!data.success) return alert(data.error || "Buy failed");
 
-    setAvailableBalance(data.availableBalance);
+    setAvailableBalance(data.wallet); // <- wallet
     setOngoingHots(p => [].concat(p, [newHot]));
     setQuantities(p => Object.assign({}, p, { [book.id]: 1 }));
   };
@@ -64,12 +69,13 @@ export default function Hot() {
   const handleCollect = async (hot) => {
     const res = await fetch('/api/hot', {
       method: 'POST',
-      body: JSON.stringify({ userId, action: 'COLLECT_HOT', payload: { hotId: hot.hotId, hot } })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ phone, action: 'COLLECT_HOT', payload: { hotId: hot.hotId, hot } }) // <- phone
     });
     const data = await res.json();
     if (!data.success) return alert(data.error || "Collect failed");
 
-    setAvailableBalance(data.availableBalance);
+    setAvailableBalance(data.wallet); // <- wallet
     setOngoingHots(p => p.filter(i => i.hotId!== hot.hotId));
     setExpiredHots(p => [].concat(p, [hot]));
   };
@@ -79,7 +85,7 @@ export default function Hot() {
   return React.createElement('div', { style: { maxWidth: '750px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' } },
     React.createElement('div', { style: { borderBottom: '2px solid #222', paddingBottom: '12px', marginBottom: '20px' } },
       React.createElement('h2', null, 'HOT'),
-      React.createElement('p', null, 'Available Balance: ', React.createElement('strong', { style: { color: '#0056b3' } }, availableBalance.toLocaleString() + ' 50,000shs')),
+      React.createElement('p', null, 'Available Balance: ', React.createElement('strong', { style: { color: '#0056b3' } }, availableBalance.toLocaleString() + 'shs')), // <- FIXED
       React.createElement('div', { style: { display: 'flex', gap: '10px', marginTop: '10px' } },
         React.createElement('button', { style: { background: '#222', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '13px' } }, '🛒 Marketplace')
       )
@@ -116,8 +122,8 @@ export default function Hot() {
           return React.createElement('div', { key: hot.hotId, style: { display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px' } },
             React.createElement('div', { style: { flexGrow: 1 } },
               React.createElement('h4', null, hot.title),
-              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + ' 50,000shs (' + hot.quantity + ' Units)'),
-              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + ' 50,000shs')),
+              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + 'shs (' + hot.quantity + ' Units)'), // <- FIXED
+              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + 'shs')), // <- FIXED
               React.createElement('button', { disabled:!matured, onClick: () => handleCollect(hot), style: { marginTop: '8px', background: matured? '#0056b3' : '#ccc', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: matured? 'pointer' : 'not-allowed' } }, 'Collect Hot Income')
             )
           );
@@ -129,8 +135,8 @@ export default function Hot() {
           React.createElement('div', { key: hot.hotId, style: { display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px', opacity: 0.7 } },
             React.createElement('div', { style: { flexGrow: 1 } },
               React.createElement('h4', null, hot.title),
-              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + ' 50,000shs (' + hot.quantity + ' Units)'),
-              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + ' 50,000shs'))
+              React.createElement('p', { style: { fontSize: '13px' } }, 'Price Paid: ' + hot.pricePaid.toLocaleString() + 'shs (' + hot.quantity + ' Units)'), // <- FIXED
+              React.createElement('p', { style: { color: '#0056b3', fontSize: '14px' } }, 'Expected Return: ', React.createElement('strong', null, hot.expectedReturn.toLocaleString() + 'shs')) // <- FIXED
             )
           )
         )

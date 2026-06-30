@@ -8,17 +8,20 @@ const toNum = (v, f = 0) => { const n = Number(v); return Number.isNaN(n) ? f : 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    if (!userId) return NextResponse.json({ success: false, error: "Missing identity" }, { status: 400 });
+    const phone = searchParams.get('phone'); // <- FIX 1: phone not userId
+    if (!phone) return NextResponse.json({ success: false, error: "Missing phone" }, { status: 400 });
 
-    const availableBalance = toNum(await redis.get(`user:${userId}:hot_availableBalance`));
-    const ongoing = await redis.get(`user:${userId}:hot_ongoing`) || [];
-    const expired = await redis.get(`user:${userId}:hot_expired`) || [];
-    const history = await redis.get(`user:${userId}:hot_history`) || [];
+    const user = await redis.hgetall(`user:${phone}`); // <- FIX 1: single hash
+    if (!user) return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+
+    const wallet = toNum(user.wallet); // <- FIX 2: wallet not availableBalance
+    const ongoing = JSON.parse(user.hot_ongoing || '[]');
+    const expired = JSON.parse(user.hot_expired || '[]');
+    const history = JSON.parse(user.hot_history || '[]');
 
     return NextResponse.json({ 
       success: true, 
-      availableBalance, // <- real DB balance as number
+      wallet, // <- FIX 2
       ongoing, 
       expired, 
       history 
@@ -30,25 +33,25 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { userId, action, payload } = await request.json();
-    if (!userId) return NextResponse.json({ success: false, error: "Missing configuration variables" }, { status: 400 });
+    const { phone, action, payload } = await request.json(); // <- FIX 1: phone
+    if (!phone) return NextResponse.json({ success: false, error: "Missing phone" }, { status: 400 });
 
-    const availableBalanceKey = `user:${userId}:hot_availableBalance`;
-    const ongoingKey = `user:${userId}:hot_ongoing`;
-    const expiredKey = `user:${userId}:hot_expired`;
-    const historyKey = `user:${userId}:hot_history`;
+    const userKey = `user:${phone}`;
+    const user = await redis.hgetall(userKey) || {};
+    
+    let wallet = toNum(user.wallet);
+    let ongoing = JSON.parse(user.hot_ongoing || '[]');
+    let expired = JSON.parse(user.hot_expired || '[]');
+    let history = JSON.parse(user.hot_history || '[]');
 
     if (action === 'BUY_HOT') {
-      const price = toNum(payload.price); // <- must send price from frontend
-      const currentBalance = toNum(await redis.get(availableBalanceKey));
+      const price = toNum(payload.price); 
       
-      if (currentBalance < price) {
+      if (wallet < price) {
         return NextResponse.json({ success: false, error: "Insufficient balance" }, { status: 400 });
       }
 
-      const ongoing = await redis.get(ongoingKey) || [];
-      const history = await redis.get(historyKey) || [];
-      const newBalance = currentBalance - price;
+      wallet = wallet - price; // <- deduct
 
       ongoing.push(payload.newHotInstance);
       history.unshift({
@@ -61,36 +64,44 @@ export async function POST(request) {
       });
 
       const p = redis.pipeline();
-      p.set(availableBalanceKey, newBalance); // <- deduct in backend
-      p.set(ongoingKey, ongoing);
-      p.set(historyKey, history);
+      p.hset(userKey, { 
+        wallet: String(wallet),
+        hot_ongoing: JSON.stringify(ongoing),
+        hot_history: JSON.stringify(history)
+      }); // <- FIX 1: hset on 1 hash
       await p.exec();
 
-      return NextResponse.json({ success: true, availableBalance: newBalance });
+      return NextResponse.json({ success: true, wallet }); // <- FIX 2
     }
 
     if (action === 'COLLECT_HOT') {
-      let ongoing = await redis.get(ongoingKey) || [];
-      const expired = await redis.get(expiredKey) || [];
-      const history = await redis.get(historyKey) || [];
-      const currentBalance = toNum(await redis.get(availableBalanceKey));
-
       const hot = ongoing.find(i => i.hotId === payload.hotId);
-      const payout = toNum(hot?.payout || 0);
-      const newBalance = currentBalance + payout;
+      if (!hot) return NextResponse.json({ success: false, error: "Hot not found" }, { status: 404 });
+
+      const payout = toNum(hot.expectedReturn); // <- FIX 3: use expectedReturn
+      wallet = wallet + payout; // <- add payout
 
       ongoing = ongoing.filter(i => i.hotId !== payload.hotId);
-      expired.push(payload.hot);
-      history.unshift(payload.newTx);
+      expired.push(hot);
+      history.unshift({
+        id: crypto.randomUUID(),
+        type: 'collect_hot',
+        amount: String(payout),
+        note: `Collected ${hot.title}`,
+        status: 'completed',
+        createdAt: new Date().toISOString().slice(0,10).replaceAll('-','/')
+      });
 
       const p = redis.pipeline();
-      p.set(availableBalanceKey, newBalance); // <- add payout in backend
-      p.set(ongoingKey, ongoing);
-      p.set(expiredKey, expired);
-      p.set(historyKey, history);
+      p.hset(userKey, { 
+        wallet: String(wallet),
+        hot_ongoing: JSON.stringify(ongoing),
+        hot_expired: JSON.stringify(expired),
+        hot_history: JSON.stringify(history)
+      });
       await p.exec();
 
-      return NextResponse.json({ success: true, availableBalance: newBalance });
+      return NextResponse.json({ success: true, wallet }); // <- FIX 2
     }
 
     return NextResponse.json({ success: false, error: "Action error" }, { status: 400 });
