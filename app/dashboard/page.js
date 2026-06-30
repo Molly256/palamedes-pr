@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import Link from 'next/navigation' // FIXED: Cleaner client route link processing
+import Link from 'next/link' // 👈 FIXED: Correct Next.js link import to resolve Webpack error
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 import Card from '../../components/Card'
 import { useRouter } from 'next/navigation'
