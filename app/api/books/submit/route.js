@@ -19,7 +19,6 @@ function makeId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-// Helper function to safely parse the stringified JSON array from Redis
 function safeParse(str, fallback = []) {
   try { return JSON.parse(str || '[]') } catch { return fallback }
 }
@@ -32,13 +31,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Missing phone, bookId, or action' }, { status: 400 });
     }
 
-    const date = getUgandaDateString();
-    const bookKey = `book:${phone}:${date}:${bookId}`;
+    const today = getUgandaDateString();
+    const bookKey = `book:${phone}:${today}:${bookId}`;
     const userKey = `user:${phone}`;
-    const txKey = `tx:${phone}:${date}`;
-    const incomeKey = `income:${phone}:${date}`; 
+    const txKey = `tx:${phone}:${today}`;
+    const incomeKey = `income:${phone}:${today}`; 
 
-    // Fetch complete user object upfront to analyze fields
     const userData = await redis.hgetall(userKey);
     if (!userData || !userData.phone) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -85,15 +83,15 @@ export async function POST(request) {
 
       const payout = vipData.perBook;
 
-      // FIXED 1: Parse, modify, and prepare the completedBooks JSON array string
+      // Handle the completed books array tracking seamlessly
       const currentCompleted = safeParse(userData.completedBooks);
       if (!currentCompleted.includes(String(bookId))) {
         currentCompleted.push(String(bookId));
       }
 
-      // Track how many books have been processed today
-      const dailyReadCount = String(Number(userData.books_read_today || 0) + 1);
-      const updatedDailyIncome = String(Number(userData.dailyIncome || 0) + payout);
+      // Increment counters systematically for evaluation inside Upstash dashboard console
+      const nextDailyCount = String(Number(userData.books_read_today || 0) + 1);
+      const nextDailyIncome = String(Number(userData.dailyIncome || 0) + payout);
 
       const tx = {
         id: makeId(),
@@ -108,39 +106,40 @@ export async function POST(request) {
 
       await redis.hsetnx(userKey, 'availableBalance', 0);
 
-      // Atomic execution via pipeline
       const pipe = redis.pipeline();
       
-      // Update individual transactional key state
+      // Index 0: Update book hash status
       pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() });
       
-      // Increment balances
+      // Index 1: Safely increment availableBalance exclusively
       pipe.hincrbyfloat(userKey, 'availableBalance', payout);
       
-      // FIXED 2: Push stringified updates back into user:phone profile hash boundaries
+      // Index 2: Save tracking variables inside user profile boundaries
       pipe.hset(userKey, {
         completedBooks: JSON.stringify(currentCompleted),
-        books_read_today: dailyReadCount,
-        dailyIncome: updatedDailyIncome
+        books_read_today: nextDailyCount,
+        dailyIncome: nextDailyIncome
       });
 
+      // Indexes 3 and 4: Push to histories
       pipe.lpush(txKey, JSON.stringify(tx)); 
       pipe.lpush(incomeKey, JSON.stringify(tx)); 
 
       const results = await pipe.exec();
 
       if (!results || results.length < 5) {
-        console.error('Redis pipeline failed to return all operations:', results);
+        console.error('Redis pipeline failed:', results);
         return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
       }
 
-      // Safe extraction of the new balance from the pipeline return index (index 1 is hincrbyfloat)
+      // FIXED: Extract index 1 to fetch the numerical result of your availableBalance addition
       const updatedBalance = results[1];
 
       return NextResponse.json({
         success: true,
         availableBalance: typeof updatedBalance === 'number' ? updatedBalance : Number(updatedBalance),
         status: 'submitted',
+        books_read_today: Number(nextDailyCount),
         completedBooks: currentCompleted
       });
     }

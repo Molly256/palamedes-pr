@@ -1,45 +1,53 @@
-import { Redis } from '@upstash/redis'
-const redis = Redis.fromEnv()
-
-export const dynamic = 'force-dynamic'; // <- ADD THIS
-export const revalidate = 0;            // <- ADD THIS
-
-export async function GET(req) {
+async function payInvitationReward(downlinePhone, vipLevelBought) {
   try {
-    const { searchParams } = new URL(req.url)
-    const phone = searchParams.get('phone')
-    if (!phone) return Response.json({ success: false, message: 'Missing phone' }, { status: 400 })
+    const inviterPhone = await redis.hget(`user:${downlinePhone}`, 'invited_by')
+    if (!inviterPhone) return
 
-    // Get all invitation rewards from tx history
-    const txList = await redis.lrange(`tx:${phone}`, 0, 9999)
-    
-    let totalCommission = 0
-    let teamACount = 0
-    let teamBCount = 0
-    let teamCCount = 0
+    // 1. Get the link owner's actual active VIP tier level
+    const inviterVip = Number(await redis.hget(`user:${inviterPhone}`, 'vip') || 0)
+    if (inviterVip === 0) return // Free users don't earn team commission
 
-    for (const txStr of txList) {
-      const tx = JSON.parse(txStr)
-      if (tx.type !== 'invitation_reward' || tx.status !== 'completed') continue
-      
-      totalCommission += Number(tx.amount || 0)
-      
-      if (tx.level === 1) teamACount++
-      if (tx.level === 2) teamBCount++
-      if (tx.level === 3) teamCCount++
+    // Pool data configuration matrix matching your system requirements
+    const vipAmounts = { 
+      1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000, 
+      6: 2100000, 7: 4000000, 8: 4600000, 9: 5000000, 10: 8000000 
     }
 
-    return Response.json({ 
-      success: true, 
-      total: totalCommission,
-      breakdown: {
-        teamA: teamACount,
-        teamB: teamBCount,
-        teamC: teamCCount
-      }
-    })
-  } catch (err) {
-    console.error(err)
-    return Response.json({ success: false, message: 'Server error' }, { status: 500 })
+    // 2. BIDIRECTIONAL LOGIC COMPASS: Math.min enforces the cap perfectly
+    // If inviterVip is 5 and bought is 2 -> Math.min(5, 2) uses 2 (Sarah's level)
+    // If inviterVip is 1 and bought is 2 -> Math.min(1, 2) uses 1 (Moses's cap level)
+    const effectiveVipTier = Math.min(inviterVip, vipLevelBought)
+    
+    const targetRewardAmount = vipAmounts[effectiveVipTier]
+    if (!targetRewardAmount) return
+
+    const level = Number(await redis.hget(`downlines:${inviterPhone}`, downlinePhone))
+    if (!level || level > 3) return
+
+    const rate = level === 1 ? 0.05 : level === 2 ? 0.02 : 0.01
+    const rewardAmount = Math.floor(targetRewardAmount * rate)
+    if (rewardAmount <= 0) return
+
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
+
+    // 3. Write transaction log into the dated ledger key to sync with dashboard tabs
+    await redis.lpush(`tx:${inviterPhone}:${today}`, JSON.stringify({
+      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`, 
+      type: 'invitation_reward', 
+      amount: String(rewardAmount),
+      from: downlinePhone, 
+      level, 
+      vipLevel: String(vipLevelBought),
+      date: today, 
+      status: 'completed',
+      createdAt: String(Date.now())
+    }))
+
+    // 4. Atomically increment the availableBalance key exclusively
+    const inviterKey = `user:${inviterPhone}`
+    await redis.hincrbyfloat(inviterKey, 'availableBalance', rewardAmount)
+
+  } catch (err) { 
+    console.error('Invitation reward error:', err) 
   }
 }

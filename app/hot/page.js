@@ -1,337 +1,190 @@
-'use client'
-import { useState, useEffect } from 'react'
+'use client';
+import React, { useState, useEffect } from 'react';
+import booksData from '../data/books.json';
 
-const TZ = 'Africa/Kampala'
-const SHARE_PRICE = 50000
+export default function Hot() {
+  const [availableBalance, setAvailableBalance] = useState(0); // No demo money
+  const [txHistory, setTxHistory] = useState([]);
+  const [ongoingHots, setOngoingHots] = useState([]);
+  const [expiredHots, setExpiredHots] = useState([]);
+  const [quantities, setQuantities] = useState({ 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 });
+  const [activeSubTab, setActiveSubTab] = useState('marketplace');
+  const [loading, setLoading] = useState(true);
+  const userId = "user_101";
 
-const cardStyle = {
-  backgroundColor: 'white',
-  border: '1px solid #e5e7eb',
-  borderRadius: '8px',
-  padding: '12px',
-  marginBottom: '12px'
-}
-const imgStyle = {
-  width: '80px',
-  height: '80px',
-  borderRadius: '6px',
-  objectFit: 'cover',
-  flexShrink: 0
-}
-const btnStyle = {
-  backgroundColor: '#00BFFF',
-  color: 'black',
-  fontWeight: '300',
-  padding: '6px 12px',
-  borderRadius: '6px',
-  border: 'none',
-  cursor: 'pointer',
-  fontSize: '13px'
-}
-const labelStyle = { fontSize: '13px', fontWeight: '300', color: 'black', marginBottom: '2px' }
-
-const getUGNow = () => {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }))
-}
-
-const parseKampalaDate = (dateStr) => {
-  if (!dateStr || typeof dateStr !== 'string') return null
-  // Match "dd/mm/yyyy, hh:mm:ss"
-  const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2}):(\d{2})$/)
-  if (!match) return null
-  const [, day, month, year, hour, min, sec] = match
-  // Create date in ISO format - JS parses this as local time, but we're comparing to getUGNow()
-  return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`)
-}
-
-const getDaysLeft = (endDateStr) => {
-  const end = parseKampalaDate(endDateStr)
-  if (!end || isNaN(end)) return null // null means invalid date, don't show collect button
-  const now = getUGNow()
-  const diff = end - now
-  if (diff <= 0) return 0
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
-}
-
-const normalizePhone = (phone) => {
-  let clean = String(phone).replace(/\D/g, '').trim()
-  if (!/^07\d{8}$/.test(clean)) return null
-  return clean
-}
-
-export default function HotPage() {
-  const [phone, setPhone] = useState('')
-  const [ongoing, setOngoing] = useState([])
-  const [expired, setExpired] = useState([])
-  const [qtySelector, setQtySelector] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  const dividends = [
-    { id: 'pride', name: 'PRIDE AND PREJUDICE', cycle: 30, profit: 1, min: '50,000shs', img: '/images/pride.jpg' },
-    { id: 'hegel', name: 'Hegel lectures', cycle: 120, profit: 3, min: '50,000shs', img: '/images/hegel.jpg' },
-    { id: 'whale', name: 'The whale', cycle: 180, profit: 5, min: '50,000shs', img: '/images/whale.jpg' }
-  ]
+  const getUgandanTime = () => new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" }));
+  const formatDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const getCoverPath = (id) => `/books/covers/${id}.jpg`;
 
   useEffect(() => {
-    const userData = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    const rawPhone = userData.phone || ''
-    const cleanPhone = normalizePhone(rawPhone)
-    
-    if (!cleanPhone) {
-      alert('Invalid phone format. Phone must be 07xxxxxxxx')
-      setLoading(false)
-      return
-    }
-    
-    setPhone(cleanPhone)
-    loadData(cleanPhone)
-  }, [])
+    fetch(`/api/hot?userId=${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (data.availableBalance !== null) setAvailableBalance(Number(data.availableBalance));
+          if (data.ongoing) setOngoingHots(data.ongoing);
+          if (data.expired) setExpiredHots(data.expired);
+          if (data.history) setTxHistory(data.history);
+        }
+        setLoading(false);
+      }).catch(() => setLoading(false));
+  }, []);
 
-  const loadData = async (userPhone) => {
-    if (!userPhone) return
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/hot?phone=${userPhone}`)
-      const data = await res.json()
-      if (data.success) {
-        setOngoing(data.shares || [])
-        setExpired(data.expired || [])
-      }
-    } catch (err) {
-      console.error('Load shares error:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const handleQty = (id, type) => {
+    setQuantities(p => ({ ...p, [id]: Math.max(1, (p[id] || 1) + (type === 'plus' ? 1 : -1)) }));
+  };
 
-  const handleBuy = async (item, quantity) => {
-    if (!phone) {
-      alert('Please login first')
-      return
-    }
+  const handleBuy = async (book) => {
+    const qty = quantities[book.id] || 1;
+    const cost = 50000 * qty;
+    if (availableBalance < cost) return alert("❌ Insufficient available balance");
 
-    const totalCost = SHARE_PRICE * quantity
-    
-    try {
-      const res = await fetch('/api/hot', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          action: 'buyShare',
-          phone: phone,
-          shareId: item.id,
-          shareName: item.name,
-          quantity: quantity,
-          totalCost: totalCost,
-          cycleDays: item.cycle,
-          dailyProfit: item.profit
-        })
-      })
-      const data = await res.json()
+    const nowUg = getUgandanTime();
+    const days = book.id === 1 ? 30 : 180;
+    const exp = new Date(nowUg);
+    exp.setDate(exp.getDate() + days);
+    const profit = cost * (book.id === 1 ? 0.01 : 0.05) * days;
+    const updatedAvailableBalance = availableBalance - cost;
 
-      if (data.success) {
-        alert(`Success! Bought ${quantity} share(s). New balance: ${data.balance.toLocaleString()}shs`)
-        setQtySelector(null)
-        await loadData(phone)
-        
-        const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-        user.balance = data.balance
-        user.available_balance = data.balance
-        localStorage.setItem('palamedes_user', JSON.stringify(user))
-      } else {
-        alert(data.message)
-      }
-    } catch (err) {
-      alert('Network error. Try again')
-    }
-  }
+    const newHot = {
+      hotId: `hot_${Date.now()}`, bookId: book.id, title: book.title, author: book.author,
+      cover: getCoverPath(book.id),
+      pricePaid: cost, quantity: qty, expectedReturn: cost + profit,
+      purchaseDateStr: formatDate(nowUg), expirationTimestamp: exp.getTime()
+    };
 
-  const handleCollect = async (shareId) => {
-    try {
-      const res = await fetch('/api/hot', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          action: 'collectShare',
-          phone: phone,
-          shareId: shareId
-        })
-      })
-      const data = await res.json()
-      if (data.success) {
-        alert(`Collected ${data.profit.toLocaleString()}shs! New balance: ${data.balance.toLocaleString()}shs`)
-        const user = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-        user.balance = data.balance
-        user.available_balance = data.balance
-        localStorage.setItem('palamedes_user', JSON.stringify(user))
-        await loadData(phone)
-      } else {
-        alert(data.message)
-      }
-    } catch (err) {
-      alert('Network error')
-    }
-  }
+    const newTx = { 
+      id: `tx_${Date.now()}`, 
+      title: "hot bought", 
+      amount: `-${cost.toLocaleString()} SHS`, 
+      date: formatDate(nowUg) 
+    };
 
-  const openQtySelector = (item) => {
-    setQtySelector({ id: item.id, qty: 1, item })
-  }
+    setAvailableBalance(updatedAvailableBalance);
+    setOngoingHots(p => [...p, newHot]);
+    setTxHistory(p => [newTx, ...p]);
+    setQuantities(p => ({ ...p, [book.id]: 1 }));
 
-  const renderQtySelector = () => {
-    if (!qtySelector) return null
-    const item = qtySelector.item
-    const total = SHARE_PRICE * qtySelector.qty
+    await fetch('/api/hot', { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        userId, 
+        action: 'BUY_HOT', 
+        payload: { updatedAvailableBalance, newHotInstance: newHot, newTx } 
+      }) 
+    });
+  };
 
-    return (
-      <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-        alignItems: 'center', justifyContent: 'center', zIndex: 1000
-      }}>
-        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '320px' }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 'bold' }}>{item.name}</h3>
-          <p style={{ margin: '0 0 16px', fontSize: '14px' }}>Price per share: 50,000shs</p>
-          
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px', marginBottom: '16px' }}>
-            <button 
-              onClick={() => setQtySelector({ ...qtySelector, qty: Math.max(1, qtySelector.qty - 1) })}
-              style={{ ...btnStyle, padding: '8px 16px', fontSize: '18px' }}
-            >-</button>
-            <span style={{ fontSize: '20px', fontWeight: 'bold' }}>{qtySelector.qty}</span>
-            <button 
-              onClick={() => setQtySelector({ ...qtySelector, qty: qtySelector.qty + 1 })}
-              style={{ ...btnStyle, padding: '8px 16px', fontSize: '18px' }}
-            >+</button>
-          </div>
+  const handleCollect = async (hot) => {
+    const updatedAvailableBalance = availableBalance + hot.expectedReturn;
+    const nowUg = getUgandanTime();
+    const newTx = { id: `tx_${Date.now()}`, title: "hot income collected", amount: `+${hot.expectedReturn.toLocaleString()} SHS`, date: formatDate(nowUg) };
 
-          <p style={{ textAlign: 'center', fontSize: '16px', fontWeight: 'bold', marginBottom: '16px' }}>
-            Total: {total.toLocaleString()}shs
-          </p>
+    setAvailableBalance(updatedAvailableBalance);
+    setOngoingHots(p => p.filter(i => i.hotId !== hot.hotId));
+    setExpiredHots(p => [...p, hot]);
+    setTxHistory(p => [newTx, ...p]);
 
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button 
-              onClick={() => setQtySelector(null)}
-              style={{ ...btnStyle, backgroundColor: '#e5e7eb', flex: 1 }}
-            >Cancel</button>
-            <button 
-              onClick={() => handleBuy(item, qtySelector.qty)}
-              style={{ ...btnStyle, flex: 1 }}
-            >Confirm Buy</button>
-          </div>
-        </div>
-      </div>
-    )
-  }
+    await fetch('/api/hot', { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        userId, 
+        action: 'COLLECT_HOT', 
+        payload: { updatedAvailableBalance, hotId: hot.hotId, hot, newTx } 
+      }) 
+    });
+  };
 
-  const renderShareCard = (share, isOngoing) => {
-    const daysLeft = getDaysLeft(share.endDate)
-    const product = dividends.find(d => d.id === share.shareId)
-    const totalCost = SHARE_PRICE * share.quantity
-    const totalProfit = Number(share.expectedProfit) || 0
-
-    // If date is invalid, don't show collect button at all
-    const canCollect = daysLeft === 0
-
-    return (
-      <div key={share.id} style={cardStyle}>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <img src={product?.img} alt={share.shareName} style={imgStyle} />
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>
-              {share.shareName} x{share.quantity}
-            </p>
-            <p style={labelStyle}>Bought: {share.buyDate}</p>
-            <p style={labelStyle}>Investment: {totalCost.toLocaleString()}shs</p>
-            <p style={labelStyle}>Total profit: {totalProfit.toLocaleString()}shs</p>
-            
-            {isOngoing ? (
-              <>
-                <p style={labelStyle}>Expires: {share.endDate}</p>
-                <p style={labelStyle}>
-                  {daysLeft === null ? 'Invalid date' : `Days left: ${daysLeft}`}
-                </p>
-                <button 
-                  style={{ 
-                    ...btnStyle, 
-                    backgroundColor: canCollect ? '#22c55e' : '#9ca3af',
-                    marginTop: '8px',
-                    cursor: canCollect ? 'pointer' : 'not-allowed'
-                  }}
-                  onClick={() => canCollect && handleCollect(share.id)}
-                  disabled={!canCollect}
-                >
-                  {daysLeft === null ? 'Invalid date' : 
-                   daysLeft > 0 ? `Collect in ${daysLeft}d` : 'Collect Profits'}
-                </button>
-              </>
-            ) : (
-              <>
-                <p style={{ ...labelStyle, color: '#22c55e' }}>Expired</p>
-                <p style={labelStyle}>Collected: {share.collectedAt}</p>
-                <p style={labelStyle}>Profit received: {Number(share.profitReceived || 0).toLocaleString()}shs</p>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
+  if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>Loading...</div>;
 
   return (
-    <div style={{ backgroundColor: '#f9fafb', paddingBottom: '96px' }}>
-      <h1 style={{ fontSize: '20px', fontWeight: 'bold', textAlign: 'center', padding: '16px', backgroundColor: 'white', borderBottom: '1px solid #e5e7eb' }}>
-        PALAMEDES PR COMPANY
-      </h1>
-
-      <div style={{ padding: '16px' }}>
-        <p style={{ fontSize: '14px', color: 'black', textAlign: 'center', marginBottom: '16px' }}>
-          Buy dividends and increase your monthly income<br/>
-          When you buy shares you become part of the management board
-        </p>
-
-        <h2 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '12px' }}>Available Shares</h2>
-        {dividends.map(item => (
-          <div key={item.id} style={cardStyle}>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <img src={item.img} alt={item.name} style={imgStyle} />
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{item.name}</p>
-                <p style={labelStyle}>Cycle: {item.cycle} days</p>
-                <p style={labelStyle}>Daily profit: {item.profit}%</p>
-                <p style={labelStyle}>Price: 50,000shs per share</p>
-                <button 
-                  style={{ ...btnStyle, marginTop: '6px' }}
-                  onClick={() => openQtySelector(item)}
-                >
-                  Invest now
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        <h2 style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '24px', marginBottom: '12px' }}>
-          Ongoing Shares
-        </h2>
-        {ongoing.length === 0 ? (
-          <p style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '20px 0' }}>No ongoing shares</p>
-        ) : (
-          ongoing.map(s => renderShareCard(s, true))
-        )}
-
-        <h2 style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '24px', marginBottom: '12px' }}>
-          Expired Shares
-        </h2>
-        {expired.length === 0 ? (
-          <p style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px', padding: '20px 0' }}>No expired shares</p>
-        ) : (
-          expired.map(s => renderShareCard(s, false))
-        )}
+    <div style={{ maxWidth: '750px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #222', paddingBottom: '12px' }}>
+        <div>
+          <h2>HOT</h2>
+          <p>Available Balance: <strong style={{ color: '#0056b3' }}>{availableBalance.toLocaleString()} SHS</strong></p>
+        </div>
+        <button onClick={() => setActiveSubTab(activeSubTab === 'marketplace' ? 'history' : 'marketplace')} style={{ background: '#111', color: '#fff', border: 'none', padding: '10px 15px', borderRadius: '5px', cursor: 'pointer' }}>
+          {activeSubTab === 'marketplace' ? '📜 TX History' : '🛒 Marketplace'}
+        </button>
       </div>
 
-      {renderQtySelector()}
+      {activeSubTab === 'history' ? (
+        <div style={{ marginTop: '20px' }}>
+          <h3>Transaction Log History</h3>
+          {txHistory.length === 0 ? <p>No records found.</p> : txHistory.map(tx => (
+            <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', borderBottom: '1px solid #eee' }}>
+              <div style={{ fontWeight: '300', color: '#000' }}>{tx.title}</div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: '700' }}>{tx.amount}</div>
+                <div style={{ fontSize: '11px', color: '#718096', marginTop: '2px' }}>{tx.date}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div style={{ marginTop: '20px' }}>
+            <h3>🔥 Hot Marketplace</h3>
+            {booksData.slice(0, 5).map(book => (
+              <div key={book.id} style={{ display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px' }}>
+                <img src={getCoverPath(book.id)} alt={book.title} style={{ width: '90px', height: '125px', objectFit: 'cover', marginRight: '15px' }} />
+                <div style={{ flexGrow: 1 }}>
+                  <h4>{book.title}</h4>
+                  <p style={{ color: '#666', fontSize: '13px' }}>Author: {book.author}</p>
+                  <p style={{ fontSize: '13px' }}>Daily Income: <span style={{ color: 'green', fontWeight: 'bold' }}>{book.id === 1 ? "1%" : "5%"}</span> for {book.id === 1 ? 30 : 180} Days</p>
+                  <p style={{ fontWeight: 'bold', margin: '5px 0' }}>Price: 50,000 SHS</p>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div style={{ border: '1px solid #ccc', borderRadius: '4px' }}>
+                      <button onClick={() => handleQty(book.id, 'minus')} style={{ padding: '5px 10px', border: 'none' }}>-</button>
+                      <span style={{ padding: '0 10px', fontWeight: 'bold' }}>{quantities[book.id] || 1}</span>
+                      <button onClick={() => handleQty(book.id, 'plus')} style={{ padding: '5px 10px', border: 'none' }}>+</button>
+                    </div>
+                    <button onClick={() => handleBuy(book)} style={{ background: '#28a745', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }}>
+                      Confirm Buy Hot ({((quantities[book.id] || 1) * 50000).toLocaleString()} SHS)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: '30px' }}>
+            <h3>⏳ Ongoing Hots</h3>
+            {ongoingHots.length === 0 ? <p style={{ color: '#888', fontStyle: 'italic' }}>No active investments.</p> : ongoingHots.map(hot => {
+              const matured = getUgandanTime().getTime() >= hot.expirationTimestamp;
+              return (
+                <div key={hot.hotId} style={{ display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px' }}>
+                  <img src={hot.cover} alt={hot.title} style={{ width: '90px', height: '125px', objectFit: 'cover', marginRight: '15px' }} />
+                  <div style={{ flexGrow: 1 }}>
+                    <h4>{hot.title}</h4>
+                    <p style={{ fontSize: '13px' }}>Price Paid: {hot.pricePaid.toLocaleString()} SHS ({hot.quantity} Units)</p>
+                    <p style={{ color: '#0056b3', fontSize: '14px' }}>Expected Return: <strong>{hot.expectedReturn.toLocaleString()} SHS</strong></p>
+                    <p style={{ fontSize: '11px', color: '#666' }}>📅 Bought: {hot.purchaseDateStr} | Expires: {formatDate(new Date(hot.expirationTimestamp))}</p>
+                    <button disabled={!matured} onClick={() => handleCollect(hot)} style={{ marginTop: '8px', background: matured ? '#0056b3' : '#ccc', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: matured ? 'pointer' : 'not-allowed', fontWeight: 'bold' }}>
+                      Collect Hot Income
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: '30px' }}>
+            <h3>✅ Expired Hots</h3>
+            {expiredHots.length === 0 ? <p style={{ color: '#888', fontStyle: 'italic' }}>No completed investments.</p> : expiredHots.map(hot => (
+              <div key={hot.hotId} style={{ display: 'flex', border: '1px solid #eee', padding: '15px', marginBottom: '15px', borderRadius: '8px', opacity: 0.7 }}>
+                <img src={hot.cover} alt={hot.title} style={{ width: '90px', height: '125px', objectFit: 'cover', marginRight: '15px' }} />
+                <div style={{ flexGrow: 1 }}>
+                  <h4>{hot.title}</h4>
+                  <p style={{ fontSize: '13px' }}>Total Settled: {hot.expectedReturn.toLocaleString()} SHS</p>
+                  <div style={{ display: 'inline-block', background: '#c6f6d5', color: '#22543d', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', marginTop: '5px' }}>Closed & Settled</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
-  )
+  );
 }

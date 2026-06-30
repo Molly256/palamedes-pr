@@ -22,7 +22,6 @@ function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
-// FIXED: Removed the redundant 'balance' field property completely
 function setBalance(amount) {
   return { availableBalance: String(amount) }
 }
@@ -77,7 +76,7 @@ export async function GET() {
 export async function POST(req) {
   try {
     const { phone, vipLevel, backfill } = await req.json()
-    if (!phone ||!vipLevel) return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
+    if (!phone || !vipLevel) return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
 
     const userKey = `user:${phone}`
     const user = await redis.hgetall(userKey)
@@ -90,6 +89,7 @@ export async function POST(req) {
     const currentBooks = safeParse(user.unlockedBooks)
     const today = getUgandaDateString()
 
+    // Dynamic configuration data backfill logic
     if (backfill === true && currentVip >= vipLevel && currentBooks.length === 0) {
       const pipeline = redis.pipeline()
       const { unlockedBooks, assignedBooksMeta } = await assignBooksToUser(phone, currentVip, today, pipeline)
@@ -103,35 +103,80 @@ export async function POST(req) {
     if (vipLevel <= currentVip) return NextResponse.json({ success: false, message: 'You already have this VIP or higher' }, { status: 400 })
 
     const currentPricePaid = Number(user.vipPricePaid || 0)
-    const upgradeCost = selectedVip.price - currentPricePaid
     
-    // FIXED: Stripped old user.balance fallback verification logic
+    // FIXED: Upgrader must pay the FULL price of the selected VIP tier level upfront
+    const upgradeCost = selectedVip.price 
+    
     const currentBalance = Number(user.availableBalance || 0)
     if (currentBalance < upgradeCost) return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
 
-    const newBalance = currentBalance - upgradeCost
-    const pipeline = redis.pipeline()
-    const { unlockedBooks, assignedBooksMeta } = await assignBooksToUser(phone, vipLevel, today, pipeline)
+    // Check if this is their absolute FIRST time moving out of VIP 0 free status
+    const isFirstTimePurchase = user.hasBoughtVip !== 'true' && user.hasBoughtVip !== true
 
+    // Subtract the FULL price first
+    let newBalance = currentBalance - upgradeCost
+    
+    const pipeline = redis.pipeline()
+    let unlockedBooks = currentBooks
+    let assignedBooksMeta = []
+
+    if (isFirstTimePurchase) {
+      // Rule Applied: Only trigger automatic book creation assignments on their FIRST buy
+      const assignedData = await assignBooksToUser(phone, vipLevel, today, pipeline)
+      unlockedBooks = assignedData.unlockedBooks
+      assignedBooksMeta = assignedData.assignedBooksMeta
+    } else {
+      // Subsequent upgrades DO NOT trigger any book creation inside the checkout endpoint.
+      // Refund calculations: Instantly add the previously paid VIP price right back to the wallet
+      newBalance = newBalance + currentPricePaid
+
+      // FIXED FOR REUNDS TAB: LPUSH a clean log entry tracking item to the dated ledger key
+      const refundTxId = `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      pipeline.lpush(`tx:${phone}:${today}`, JSON.stringify({
+        id: refundTxId,
+        type: 'refund', // 👈 Maps directly to your tab filters matrix keyword
+        amount: String(currentPricePaid),
+        note: `VIP ${currentVip} Trade-In Refund`,
+        status: 'success',
+        createdAt: String(Date.now()),
+        phone
+      }))
+    }
+
+    // Write parameters cleanly back into the user profile hash map properties
     pipeline.hset(userKey, {
-      vip: String(vipLevel), vipPricePaid: String(selectedVip.price),
-    ...setBalance(newBalance), hasBoughtVip: 'true',
+      vip: String(vipLevel), 
+      vipPricePaid: String(selectedVip.price),
+      ...setBalance(newBalance), 
+      hasBoughtVip: 'true',
       vipExpiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      unlockedBooks: JSON.stringify(unlockedBooks), completedBooks: '[]',
-      books_read_today: '0', dailyIncome: '0', lastResetDate: today, vip_bought_date: today
+      unlockedBooks: JSON.stringify(unlockedBooks), 
+      completedBooks: '[]',
+      books_read_today: '0', 
+      dailyIncome: '0', 
+      lastResetDate: today, 
+      vip_bought_date: today
     })
+
     await pipeline.exec()
-    await payInvitationReward(phone, vipLevel)
+
+    // Payout team network trees strictly on the first initial VIP buy transaction
+    if (isFirstTimePurchase) {
+      await payInvitationReward(phone, vipLevel)
+    }
 
     const updatedUser = await redis.hgetall(userKey)
     updatedUser.unlockedBooks = safeParse(updatedUser.unlockedBooks)
     updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
     updatedUser.vip = Number(updatedUser.vip || 0)
 
-    // FIXED: Formally remove the old field from the JSON object sent back to your frontend layout
     if (updatedUser.balance) delete updatedUser.balance;
 
-    return NextResponse.json({ success: true, user: updatedUser, message: `Upgraded to VIP ${vipLevel}. ${assignedBooksMeta.length} books`, books: assignedBooksMeta })
+    const returnMsg = isFirstTimePurchase 
+      ? `Upgraded to VIP ${vipLevel}. ${assignedBooksMeta.length} books assigned.`
+      : `Upgraded to VIP ${vipLevel}. Previous level refund of ${currentPricePaid.toLocaleString()} shs credited.`
+
+    return NextResponse.json({ success: true, user: updatedUser, message: returnMsg, books: assignedBooksMeta })
   } catch (err) {
     console.error('POST /api/viplevels error:', err)
     return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 })
@@ -142,26 +187,42 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
   try {
     const inviterPhone = await redis.hget(`user:${downlinePhone}`, 'invited_by')
     if (!inviterPhone) return
+
     const inviterVip = Number(await redis.hget(`user:${inviterPhone}`, 'vip') || 0)
-    if (inviterVip < vipLevelBought || inviterVip === 0) return
-    const vipAmounts = { 1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000, 6: 2100000, 7: 4000000, 8: 4600000, 9: 5000000, 10: 8000000 }
-    const inviterAmount = vipAmounts[inviterVip]
-    if (!inviterAmount) return
+    if (inviterVip === 0) return 
+
+    const vipAmounts = { 
+      1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000, 
+      6: 2100000, 7: 4000000, 8: 4600000, 9: 5000000, 10: 8000000 
+    }
+
+    const effectiveVipTier = Math.min(inviterVip, vipLevelBought)
+    const targetRewardAmount = vipAmounts[effectiveVipTier]
+    if (!targetRewardAmount) return
+
     const level = Number(await redis.hget(`downlines:${inviterPhone}`, downlinePhone))
     if (!level || level > 3) return
-    const rate = level === 1? 0.05 : level === 2? 0.02 : 0.01
-    const rewardAmount = Math.floor(inviterAmount * rate)
+
+    const rate = level === 1 ? 0.05 : level === 2 ? 0.02 : 0.01
+    const rewardAmount = Math.floor(targetRewardAmount * rate)
     if (rewardAmount <= 0) return
-    await redis.lpush(`tx:${inviterPhone}`, JSON.stringify({
-      id: String(Date.now()), type: 'invitation_reward', amount: rewardAmount,
-      from: downlinePhone, level, vipLevel: vipLevelBought,
-      date: new Date().toISOString(), status: 'completed'
+
+    const today = getUgandaDateString()
+
+    await redis.lpush(`tx:${inviterPhone}:${today}`, JSON.stringify({
+      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`, 
+      type: 'invitation_reward', 
+      amount: String(rewardAmount),
+      from: downlinePhone, 
+      level, 
+      vipLevel: String(vipLevelBought),
+      date: today, 
+      status: 'completed',
+      createdAt: String(Date.now())
     }))
+
     const inviterKey = `user:${inviterPhone}`
-    const inviter = await redis.hgetall(inviterKey)
-    
-    // FIXED: Stripped old user.balance fallback addition tracking logic here too
-    const newBal = Number(inviter.availableBalance || 0) + rewardAmount
-    await redis.hset(inviterKey, setBalance(newBal))
+    await redis.hincrbyfloat(inviterKey, 'availableBalance', rewardAmount)
+
   } catch (err) { console.error('Invitation reward error:', err) }
 }

@@ -15,48 +15,73 @@ export default function Dashboard() {
   const normalizePhone = (phone) => {
     if (!phone) return ''
     phone = String(phone).trim().replace(/\D/g, '')
-    
-    if (!/^07\d{8}$/.test(phone)) {
-      return ''
-    }
+    if (!/^07\d{8}$/.test(phone)) return ''
     return phone
   }
 
-  const loadUser = async () => {
-    const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
+  // FIXED: Optimized high-speed rendering wrapper
+  const loadUser = async (isFocusEvent = false) => {
+    // 1. Instantly parse current local session state to bypass network wait time entirely
+    const cachedData = localStorage.getItem('palamedes_user')
+    let localUser = {}
     
-    // If localStorage is empty, stop loading and wait for login
+    try {
+      if (cachedData) localUser = JSON.parse(cachedData)
+    } catch {
+      localUser = {}
+    }
+    
     if (!localUser.phone) {
       setUser(null)
       setLoading(false)
+      router.replace('/register') // FIXED: Clean safety bounce out
       return
     }
 
+    // Only show loading spinner on initial cold boot, never on focus refreshes
+    if (!isFocusEvent && !user) setLoading(true)
+
     const cleanPhone = normalizePhone(localUser.phone)
+    if (!cleanPhone) {
+      setLoading(false)
+      router.replace('/register')
+      return
+    }
     
     try {
       const res = await fetch(`/api/user?action=getDashboard&phone=${cleanPhone}&_t=${Date.now()}`)
       const data = await res.json()
       
       if (data.success && data.user) {
-        data.user.availableBalance = Number(data.user.balance || 0)
-        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-        setUser(data.user)
+        // FIXED: Explicitly use your pure availableBalance database parameter
+        const updatedUser = {
+          ...data.user,
+          availableBalance: Number(data.user.availableBalance || 0)
+        }
+        localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
+        setUser(updatedUser)
       } else {
         setUser(localUser)
       }
     } catch (e) {
-      console.log('Fetch failed:', e)
-      setUser(localUser)
+      console.log('Dashboard sync failed:', e)
+      setUser(localUser) // Fallback to cache safely during network cuts
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
+  // FIXED: Clean event handler cycle initialization wrapper
   useEffect(() => {
-    loadUser()
-    window.addEventListener('focus', loadUser)
-    return () => window.removeEventListener('focus', loadUser)
-  }, [])
+    loadUser(false)
+
+    const handleWindowFocus = () => loadUser(true)
+    window.addEventListener('focus', handleWindowFocus)
+    
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus)
+    }
+  }, [router])
 
   const menuItems = [
     { icon: '💳', label: 'Deposit', href: '/deposit' },

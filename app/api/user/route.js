@@ -1,5 +1,9 @@
 import { Redis } from '@upstash/redis'
 
+// FIXED: Enforce absolute dynamic execution engine processing to bypass build-time route caching
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -31,18 +35,25 @@ export async function GET(request) {
         return Response.json({ success: false, message: 'User not found' }, { status: 404 })
       }
 
-      // FIX: Use availableBalance. Fallback to balance for old users
+      // Use availableBalance. Fallback to balance for old legacy accounts
       const availableBalance = safeNumber(user.availableBalance) || safeNumber(user.balance)
 
+      // FIXED: Forward ironclad anti-caching response headers downstream to mobile devices
       return Response.json({ 
         success: true, 
         user: {
           phone: user.phone,
           username: user.username,
-          balance: availableBalance, // <- Dashboard expects 'balance'
-          availableBalance: availableBalance, // <- Keep both for safety
+          balance: availableBalance, 
+          availableBalance: availableBalance, 
           vip: safeNumber(user.vip),
           avatar: user.avatar || ''
+        }
+      }, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       })
     }
@@ -84,7 +95,7 @@ export async function POST(request) {
         user: {
           phone: user.phone,
           username: user.username,
-          balance: availableBalance, // <- FIXED
+          balance: availableBalance, 
           availableBalance: availableBalance,
           vip: safeNumber(user.vip),
           avatar: user.avatar || ''
@@ -106,7 +117,7 @@ export async function POST(request) {
         user: {
           phone: updatedUser.phone,
           username: updatedUser.username,
-          balance: availableBalance, // <- FIXED
+          balance: availableBalance, 
           availableBalance: availableBalance,
           vip: safeNumber(updatedUser.vip),
           avatar: updatedUser.avatar || ''
