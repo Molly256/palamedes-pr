@@ -18,7 +18,16 @@ export default function BooksPage() {
   const fetchBooks = async (phone) => {
     try {
       const today = getUgandaDateString()
-      const res = await fetch(`/api/books/data?phone=${phone}&date=${today}`, { cache: 'no-store' })
+      
+      // FIXED: Added absolute cache-busting unique query variable timestamp (_t)
+      const res = await fetch(`/api/books/data?phone=${phone}&date=${today}&_t=${Date.now()}`, { 
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
+      
       const dataJson = await res.json()
       if (dataJson.success) {
         const mergedBooks = dataJson.books.map(function(b) {

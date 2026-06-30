@@ -19,6 +19,11 @@ function makeId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
+// Helper function to safely parse the stringified JSON array from Redis
+function safeParse(str, fallback = []) {
+  try { return JSON.parse(str || '[]') } catch { return fallback }
+}
+
 export async function POST(request) {
   try {
     const { phone, bookId, action } = await request.json();
@@ -33,8 +38,9 @@ export async function POST(request) {
     const txKey = `tx:${phone}:${date}`;
     const incomeKey = `income:${phone}:${date}`; 
 
-    const userExists = await redis.exists(userKey);
-    if (!userExists) {
+    // Fetch complete user object upfront to analyze fields
+    const userData = await redis.hgetall(userKey);
+    if (!userData || !userData.phone) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
@@ -63,7 +69,7 @@ export async function POST(request) {
       const currentStatus = await redis.hget(bookKey, 'status') || null;
 
       if (currentStatus === 'submitted') {
-        const currentBal = Number(await redis.hget(userKey, 'availableBalance') || 0);
+        const currentBal = Number(userData.availableBalance || 0);
         return NextResponse.json({ success: true, availableBalance: currentBal, status: 'submitted' });
       }
 
@@ -71,7 +77,7 @@ export async function POST(request) {
         return NextResponse.json({ error: 'Book must be read before submitting' }, { status: 400 });
       }
 
-      const vipLevel = Number(await redis.hget(userKey, 'vip') || 0);
+      const vipLevel = Number(userData.vip || 0);
       const vipData = VIP_CONFIG[vipLevel];
       if (!vipData) {
         return NextResponse.json({ error: 'VIP level configuration not open' }, { status: 403 });
@@ -79,42 +85,63 @@ export async function POST(request) {
 
       const payout = vipData.perBook;
 
-      // FIXED: Structuring object properties to exactly match your transaction file mapping
+      // FIXED 1: Parse, modify, and prepare the completedBooks JSON array string
+      const currentCompleted = safeParse(userData.completedBooks);
+      if (!currentCompleted.includes(String(bookId))) {
+        currentCompleted.push(String(bookId));
+      }
+
+      // Track how many books have been processed today
+      const dailyReadCount = String(Number(userData.books_read_today || 0) + 1);
+      const updatedDailyIncome = String(Number(userData.dailyIncome || 0) + payout);
+
       const tx = {
         id: makeId(),
-        type: 'book_income', // Becomes 'book income' inside your UI formatter
+        type: 'book_income', 
         amount: String(payout),
         status: 'completed',
-        createdAt: String(Date.now()), // FIXED: Changed to ms string so sorting algorithm doesn't break
+        createdAt: String(Date.now()), 
         phone: phone,
         vipLevel: String(vipLevel),
-        bookTitle: `Book ${bookId}` // Populates UI bookTitle field safely
+        bookTitle: `Book ${bookId}` 
       };
 
       await redis.hsetnx(userKey, 'availableBalance', 0);
 
       // Atomic execution via pipeline
       const pipe = redis.pipeline();
+      
+      // Update individual transactional key state
       pipe.hset(bookKey, { status: 'submitted', submittedAt: new Date().toISOString() });
+      
+      // Increment balances
       pipe.hincrbyfloat(userKey, 'availableBalance', payout);
+      
+      // FIXED 2: Push stringified updates back into user:phone profile hash boundaries
+      pipe.hset(userKey, {
+        completedBooks: JSON.stringify(currentCompleted),
+        books_read_today: dailyReadCount,
+        dailyIncome: updatedDailyIncome
+      });
+
       pipe.lpush(txKey, JSON.stringify(tx)); 
       pipe.lpush(incomeKey, JSON.stringify(tx)); 
 
       const results = await pipe.exec();
 
-      // FIXED: Cleaned Upstash execution check to prevent false 500 crashes
-      if (!results || results.length < 4) {
+      if (!results || results.length < 5) {
         console.error('Redis pipeline failed to return all operations:', results);
         return NextResponse.json({ error: 'Database update failed' }, { status: 500 });
       }
 
-      // Safe extraction of the new balance from the pipeline return index
+      // Safe extraction of the new balance from the pipeline return index (index 1 is hincrbyfloat)
       const updatedBalance = results[1];
 
       return NextResponse.json({
         success: true,
         availableBalance: typeof updatedBalance === 'number' ? updatedBalance : Number(updatedBalance),
-        status: 'submitted'
+        status: 'submitted',
+        completedBooks: currentCompleted
       });
     }
 
