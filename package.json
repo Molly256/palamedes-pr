@@ -2,10 +2,12 @@
   "name": "palamedes-pr",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "seed:vip": "node --env-file=.env.local seed-vip-books.js"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
