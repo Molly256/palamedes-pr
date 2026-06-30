@@ -5,7 +5,7 @@ import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 import fs from 'fs/promises'
 import path from 'path'
-import { VIPS } from '@/app/config/vips' // <- import from config
+import { VIPS } from '@/app/config/vips'
 
 const redis = Redis.fromEnv()
 
@@ -22,8 +22,9 @@ function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
+// FIXED: Removed the redundant 'balance' field property completely
 function setBalance(amount) {
-  return { availableBalance: String(amount), balance: String(amount) }
+  return { availableBalance: String(amount) }
 }
 
 function safeParse(str, fallback = []) {
@@ -32,8 +33,8 @@ function safeParse(str, fallback = []) {
 
 async function assignBooksToUser(phone, vipLevel, today, pipeline) {
   const selectedVip = VIPS[vipLevel]
-  const booksPath = path.join(process.cwd(), 'app/data/books.json') // FIXED: was public/data
-  const coversDir = path.join(process.cwd(), 'public/books/covers') // Covers still from public/
+  const booksPath = path.join(process.cwd(), 'app/data/books.json')
+  const coversDir = path.join(process.cwd(), 'public/books/covers')
 
   const [allBooks, coverFiles] = await Promise.all([
     fs.readFile(booksPath, 'utf8').then(JSON.parse),
@@ -103,7 +104,9 @@ export async function POST(req) {
 
     const currentPricePaid = Number(user.vipPricePaid || 0)
     const upgradeCost = selectedVip.price - currentPricePaid
-    const currentBalance = Number(user.availableBalance || user.balance || 0)
+    
+    // FIXED: Stripped old user.balance fallback verification logic
+    const currentBalance = Number(user.availableBalance || 0)
     if (currentBalance < upgradeCost) return NextResponse.json({ success: false, message: 'Insufficient balance' }, { status: 400 })
 
     const newBalance = currentBalance - upgradeCost
@@ -124,6 +127,9 @@ export async function POST(req) {
     updatedUser.unlockedBooks = safeParse(updatedUser.unlockedBooks)
     updatedUser.availableBalance = Number(updatedUser.availableBalance || 0)
     updatedUser.vip = Number(updatedUser.vip || 0)
+
+    // FIXED: Formally remove the old field from the JSON object sent back to your frontend layout
+    if (updatedUser.balance) delete updatedUser.balance;
 
     return NextResponse.json({ success: true, user: updatedUser, message: `Upgraded to VIP ${vipLevel}. ${assignedBooksMeta.length} books`, books: assignedBooksMeta })
   } catch (err) {
@@ -153,7 +159,9 @@ async function payInvitationReward(downlinePhone, vipLevelBought) {
     }))
     const inviterKey = `user:${inviterPhone}`
     const inviter = await redis.hgetall(inviterKey)
-    const newBal = Number(inviter.availableBalance || inviter.balance || 0) + rewardAmount
+    
+    // FIXED: Stripped old user.balance fallback addition tracking logic here too
+    const newBal = Number(inviter.availableBalance || 0) + rewardAmount
     await redis.hset(inviterKey, setBalance(newBal))
   } catch (err) { console.error('Invitation reward error:', err) }
 }
