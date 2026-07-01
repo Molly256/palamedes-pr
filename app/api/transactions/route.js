@@ -21,14 +21,17 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null} 
 }
 
+// Strictly returns Uganda date format: yyyy-mm-dd (e.g. 2026-07-01)
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
 }
 
+// Strictly returns Uganda time format: yyyy-mm-dd HH:mm
 function getUgandaDateTimeString() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '');
 }
 
+// POST: Save transaction entry into the daily chronological key structure
 export async function POST(req) {
   try {
     const body = await req.json()
@@ -39,17 +42,17 @@ export async function POST(req) {
     }
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success' // VIP = success, Deposit = pending
+    const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success' 
     const dateStr = getUgandaDateString();
     const timeStr = getUgandaDateTimeString();
 
     const tx = {
       id, 
-      type: String(type).toLowerCase(), // keep buy_vip in DB
-      label: getLabel({type, vipLevel}), // NEW: add label for UI
+      type: String(type).toLowerCase(), 
+      label: getLabel({type, vipLevel}), 
       amount: String(amount), 
-      status,
-      createdAt: timeStr,
+      status, 
+      createdAt: timeStr, // Saved using Uganda timestamp configuration
       phone, 
       method: method || '',
       withdrawPhone: withdrawPhone || '', 
@@ -59,6 +62,7 @@ export async function POST(req) {
       note: note || ''
     }
 
+    // Pushes into the shared, pre-existing key (tx:phone:2026-mm-dd) instead of creating new ones
     await redis.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx))
     
     if (status === 'pending') {
@@ -73,18 +77,26 @@ export async function POST(req) {
   }
 }
 
+// GET: Fetch user transactions AND live balance profiles
 export async function GET(request) {
   try {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
+    // 1. Fetch live balance from user database hash to avoid cache bugs
+    const userHash = await redis.hgetall(`user:${phone}`) || {}
+    const availableBalance = Number(userHash.availableBalance || 0)
+
+    // 2. Fetch history records using full year wildcard search schema
     const [txKeys, incomeKeys] = await Promise.all([
       redis.keys(`tx:${phone}:2026-*`),
       redis.keys(`income:${phone}:*`)
     ])
 
     const allKeys = [...txKeys, ...incomeKeys]
-    if (!allKeys.length) return NextResponse.json({ success: true, transactions: [] })
+    if (!allKeys.length) {
+      return NextResponse.json({ success: true, availableBalance, transactions: [] })
+    }
 
     const all = []
     for (const k of allKeys) {
@@ -98,18 +110,17 @@ export async function GET(request) {
     const transactions = all
       .map(tx => {
         let uiType = String(tx.type || '').toLowerCase().trim();
-        // MAP buy_vip -> vip so frontend VIP tab works
         if (uiType === 'buy_vip') uiType = 'vip' 
         if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
 
         return {
           id: String(tx.id), 
-          type: uiType, // vip, deposit, withdraw, daily income
-          label: tx.label || getLabel(tx), // NEW: fallback for old tx
+          type: uiType, 
+          label: tx.label || getLabel(tx), 
           amount: String(tx.amount),
           note: tx.note || '',
-          status: tx.status === 'completed' ? 'success' : tx.status, // pending/success/failed
-          createdAt: tx.createdAt,
+          status: tx.status === 'completed' ? 'success' : tx.status, 
+          createdAt: tx.createdAt, 
           phone: tx.phone || phone, 
           method: tx.method || '', 
           withdrawPhone: tx.withdrawPhone || '',
@@ -123,6 +134,7 @@ export async function GET(request) {
 
     return NextResponse.json({ 
       success: true, 
+      availableBalance, 
       transactions 
     }, { headers: { 'Cache-Control': 'no-store' } })
     
