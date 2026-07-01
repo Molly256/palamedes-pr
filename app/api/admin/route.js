@@ -41,6 +41,7 @@ export async function GET(req) {
         pending = allItems
           .map(raw => safeParse(raw))
           .filter(tx => tx && tx.status === 'pending')
+          .map(tx => ({ ...tx, phone })) // Ensure phone is explicitly attached
       } 
       // If no phone is provided, find ALL pending transactions across the database
       else {
@@ -55,10 +56,17 @@ export async function GET(req) {
 
         // Fetch items from all discovered transaction lists
         for (const key of allKeys) {
+          // Extract the phone number safely from the key structure: tx:PHONE:yyyy-mm-dd
+          const keyParts = key.split(':')
+          const extractedPhone = keyParts[1] || ''
+
           const items = await redis.lrange(key, 0, 199)
           const filtered = items
             .map(raw => safeParse(raw))
             .filter(tx => tx && tx.status === 'pending')
+            // Inject the phone parameter into the transaction object before sending it to frontend
+            .map(tx => ({ ...tx, phone: tx.phone || extractedPhone })) 
+            
           pending.push(...filtered)
         }
       }
