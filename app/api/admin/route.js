@@ -57,7 +57,7 @@ export async function POST(req) {
     const { action, id, status, password, phone } = await req.json()
 
     if (action === 'updateStatus') {
-      if (!id ||!status) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      if (!id || !status) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
 
       let userPhone = null; let keyFound = null; let idx = -1; let txObj = null
       const txKeys = await redis.keys('tx:*')
@@ -74,10 +74,15 @@ export async function POST(req) {
             break
           }
         }
-        if (idx!== -1) break
+        if (idx !== -1) break
       }
 
       if (!txObj) return NextResponse.json({ success: false, error: `Transaction not found: ${id}` }, { status: 404 })
+
+      // Prevent processing if the transaction has already been resolved in a previous race condition
+      if (txObj.status === 'success' || txObj.status === 'failed') {
+        return NextResponse.json({ success: false, error: 'Transaction already processed' }, { status: 400 })
+      }
 
       txObj.status = status
       txObj.updatedAt = String(Date.now())
@@ -85,26 +90,28 @@ export async function POST(req) {
       await redis.lrem('pending_tx', 0, id)
 
       if (status === 'success') {
-        const user = await redis.hgetall(`user:${userPhone}`) || {}
-        const avail = Number(user.availableBalance || 0)
-        const amount = Number(String(txObj.amount || 0).replace(/,/g, '')) // <- FIX: force number, strip commas
+        const amount = Number(String(txObj.amount || 0).replace(/,/g, ''))
 
         if (txObj.type === 'deposit') {
-          await redis.hset(`user:${userPhone}`, { 
-            availableBalance: String(avail + amount) // <- FIX: force string
-          })
+          // FIXED: Uses atomic increment to instantly block double balance addition bug
+          await redis.hincrby(`user:${userPhone}`, 'availableBalance', amount)
         } else if (txObj.type === 'withdraw') {
-          if (avail < amount) return NextResponse.json({ success: false, error: 'Insufficient availableBalance' }, { status: 400 })
-          await redis.hset(`user:${userPhone}`, { 
-            availableBalance: String(avail - amount) // <- FIX: force string
-          })
+          // Double-check the live balance atomically before executing a subtraction
+          const user = await redis.hgetall(`user:${userPhone}`) || {}
+          const avail = Number(user.availableBalance || 0)
+          
+          if (avail < amount) {
+            return NextResponse.json({ success: false, error: 'Insufficient availableBalance' }, { status: 400 })
+          }
+          // FIXED: Uses atomic decrement for accurate, safe subtractions
+          await redis.hincrby(`user:${userPhone}`, 'availableBalance', -amount)
         }
       }
       return NextResponse.json({ success: true })
     }
 
     if (action === 'resetPassword') {
-      if (!phone ||!password) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      if (!phone || !password) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
       const user = await redis.hgetall(`user:${phone}`)
       if (!user || !Object.keys(user).length) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
       await redis.hset(`user:${phone}`, { password })

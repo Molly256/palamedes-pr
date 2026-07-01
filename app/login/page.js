@@ -54,11 +54,8 @@ export default function Login() {
       if (data && data.user) {
         localStorage.setItem('palamedes_user', JSON.stringify(data.user))
 
-        if (String(data.user.phone) === '0753520252') {
-          router.push('/admin')
-        } else {
-          router.push('/dashboard')
-        }
+        // FIXED: Forced admin redirect is removed. Everyone lands on the dashboard!
+        router.push('/dashboard')
       } else {
         alert('Server returned an incomplete user session. Please try again.')
         lockRef.current = false
