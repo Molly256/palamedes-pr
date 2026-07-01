@@ -26,7 +26,7 @@ function getUgandaDateString() {
 }
 
 function getUgandaDateTimeString() {
-  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '); // FIXED: ' not '
+  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '');
 }
 
 export async function POST(req) {

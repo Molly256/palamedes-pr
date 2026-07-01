@@ -59,7 +59,7 @@ export default function Transactions() {
     if (!date ||!time) return createdAt
     const [yyyy, mm, dd] = date.split('-')
     const yy = yyyy.slice(-2)
-    return yy + '-' + mm + '-' + dd + ' + time // 26-09-04 14:32 Uganda
+    return yy + '-' + mm + '-' + dd + ' ' + time // 26-09-04 14:32 Uganda
   }
 
   const renderTx = function(tx) {
