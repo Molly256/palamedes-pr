@@ -21,7 +21,7 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null} 
 }
 
-// Strictly returns Uganda date format: yyyy-mm-dd (e.g. 2026-07-01)
+// Strictly returns Uganda date format: yyyy-mm-dd
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
 }
@@ -41,8 +41,30 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
+    const amt = Number(amount)
+    if (isNaN(amt) || amt <= 0) {
+      return NextResponse.json({ error: 'Invalid amount value' }, { status: 400 })
+    }
+
+    const isWithdrawal = String(type).toLowerCase() === 'withdraw'
+
+    // Server-side safety verification & deduction logic for withdrawal requests
+    if (isWithdrawal) {
+      const userKey = `user:${phone}`
+      
+      // Read current balance profiles directly from the primary user hash record
+      const currentBalance = Number(await redis.hget(userKey, 'availableBalance') || 0)
+      
+      if (amt > currentBalance) {
+        return NextResponse.json({ error: 'Insufficient balance available' }, { status: 400 })
+      }
+
+      // Deduct the requested withdrawal value from the persistent account database immediately
+      await redis.hset(userKey, { availableBalance: currentBalance - amt })
+    }
+
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success' 
+    const status = (type === 'deposit' || isWithdrawal) ? 'pending' : 'success' 
     const dateStr = getUgandaDateString();
     const timeStr = getUgandaDateTimeString();
 
@@ -52,7 +74,7 @@ export async function POST(req) {
       label: getLabel({type, vipLevel}), 
       amount: String(amount), 
       status, 
-      createdAt: timeStr, // Saved using Uganda timestamp configuration
+      createdAt: timeStr, 
       phone, 
       method: method || '',
       withdrawPhone: withdrawPhone || '', 
@@ -62,7 +84,7 @@ export async function POST(req) {
       note: note || ''
     }
 
-    // Pushes into the shared, pre-existing key (tx:phone:2026-mm-dd) instead of creating new ones
+    // Pushes into the shared, pre-existing key (tx:phone:yyyy-mm-dd)
     await redis.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx))
     
     if (status === 'pending') {

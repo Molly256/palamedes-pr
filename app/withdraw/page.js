@@ -19,8 +19,12 @@ export default function Withdraw() {
     fetch(`/api/admin?action=user&phone=${localUser.phone}`)
      .then(res => res.json())
      .then(data => {
-        if (data.success) setUser(data.user)
-        else setUser(localUser)
+        if (data.success) {
+          setUser(data.user)
+          localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+        } else {
+          setUser(localUser)
+        }
       })
      .catch(() => setUser(localUser))
   }, [router])
@@ -52,14 +56,14 @@ export default function Withdraw() {
     setLoading(true)
 
     try {
-      const res = await fetch('/api/transactions', {  // FIXED: added s
+      const res = await fetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'withdraw',
           phone: user.phone,
           amount: amt,
-          method: method === 'MTN'? 'MTN MOBILE MONEY' : 'AIRTEL MOBILE MONEY',
+          method: method === 'MTN' ? 'MTN MOBILE MONEY' : 'AIRTEL MOBILE MONEY',
           withdrawPhone: form.phoneNumber,
           withdrawName: form.accountName
         })
@@ -68,12 +72,19 @@ export default function Withdraw() {
       const data = await res.json()
 
       if (!res.ok) {
-        alert(data.error)
+        alert(data.error || 'Withdrawal failed')
         setLoading(false)
         return
       }
 
-      alert('Withdraw request submitted. Wait for admin approval.')
+      // Deduct balance instantly from UI and browser storage
+      const updatedBalance = Number(user.availableBalance || 0) - amt
+      const updatedUser = { ...user, availableBalance: updatedBalance }
+      
+      setUser(updatedUser)
+      localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
+
+      alert('Withdraw request submitted and balance updated. Wait for admin approval.')
       router.push('/transactions')
 
     } catch (err) {
@@ -99,7 +110,7 @@ export default function Withdraw() {
 
       <div className="flex flex-col gap-3">
         <div>
-          <button onClick={() => selectMethod('MTN')} className={`w-full border-2 rounded p-3 text-left font-bold ${method === 'MTN'? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 text-black'}`}>
+          <button onClick={() => selectMethod('MTN')} className={`w-full border-2 rounded p-3 text-left font-bold ${method === 'MTN' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 text-black'}`}>
             MTN MOBILE MONEY
           </button>
           {method === 'MTN' && (
@@ -112,7 +123,7 @@ export default function Withdraw() {
         </div>
 
         <div>
-          <button onClick={() => selectMethod('AIRTEL')} className={`w-full border-2 rounded p-3 text-left font-bold ${method === 'AIRTEL'? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-black'}`}>
+          <button onClick={() => selectMethod('AIRTEL')} className={`w-full border-2 rounded p-3 text-left font-bold ${method === 'AIRTEL' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-black'}`}>
             AIRTEL MOBILE MONEY
           </button>
           {method === 'AIRTEL' && (
@@ -126,14 +137,14 @@ export default function Withdraw() {
       </div>
 
       {method && (
-        <button onClick={handleWithdraw} disabled={loading} className={`w-full py-3 mt-4 rounded font-bold text-lg ${loading? 'bg-gray-400 text-gray-200' : 'bg-red-500 text-white'}`}>
-          {loading? 'Processing...' : 'Withdraw'}
+        <button onClick={handleWithdraw} disabled={loading} className={`w-full py-3 mt-4 rounded font-bold text-lg ${loading ? 'bg-gray-400 text-gray-200' : 'bg-red-500 text-white'}`}>
+          {loading ? 'Processing...' : 'Withdraw'}
         </button>
       )}
 
       <div className="mt-6 p-3 bg-gray-100 rounded">
         <p className="text-black font-bold mb-1">NOTE:</p>
-        <p className="text-black text-sm">money will arrive in your mobile money wallet after admin approval.</p>
+        <p className="text-black text-sm">Money is deducted immediately. System delivery will finalize after admin approval.</p>
       </div>
     </div>
   )
