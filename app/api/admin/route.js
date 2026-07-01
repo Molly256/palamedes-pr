@@ -91,24 +91,48 @@ export async function GET(req) {
 // POST: updateStatus, resetPassword
 export async function POST(req) {
   try {
-    const { action, id, status, password, phone } = await req.json()
+    const { action, id, status, password, phone: inputPhone } = await req.json()
 
     if (action === 'updateStatus') {
-      if (!id || !status || !phone) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      // Input phone validation removed here since the backend will automatically scan keys if it is missing
+      if (!id || !status) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
 
-      let txObj = null, keyFound = null, idx = -1
-      for (let i = 0; i < 2; i++) {
-        const key = getDateKey(phone, i)
-        const items = await redis.lrange(key, 0, 199)
-        idx = items.findIndex(it => safeParse(it)?.id === id)
-        if (idx !== -1) {
-          keyFound = key
-          txObj = safeParse(items[idx])
-          break
+      let txObj = null, keyFound = null, idx = -1, finalPhone = inputPhone
+
+      // Scenario A: If the frontend provided a phone number property, test that optimized key direct lookup path first
+      if (finalPhone) {
+        for (let i = 0; i < 2; i++) {
+          const key = getDateKey(finalPhone, i)
+          const items = await redis.lrange(key, 0, 199)
+          idx = items.findIndex(it => safeParse(it)?.id === id)
+          if (idx !== -1) {
+            keyFound = key
+            txObj = safeParse(items[idx])
+            break
+          }
         }
       }
 
-      if (!txObj) return NextResponse.json({ success: false, error: `Transaction not found: ${id}` }, { status: 404 })
+      // Scenario B: If transaction isn't found yet (or phone wasn't passed), fallback to a database keys wildcard scan lookup
+      if (!txObj) {
+        const todayKeys = await redis.keys(getDateKey('*', 0)) || []
+        const yesterdayKeys = await redis.keys(getDateKey('*', 1)) || []
+        const allKeys = [...todayKeys, ...yesterdayKeys]
+
+        for (const key of allKeys) {
+          const items = await redis.lrange(key, 0, 199)
+          idx = items.findIndex(it => safeParse(it)?.id === id)
+          if (idx !== -1) {
+            keyFound = key
+            txObj = safeParse(items[idx])
+            const keyParts = key.split(':')
+            finalPhone = keyParts[1] // Safely parse out user phone straight from the key name context
+            break
+          }
+        }
+      }
+
+      if (!txObj || !finalPhone) return NextResponse.json({ success: false, error: `Transaction not found: ${id}` }, { status: 404 })
       if (txObj.status === 'success' || txObj.status === 'failed') {
         return NextResponse.json({ success: false, error: 'Transaction already processed' }, { status: 400 })
       }
@@ -121,24 +145,24 @@ export async function POST(req) {
         const amount = Number(String(txObj.amount || 0).replace(/,/g, ''))
 
         if (txObj.type === 'deposit') {
-          await redis.hincrby(`user:${phone}`, 'availableBalance', amount)
+          await redis.hincrby(`user:${finalPhone}`, 'availableBalance', amount)
         } else if (txObj.type === 'withdraw') {
-          const user = await redis.hgetall(`user:${phone}`) || {}
+          const user = await redis.hgetall(`user:${finalPhone}`) || {}
           const avail = Number(user.availableBalance || 0)
           if (avail < amount) {
             return NextResponse.json({ success: false, error: 'Insufficient availableBalance' }, { status: 400 })
           }
-          await redis.hincrby(`user:${phone}`, 'availableBalance', -amount)
+          await redis.hincrby(`user:${finalPhone}`, 'availableBalance', -amount)
         }
       }
       return NextResponse.json({ success: true })
     }
 
     if (action === 'resetPassword') {
-      if (!phone || !password) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
-      const user = await redis.hgetall(`user:${phone}`)
+      if (!inputPhone || !password) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      const user = await redis.hgetall(`user:${inputPhone}`)
       if (!user || !Object.keys(user).length) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
-      await redis.hset(`user:${phone}`, { password })
+      await redis.hset(`user:${inputPhone}`, { password })
       return NextResponse.json({ success: true })
     }
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
