@@ -4,7 +4,17 @@ import { useRouter } from 'next/navigation'
 
 const TABS = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES']
 
-const toTabKey = (t) => String(t || '').toLowerCase().replace(/_/g, ' ').trim()
+// Map backend types -> tab keys exactly
+const TYPE_MAP = {
+  'buy_vip': 'viplevel purchase',
+  'refund_vip': 'refund',
+  'deposit': 'deposit',
+  'withdraw': 'withdraw',
+  'daily income': 'daily income',
+  'shares': 'shares',
+}
+
+const toTabKey = (t) => TYPE_MAP[String(t || '').toLowerCase()] || String(t || '').toLowerCase().replace(/_/g, ' ').trim()
 
 export default function Transactions() {
   const router = useRouter()
@@ -42,74 +52,40 @@ export default function Transactions() {
     return allTxs.filter(tx => toTabKey(tx.type) === tabKey)
   }, [allTxs, activeTab])
 
-  const formatUgandaTime = (timestamp) => {
-    if (!timestamp) return ''
-    const d = new Date(timestamp)
-    if (isNaN(d.getTime())) return ''
-    const yy = String(d.getFullYear()).slice(-2)
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    const hh = String(d.getHours()).padStart(2, '0')
-    const min = String(d.getMinutes()).padStart(2, '0')
-    return `${yy} ${mm} ${dd} ${hh}:${min}`
+  const formatDateUnderAmount = (createdAt) => {
+    if (!createdAt) return ''
+    // Expecting "2026-06-30 14:32" from backend
+    const [date, time] = String(createdAt).split(' ')
+    if (!date ||!time) return createdAt
+    const [yyyy, mm, dd] = date.split('-')
+    const yy = yyyy.slice(-2)
+    return `${yy}-${mm}-${dd} ${time}` // 26-06-30 14:32
   }
 
   const renderTx = (tx) => {
     const typeKey = toTabKey(tx.type)
-    const isMoneyTx = typeKey === 'deposit' || typeKey === 'withdraw'
     const amount = Number(tx.amount) || 0
-    const status = String(tx.status || '').toLowerCase()
-
-    if (isMoneyTx) {
-      return (
-        <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-          <div className="flex justify-between items-start">
-            <div className="flex flex-col">
-              <p className="text-black text-sm font-light capitalize">{typeKey}</p>
-              <p className="text-black text-base font-light mt-1">
-                {amount.toLocaleString()}shs
-              </p>
-              <p className="text-black text-xs font-light mt-1">
-                {formatUgandaTime(tx.createdAt)}
-              </p>
-            </div>
-            <p className={`text-sm font-light capitalize ${
-              status === 'success'? 'text-green-400' :
-              status === 'pending'? 'text-red-400' :
-              'text-red-400'
-            }`}>
-              {status || 'unknown'}
-            </p>
-          </div>
-        </div>
-      )
-    }
-
-    if (typeKey === 'system increase') {
-      return (
-        <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-          <div className="flex justify-between items-start">
-            <p className="text-black text-sm font-light">System Increase</p>
-            <p className="text-black text-base font-light">{amount.toLocaleString()} shs</p>
-          </div>
-          <p className="text-black text-xs font-light mt-1 text-right">
-            {formatUgandaTime(tx.createdAt)}
-          </p>
-        </div>
-      )
-    }
+    const amountStr = `${amount < 0? '' : '+'}${Math.abs(amount).toLocaleString()}shs`
+    const note = tx.note || typeKey.toUpperCase()
 
     return (
       <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
         <div className="flex justify-between items-start">
-          <p className="text-black text-sm font-light capitalize">{typeKey}</p>
-          <p className="text-black text-base font-light">
-            {amount.toLocaleString()}shs
-          </p>
+          <div className="flex flex-col">
+            <p className="text-black text-sm font-light">{note}</p>
+            <p className="text-gray-500 text-xs font-light mt-1">
+              {formatDateUnderAmount(tx.createdAt)}
+            </p>
+          </div>
+          <div className="flex flex-col items-end">
+            <p className="text-black text-base font-light">
+              {amountStr}
+            </p>
+            <p className="text-gray-500 text-xs font-light mt-1">
+              {formatDateUnderAmount(tx.createdAt)}
+            </p>
+          </div>
         </div>
-        <p className="text-black text-xs font-light mt-1 text-right">
-          {formatUgandaTime(tx.createdAt)}
-        </p>
       </div>
     )
   }

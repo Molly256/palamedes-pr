@@ -10,18 +10,23 @@ const toUiType = (t) => String(t || '').toLowerCase().replace(/_/g, ' ').trim()
 
 const safeParse = (s) => { 
   if (typeof s === 'object') return s
-  try { return JSON.parse(s) } catch { return null } 
+  try { return JSON.parse(s) } catch { return null} 
 }
 
-// Uses Uganda date matching your book logic to prevent timezone drift
+// 2026-MM-DD full year Uganda
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
+}
+
+// 2026-06-30 14:32 Uganda
+function getUgandaDateTimeString() {
+  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ' ');
 }
 
 export async function POST(req) {
   try {
     const body = await req.json()
-    const { type, phone, amount, method, withdrawPhone, withdrawName, bookTitle, vipLevel, id: customId } = body
+    const { type, phone, amount, method, withdrawPhone, withdrawName, bookTitle, vipLevel, id: customId, note } = body
     
     if (!type || !phone || !amount) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -29,23 +34,25 @@ export async function POST(req) {
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success'
-    const today = getUgandaDateString();
+    const dateStr = getUgandaDateString(); // 2026-MM-DD
+    const timeStr = getUgandaDateTimeString(); // 2026-MM-DD HH:mm
 
     const tx = {
       id, 
-      type: type.toLowerCase(), 
+      type: String(type).toLowerCase(), // keep buy_vip, refund_vip as-is
       amount: String(amount), 
       status,
-      createdAt: String(Date.now()), // Unix timestamp in ms
+      createdAt: timeStr, // <- string under amount, not ms
       phone, 
       method: method || '',
       withdrawPhone: withdrawPhone || '', 
       withdrawName: withdrawName || '',
       bookTitle: bookTitle || '', 
-      vipLevel: String(vipLevel || '')
+      vipLevel: String(vipLevel || ''),
+      note: note || ''
     }
 
-    await redis.lpush(`tx:${phone}:${today}`, JSON.stringify(tx)) 
+    await redis.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx)) // <- full year key
     
     if (status === 'pending') {
       await redis.lpush('pending_tx', id) 
@@ -64,48 +71,40 @@ export async function GET(request) {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    // 1. FIXED: Scan for BOTH transaction history keys and income tracking keys
+    // Scan full year keys only: 2026-MM-DD
     const [txKeys, incomeKeys] = await Promise.all([
-      redis.keys(`tx:${phone}:*`),
+      redis.keys(`tx:${phone}:2026-*`), // <- full year filter
       redis.keys(`income:${phone}:*`)
     ])
 
     const allKeys = [...txKeys, ...incomeKeys]
     if (!allKeys.length) return NextResponse.json({ success: true, transactions: [] })
 
-    // 2. Read all data arrays across keys
     const all = []
     for (const k of allKeys) {
-      const items = await redis.lrange(k, 0, 99) 
+      const items = await redis.lrange(k, 0, 199) // bumped to 199 for more history
       for (const item of items) {
         const tx = safeParse(item)
         if (tx) all.push(tx)
       }
     }
 
-    // 3. Normalize values, sanitize UI filter naming, and sort newest first
     const transactions = all
       .map(tx => {
-        // Safe parse timestamp whether it was written as milliseconds or ISO text
-        let msTimestamp = String(Date.now());
-        if (tx.createdAt) {
-          msTimestamp = isNaN(tx.createdAt) ? String(Date.parse(tx.createdAt)) : String(tx.createdAt);
-        }
-
-        // FIXED FOR FRONTEND TAB FILTERING: Force book incomes to map cleanly to UI tab keywords
         let uiType = String(tx.type || '').toLowerCase().trim();
         if (uiType === 'daily_income' || uiType === 'book_income' || uiType === 'book income') {
-          uiType = 'daily income'; // Matches the text layout on your frontend tab
+          uiType = 'daily income'; // matches frontend tab
         } else {
-          uiType = toUiType(tx.type);
+          uiType = toUiType(tx.type); // buy_vip -> buy vip, refund_vip -> refund vip
         }
 
         return {
           id: String(tx.id), 
           type: uiType, 
           amount: String(tx.amount),
+          note: tx.note || '',
           status: tx.status === 'completed' ? 'success' : tx.status,
-          createdAt: msTimestamp, 
+          createdAt: tx.createdAt, // <- already string 2026-MM-DD HH:mm
           phone: tx.phone || phone, 
           method: tx.method || '', 
           withdrawPhone: tx.withdrawPhone || '',
@@ -114,10 +113,8 @@ export async function GET(request) {
           vipLevel: tx.vipLevel || ''
         };
       })
-      // Remove duplicate rows if the transaction lives inside both database lists
       .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
-      // Sort with newest timestamps showing up first
-      .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) // sort by string time desc
 
     return NextResponse.json({ 
       success: true, 

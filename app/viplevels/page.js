@@ -1,13 +1,40 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 
+const getTodayDateStrFullYear = () => {
+  const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" }));
+  const yyyy = String(d.getFullYear());
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+const getTodayTimeStrKampala = () => {
+  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ' ');
+}
+
+const Toast = ({ msg, onClose }) => {
+  useEffect(() => {
+    const t = setTimeout(onClose, 1500);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div style={{
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+      background: '#000', color: '#fff', padding: '14px 22px', borderRadius: '12px',
+      fontWeight: '900', fontSize: '15px', zIndex: 2000, boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+    }}>
+      {msg}
+    </div>
+  )
+}
+
 export default function VipLevels() {
   const [user, setUser] = useState(null)
-  const [showBuyPopup, setShowBuyPopup] = useState(false)
-  const [selectedVip, setSelectedVip] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [toast, setToast] = useState(null)
 
   const vips = [
     { level: 1, name: 'VIP 1', price: 80000, books: 4, perBook: 625 },
@@ -34,7 +61,6 @@ export default function VipLevels() {
     const today = new Date().toISOString().split('T')[0]
     const lastReset = userData.lastResetDate || ''
 
-    // Reset daily limits at midnight
     if (lastReset!== today) {
       userData.books_read_today = 0
       userData.dailyIncome = 0
@@ -53,53 +79,65 @@ export default function VipLevels() {
     setUser(userData)
   }, [])
 
-  const handleBuyVip = (vip) => {
+  const showToast = (msg) => setToast(msg)
+
+  const handleBuyVip = async (vip) => {
     if (!user) return
     if (vip.level <= Number(user.vip)) {
-      alert('You already have this VIP or higher')
+      showToast('You already have this VIP or higher')
       return
     }
-    setSelectedVip(vip)
-    setShowBuyPopup(true)
-  }
-
-  const confirmBuy = async () => {
-    if (!user ||!selectedVip) return
+    if (vip.level > 3) {
+      showToast('VIP 4-10 is locked')
+      return
+    }
 
     const currentPricePaid = Number(user.vipPricePaid || 0)
-    const upgradeCost = selectedVip.price - currentPricePaid
+    const upgradeCost = vip.price - currentPricePaid // full diff required
 
-    if ((user.availableBalance || 0) < upgradeCost) {
-      alert(`Insufficient balance. You need ${upgradeCost.toLocaleString()}shs more to upgrade`)
+    if ((user.availableBalance || 0) < vip.price) {
+      showToast('Insufficient Available Balance')
       return
     }
 
     setLoading(true)
     try {
+      const dateStr = getTodayDateStrFullYear();
+      const timeStr = getTodayTimeStrKampala();
+
       const res = await fetch('/api/viplevels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: user.phone,
-          vipLevel: selectedVip.level
+          action: 'BUY_VIP',
+          payload: {
+            vipLevel: vip.level,
+            vipName: vip.name,
+            price: vip.price,
+            books: vip.books,
+            dateStr, // 2026-MM-DD
+            timeStr // 2026-MM-DD HH:mm
+          }
         })
       })
 
       const data = await res.json()
 
       if (!data.success ||!data.user) {
-        alert(data.message || 'Purchase failed')
+        showToast(data.message || 'Purchase failed')
         setLoading(false)
         return
       }
 
-      setUser(data.user)
-      localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      setShowBuyPopup(false)
-      alert(`${data.message}\n${selectedVip.books} books assigned to your BOOKS tab`)
+      // Instant books on first buy: backend returns unlockedBooks
+      const updatedUser = {...data.user }
+      localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
+      setUser(updatedUser)
+      showToast('VIP Buy Successful') // auto-dismiss, no OK
 
     } catch (err) {
-      alert('Error: ' + err.message)
+      showToast('Error: ' + err.message)
     } finally {
       setLoading(false)
     }
@@ -111,6 +149,8 @@ export default function VipLevels() {
 
   return (
     <main style={{ minHeight: '100vh', background: '#FFFFFF', padding: '20px' }}>
+      {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
+
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '30px' }}>
         <Link href="/dashboard" style={{ fontSize: '16px', color: '#00BFFF', fontWeight: '900', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px', paddingTop: '8px' }}>
           ← Back
@@ -144,8 +184,8 @@ export default function VipLevels() {
         {vips.map(vip => {
           const isCurrent = currentVipLevel === vip.level
           const isOwned = currentVipLevel >= vip.level
-          const showBuyButton = vip.level > currentVipLevel
-          const showLock = vip.level > currentVipLevel && vip.level >= 4
+          const isLocked = vip.level >= 4
+          const canBuy = vip.level > currentVipLevel &&!isLocked
 
           return (
             <div key={vip.level} style={{
@@ -162,7 +202,7 @@ export default function VipLevels() {
               </div>
 
               <div>
-                {showBuyButton && (
+                {canBuy && (
                   <button
                     onClick={() => handleBuyVip(vip)}
                     disabled={loading}
@@ -175,7 +215,7 @@ export default function VipLevels() {
                     BUY
                   </button>
                 )}
-                {showLock && <div style={{ fontSize: '28px' }}>🔒</div>}
+                {isLocked && vip.level > currentVipLevel && <div style={{ fontSize: '28px' }}>🔒</div>}
                 {isCurrent && <div style={{ fontSize: '24px' }}>✅</div>}
                 {isOwned &&!isCurrent && <div style={{ fontSize: '18px', fontWeight: '900', color: '#000' }}>Owned</div>}
               </div>
@@ -183,38 +223,6 @@ export default function VipLevels() {
           )
         })}
       </div>
-
-      {showBuyPopup && selectedVip && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', padding: '30px', borderRadius: '16px', textAlign: 'center', maxWidth: '320px' }}>
-            <h3 style={{ color: '#000', fontWeight: '900' }}>Upgrade to {selectedVip.name}?</h3>
-            <p style={{ color: '#000', fontWeight: '700' }}>
-              Pay: {(selectedVip.price - (user.vipPricePaid || 0)).toLocaleString()} shs
-            </p>
-            <p style={{ color: '#000', fontSize: '12px' }}>Valid for 1 year. Only the difference is charged.</p>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-              <button
-                onClick={() => setShowBuyPopup(false)}
-                disabled={loading}
-                style={{ flex: 1, padding: '12px', borderRadius: '50px', border: '2px solid #ccc', background: 'white', fontWeight: '800', color: '#000' }}
-              >
-                No
-              </button>
-              <button
-                onClick={confirmBuy}
-                disabled={loading}
-                style={{
-                  flex: 1, padding: '12px', borderRadius: '50px', border: 'none',
-                  background: 'linear-gradient(135deg, #FF1493 0%, #FF00FF 100%)',
-                  color: 'white', fontWeight: '900', opacity: loading? 0.6 : 1
-                }}
-              >
-                {loading? 'Processing...' : 'OK'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   )
 }
