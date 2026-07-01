@@ -11,29 +11,36 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null } 
 }
 
-// GET: /api/admin?action=pending
+const getDateKey = (phone, offsetDays = 0) => {
+  const d = new Date()
+  d.setDate(d.getDate() - offsetDays)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `tx:${phone}:${yyyy}-${mm}-${dd}`
+}
+
+// GET: /api/admin?action=pending&phone=0753...
 export async function GET(req) {
   try {
     const action = req.nextUrl.searchParams.get('action')
     const phone = req.nextUrl.searchParams.get('phone')
 
     if (action === 'pending') {
-      const pendingIds = await redis.lrange('pending_tx', 0, 999)
-      if (pendingIds.length === 0) return NextResponse.json({ success: true, pending: [] })
-
-      const pendingSet = new Set(pendingIds)
-      const pending = []
-      const txKeys = await redis.keys('tx:*')
-
-      for (const key of txKeys) {
+      if (!phone) return NextResponse.json({ success: false, error: 'Phone required' }, { status: 400 })
+      
+      // Check today + yesterday only. No keys() scan.
+      let allItems = []
+      for (let i = 0; i < 2; i++) {
+        const key = getDateKey(phone, i)
         const items = await redis.lrange(key, 0, 199)
-        for (const raw of items) {
-          const tx = safeParse(raw)
-          if (tx && pendingSet.has(tx.id) && tx.status === 'pending') {
-            pending.push(tx)
-          }
-        }
+        allItems.push(...items)
       }
+
+      const pending = allItems
+        .map(raw => safeParse(raw))
+        .filter(tx => tx && tx.status === 'pending')
+      
       return NextResponse.json({ success: true, pending })
     }
 
@@ -57,29 +64,22 @@ export async function POST(req) {
     const { action, id, status, password, phone } = await req.json()
 
     if (action === 'updateStatus') {
-      if (!id || !status) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      if (!id || !status || !phone) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
 
-      let userPhone = null; let keyFound = null; let idx = -1; let txObj = null
-      const txKeys = await redis.keys('tx:*')
-
-      for (const key of txKeys) {
+      // Find tx in today or yesterday only
+      let txObj = null, keyFound = null, idx = -1
+      for (let i = 0; i < 2; i++) {
+        const key = getDateKey(phone, i)
         const items = await redis.lrange(key, 0, 199)
-        for (let i = 0; i < items.length; i++) {
-          const tx = safeParse(items[i])
-          if (tx?.id === id) {
-            keyFound = key
-            userPhone = key.replace('tx:', '').split(':')[0]
-            idx = i
-            txObj = tx
-            break
-          }
+        idx = items.findIndex(it => safeParse(it)?.id === id)
+        if (idx !== -1) {
+          keyFound = key
+          txObj = safeParse(items[idx])
+          break
         }
-        if (idx !== -1) break
       }
 
       if (!txObj) return NextResponse.json({ success: false, error: `Transaction not found: ${id}` }, { status: 404 })
-
-      // Prevent processing if the transaction has already been resolved in a previous race condition
       if (txObj.status === 'success' || txObj.status === 'failed') {
         return NextResponse.json({ success: false, error: 'Transaction already processed' }, { status: 400 })
       }
@@ -87,24 +87,19 @@ export async function POST(req) {
       txObj.status = status
       txObj.updatedAt = String(Date.now())
       await redis.lset(keyFound, idx, JSON.stringify(txObj))
-      await redis.lrem('pending_tx', 0, id)
 
       if (status === 'success') {
         const amount = Number(String(txObj.amount || 0).replace(/,/g, ''))
 
         if (txObj.type === 'deposit') {
-          // FIXED: Uses atomic increment to instantly block double balance addition bug
-          await redis.hincrby(`user:${userPhone}`, 'availableBalance', amount)
+          await redis.hincrby(`user:${phone}`, 'availableBalance', amount)
         } else if (txObj.type === 'withdraw') {
-          // Double-check the live balance atomically before executing a subtraction
-          const user = await redis.hgetall(`user:${userPhone}`) || {}
+          const user = await redis.hgetall(`user:${phone}`) || {}
           const avail = Number(user.availableBalance || 0)
-          
           if (avail < amount) {
             return NextResponse.json({ success: false, error: 'Insufficient availableBalance' }, { status: 400 })
           }
-          // FIXED: Uses atomic decrement for accurate, safe subtractions
-          await redis.hincrby(`user:${userPhone}`, 'availableBalance', -amount)
+          await redis.hincrby(`user:${phone}`, 'availableBalance', -amount)
         }
       }
       return NextResponse.json({ success: true })

@@ -4,8 +4,10 @@ import Link from 'next/link'
 
 export default function BottomNav() {
   const pathname = usePathname()
-  const hideOnRoutes = ['/', '/login', '/register', '/admin']
-  if (hideOnRoutes.includes(pathname) || pathname.startsWith('/admin')) {
+  
+  // Only hide on login + register. Admin stays visible.
+  const hideOnRoutes = ['/', '/login', '/register'] 
+  if (hideOnRoutes.includes(pathname)) {
     return null
   }
 
@@ -24,7 +26,7 @@ export default function BottomNav() {
       right: 0,
       width: '100%',
       maxWidth: '480px', 
-      height: '75px', // <- this is your real height
+      height: '75px',
       background: '#FFFFFF', 
       display: 'flex',
       justifyContent: 'space-around', 
