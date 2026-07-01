@@ -21,17 +21,15 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null} 
 }
 
-// Strictly returns Uganda date format: yyyy-mm-dd
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
 }
 
-// Strictly returns Uganda time format: yyyy-mm-dd HH:mm
 function getUgandaDateTimeString() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '');
 }
 
-// POST: Save transaction entry into the daily chronological key structure
+// POST: Save transaction entry and update availableBalance atomically
 export async function POST(req) {
   try {
     const body = await req.json()
@@ -47,20 +45,18 @@ export async function POST(req) {
     }
 
     const isWithdrawal = String(type).toLowerCase() === 'withdraw'
+    const userKey = `user:${phone}`
 
-    // Server-side safety verification & deduction logic for withdrawal requests
     if (isWithdrawal) {
-      const userKey = `user:${phone}`
+      // 1. Check current availableBalance explicitly 
+      const currentAvailableBalance = Number(await redis.hget(userKey, 'availableBalance') || 0)
       
-      // Read current balance profiles directly from the primary user hash record
-      const currentBalance = Number(await redis.hget(userKey, 'availableBalance') || 0)
-      
-      if (amt > currentBalance) {
-        return NextResponse.json({ error: 'Insufficient balance available' }, { status: 400 })
+      if (amt > currentAvailableBalance) {
+        return NextResponse.json({ error: 'Insufficient availableBalance' }, { status: 400 })
       }
 
-      // Deduct the requested withdrawal value from the persistent account database immediately
-      await redis.hset(userKey, { availableBalance: currentBalance - amt })
+      // 2. Safely deduct directly from availableBalance field to prevent race bugs
+      await redis.hincrby(userKey, 'availableBalance', -amt)
     }
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -84,12 +80,12 @@ export async function POST(req) {
       note: note || ''
     }
 
-    // Pushes into the shared, pre-existing key (tx:phone:yyyy-mm-dd)
-    await redis.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx))
-    
+    const pipeline = redis.pipeline()
+    pipeline.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx))
     if (status === 'pending') {
-      await redis.lpush('pending_tx', id) 
+      pipeline.lpush('pending_tx', id) 
     }
+    await pipeline.exec()
     
     return NextResponse.json({ success: true, transaction: tx })
     
@@ -99,17 +95,15 @@ export async function POST(req) {
   }
 }
 
-// GET: Fetch user transactions AND live balance profiles
+// GET: Fetch user transactions and pass exact availableBalance format to UI
 export async function GET(request) {
   try {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    // 1. Fetch live balance from user database hash to avoid cache bugs
     const userHash = await redis.hgetall(`user:${phone}`) || {}
     const availableBalance = Number(userHash.availableBalance || 0)
 
-    // 2. Fetch history records using full year wildcard search schema
     const [txKeys, incomeKeys] = await Promise.all([
       redis.keys(`tx:${phone}:2026-*`),
       redis.keys(`income:${phone}:*`)
