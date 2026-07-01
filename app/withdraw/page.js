@@ -15,7 +15,15 @@ export default function Withdraw() {
       router.push('/login')
       return
     }
-    setUser(localUser)
+
+    // Fetch fresh user data from admin API
+    fetch(`/api/admin?action=user&phone=${localUser.phone}`)
+     .then(res => res.json())
+     .then(data => {
+        if (data.success) setUser(data.user)
+        else setUser(localUser) // fallback to localStorage
+      })
+     .catch(() => setUser(localUser))
   }, [router])
 
   const handleWithdraw = async () => {
@@ -37,7 +45,7 @@ export default function Withdraw() {
       alert('Enter amount')
       return
     }
-    if (amt > Number(user.balance || 0)) {
+    if (amt > Number(user.availableBalance || 0)) { // FIXED: availableBalance
       alert('Insufficient balance')
       return
     }
@@ -88,12 +96,11 @@ export default function Withdraw() {
     <div className="min-h-screen bg-white p-4">
       <h1 className="text-2xl font-bold text-black mb-4">Withdraw</h1>
 
-      <p className="text-black mb-4">Available Balance: <b>{Number(user.balance || 0).toLocaleString()} shs</b></p>
+      <p className="text-black mb-4">Available Balance: <b>{Number(user.availableBalance || 0).toLocaleString()} shs</b></p> // FIXED
 
       <label className="text-black font-bold block mb-2">Select Method</label>
 
       <div className="flex flex-col gap-3">
-
         {/* MTN MOBILE MONEY */}
         <div>
           <button
