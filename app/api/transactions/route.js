@@ -6,21 +6,27 @@ import { NextResponse } from 'next/server'
 
 const redis = Redis.fromEnv() 
 
-const toUiType = (t) => String(t || '').toLowerCase().replace(/_/g, ' ').trim()
+const getLabel = (tx) => {
+  const t = String(tx.type || '').toLowerCase()
+  if (t === 'buy_vip' || t === 'vip') return `VIP ${tx.vipLevel || ''} Purchase`.trim()
+  if (t === 'deposit') return 'Deposit'
+  if (t === 'withdraw') return 'Withdraw'
+  if (t === 'refund_vip') return 'VIP Refund'
+  if (t === 'daily_income' || t === 'book_income') return 'Daily Income'
+  return tx.type ? tx.type.replace(/_/g,' ').toUpperCase() : 'Transaction'
+}
 
 const safeParse = (s) => { 
   if (typeof s === 'object') return s
   try { return JSON.parse(s) } catch { return null} 
 }
 
-// 2026-MM-DD full year Uganda
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
 }
 
-// 2026-06-30 14:32 Uganda
 function getUgandaDateTimeString() {
-  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ' ');
+  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ');
 }
 
 export async function POST(req) {
@@ -33,16 +39,17 @@ export async function POST(req) {
     }
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success'
-    const dateStr = getUgandaDateString(); // 2026-MM-DD
-    const timeStr = getUgandaDateTimeString(); // 2026-MM-DD HH:mm
+    const status = (type === 'deposit' || type === 'withdraw') ? 'pending' : 'success' // VIP = success, Deposit = pending
+    const dateStr = getUgandaDateString();
+    const timeStr = getUgandaDateTimeString();
 
     const tx = {
       id, 
-      type: String(type).toLowerCase(), // keep buy_vip, refund_vip as-is
+      type: String(type).toLowerCase(), // keep buy_vip in DB
+      label: getLabel({type, vipLevel}), // NEW: add label for UI
       amount: String(amount), 
       status,
-      createdAt: timeStr, // <- string under amount, not ms
+      createdAt: timeStr,
       phone, 
       method: method || '',
       withdrawPhone: withdrawPhone || '', 
@@ -52,7 +59,7 @@ export async function POST(req) {
       note: note || ''
     }
 
-    await redis.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx)) // <- full year key
+    await redis.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx))
     
     if (status === 'pending') {
       await redis.lpush('pending_tx', id) 
@@ -71,9 +78,8 @@ export async function GET(request) {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    // Scan full year keys only: 2026-MM-DD
     const [txKeys, incomeKeys] = await Promise.all([
-      redis.keys(`tx:${phone}:2026-*`), // <- full year filter
+      redis.keys(`tx:${phone}:2026-*`),
       redis.keys(`income:${phone}:*`)
     ])
 
@@ -82,7 +88,7 @@ export async function GET(request) {
 
     const all = []
     for (const k of allKeys) {
-      const items = await redis.lrange(k, 0, 199) // bumped to 199 for more history
+      const items = await redis.lrange(k, 0, 199)
       for (const item of items) {
         const tx = safeParse(item)
         if (tx) all.push(tx)
@@ -92,19 +98,18 @@ export async function GET(request) {
     const transactions = all
       .map(tx => {
         let uiType = String(tx.type || '').toLowerCase().trim();
-        if (uiType === 'daily_income' || uiType === 'book_income' || uiType === 'book income') {
-          uiType = 'daily income'; // matches frontend tab
-        } else {
-          uiType = toUiType(tx.type); // buy_vip -> buy vip, refund_vip -> refund vip
-        }
+        // MAP buy_vip -> vip so frontend VIP tab works
+        if (uiType === 'buy_vip') uiType = 'vip' 
+        if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
 
         return {
           id: String(tx.id), 
-          type: uiType, 
+          type: uiType, // vip, deposit, withdraw, daily income
+          label: tx.label || getLabel(tx), // NEW: fallback for old tx
           amount: String(tx.amount),
           note: tx.note || '',
-          status: tx.status === 'completed' ? 'success' : tx.status,
-          createdAt: tx.createdAt, // <- already string 2026-MM-DD HH:mm
+          status: tx.status === 'completed' ? 'success' : tx.status, // pending/success/failed
+          createdAt: tx.createdAt,
           phone: tx.phone || phone, 
           method: tx.method || '', 
           withdrawPhone: tx.withdrawPhone || '',
@@ -114,7 +119,7 @@ export async function GET(request) {
         };
       })
       .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) // sort by string time desc
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
 
     return NextResponse.json({ 
       success: true, 

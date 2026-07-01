@@ -4,9 +4,8 @@ import { useRouter } from 'next/navigation'
 
 const TABS = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES']
 
-// Map backend types -> tab keys exactly
 const TYPE_MAP = {
-  'buy_vip': 'viplevel purchase',
+  'vip': 'viplevel purchase',
   'refund_vip': 'refund',
   'deposit': 'deposit',
   'withdraw': 'withdraw',
@@ -14,7 +13,9 @@ const TYPE_MAP = {
   'shares': 'shares',
 }
 
-const toTabKey = (t) => TYPE_MAP[String(t || '').toLowerCase()] || String(t || '').toLowerCase().replace(/_/g, ' ').trim()
+const toTabKey = function(t) {
+  return TYPE_MAP[String(t || '').toLowerCase()] || String(t || '').toLowerCase().replace(/_/g, ' ').trim()
+}
 
 export default function Transactions() {
   const router = useRouter()
@@ -23,7 +24,7 @@ export default function Transactions() {
   const [activeTab, setActiveTab] = useState('ALL')
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  useEffect(function() {
     const localUser = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
     if (!localUser.phone) {
       router.push('/login')
@@ -33,7 +34,7 @@ export default function Transactions() {
     loadTransactions(localUser.phone)
   }, [router])
 
-  const loadTransactions = async (phone) => {
+  const loadTransactions = async function(phone) {
     setLoading(true)
     try {
       const res = await fetch(`/api/transactions?phone=${phone}&t=${Date.now()}`, { cache: 'no-store' })
@@ -46,45 +47,52 @@ export default function Transactions() {
     setLoading(false)
   }
 
-  const filteredTxs = useMemo(() => {
+  const filteredTxs = useMemo(function() {
     if (activeTab === 'ALL') return allTxs
     const tabKey = activeTab.toLowerCase()
-    return allTxs.filter(tx => toTabKey(tx.type) === tabKey)
+    return allTxs.filter(function(tx) { return toTabKey(tx.type) === tabKey })
   }, [allTxs, activeTab])
 
-  const formatDateUnderAmount = (createdAt) => {
+  const formatUgDate = function(createdAt) {
     if (!createdAt) return ''
-    // Expecting "2026-06-30 14:32" from backend
     const [date, time] = String(createdAt).split(' ')
     if (!date ||!time) return createdAt
     const [yyyy, mm, dd] = date.split('-')
     const yy = yyyy.slice(-2)
-    return `${yy}-${mm}-${dd} ${time}` // 26-06-30 14:32
+    return yy + '-' + mm + '-' + dd + ' + time // 26-09-04 14:32 Uganda
   }
 
-  const renderTx = (tx) => {
-    const typeKey = toTabKey(tx.type)
+  const renderTx = function(tx) {
     const amount = Number(tx.amount) || 0
-    const amountStr = `${amount < 0? '' : '+'}${Math.abs(amount).toLocaleString()}shs`
-    const note = tx.note || typeKey.toUpperCase()
+    const amountStr = Math.abs(amount).toLocaleString() + 'shs' // black light weight
+    const note = tx.label || 'Transaction'
+
+    const statusColor = tx.status === 'success'
+    ? 'text-green-600'
+      : tx.status === 'pending'
+    ? 'text-red-600'
+      : 'text-gray-500'
 
     return (
       <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
         <div className="flex justify-between items-start">
+
+          {/* LEFT: Note -> Amount -> Date */}
           <div className="flex flex-col">
             <p className="text-black text-sm font-light">{note}</p>
+            <p className="text-black text-base font-light mt-1">{amountStr}</p>
             <p className="text-gray-500 text-xs font-light mt-1">
-              {formatDateUnderAmount(tx.createdAt)}
+              {formatUgDate(tx.createdAt)}
             </p>
           </div>
-          <div className="flex flex-col items-end">
-            <p className="text-black text-base font-light">
-              {amountStr}
-            </p>
-            <p className="text-gray-500 text-xs font-light mt-1">
-              {formatDateUnderAmount(tx.createdAt)}
+
+          {/* RIGHT: Status only */}
+          <div className="flex flex-col items-end justify-start">
+            <p className={'text-xs font-light capitalize ' + statusColor}>
+              {tx.status}
             </p>
           </div>
+
         </div>
       </div>
     )
@@ -101,16 +109,18 @@ export default function Transactions() {
 
         <div className="px-4 pb-3">
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {TABS.map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black
-                  ${activeTab === tab? 'bg-[#38bdf8]' : 'bg-[#bae6fd]'}`}
-              >
-                {tab}
-              </button>
-            ))}
+            {TABS.map(function(tab) {
+              return (
+                <button
+                  key={tab}
+                  onClick={function() { setActiveTab(tab) }}
+                  className={'flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black ' +
+                    (activeTab === tab? 'bg-[#38bdf8]' : 'bg-[#bae6fd]')}
+                >
+                  {tab}
+                </button>
+              )
+            })}
           </div>
         </div>
 
