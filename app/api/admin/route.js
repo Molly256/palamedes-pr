@@ -11,35 +11,57 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null } 
 }
 
-const getUgandaDateKey = (phone, offsetDays = 0) => {
-  const d = new Date(new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala" }))
+// Generates the pattern with the full 4-digit year (e.g., 2026)
+const getDateKey = (phone, offsetDays = 0) => {
+  const d = new Date()
   d.setDate(d.getDate() - offsetDays)
-  const yyyy = d.getFullYear()
+  const yyyy = d.getFullYear() // This extracts the full year (e.g., 2026)
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   return `tx:${phone}:${yyyy}-${mm}-${dd}`
 }
 
-// GET: /api/admin?action=pending&phone=0753...
+// GET: /api/admin?action=pending
 export async function GET(req) {
   try {
     const action = req.nextUrl.searchParams.get('action')
     const phone = req.nextUrl.searchParams.get('phone')
 
     if (action === 'pending') {
-      if (!phone) return NextResponse.json({ success: false, error: 'Phone required' }, { status: 400 })
-      
-      // Check today + yesterday in Uganda time. No keys() scan.
-      let allItems = []
-      for (let i = 0; i < 2; i++) {
-        const key = getUgandaDateKey(phone, i)
-        const items = await redis.lrange(key, 0, 199)
-        allItems.push(...items)
-      }
+      let pending = []
 
-      const pending = allItems
-        .map(raw => safeParse(raw))
-        .filter(tx => tx && tx.status === 'pending')
+      // If a specific phone is provided, run the fast optimized lookup
+      if (phone) {
+        let allItems = []
+        for (let i = 0; i < 2; i++) {
+          const key = getDateKey(phone, i)
+          const items = await redis.lrange(key, 0, 199)
+          allItems.push(...items)
+        }
+        pending = allItems
+          .map(raw => safeParse(raw))
+          .filter(tx => tx && tx.status === 'pending')
+      } 
+      // If no phone is provided, find ALL pending transactions across the database
+      else {
+        // Generates wildcard keys for today and yesterday: tx:*:2026-mm-dd
+        const todayPattern = getDateKey('*', 0)
+        const yesterdayPattern = getDateKey('*', 1)
+
+        // Scan the Redis database for matching keys
+        const todayKeys = await redis.keys(todayPattern) || []
+        const yesterdayKeys = await redis.keys(yesterdayPattern) || []
+        const allKeys = [...todayKeys, ...yesterdayKeys]
+
+        // Fetch items from all discovered transaction lists
+        for (const key of allKeys) {
+          const items = await redis.lrange(key, 0, 199)
+          const filtered = items
+            .map(raw => safeParse(raw))
+            .filter(tx => tx && tx.status === 'pending')
+          pending.push(...filtered)
+        }
+      }
       
       return NextResponse.json({ success: true, pending })
     }
@@ -66,10 +88,9 @@ export async function POST(req) {
     if (action === 'updateStatus') {
       if (!id || !status || !phone) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
 
-      // Find tx in today or yesterday Uganda time
       let txObj = null, keyFound = null, idx = -1
       for (let i = 0; i < 2; i++) {
-        const key = getUgandaDateKey(phone, i)
+        const key = getDateKey(phone, i)
         const items = await redis.lrange(key, 0, 199)
         idx = items.findIndex(it => safeParse(it)?.id === id)
         if (idx !== -1) {
