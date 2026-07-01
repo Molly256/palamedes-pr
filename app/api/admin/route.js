@@ -11,8 +11,8 @@ const safeParse = (s) => {
   try { return JSON.parse(s) } catch { return null } 
 }
 
-const getDateKey = (phone, offsetDays = 0) => {
-  const d = new Date()
+const getUgandaDateKey = (phone, offsetDays = 0) => {
+  const d = new Date(new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala" }))
   d.setDate(d.getDate() - offsetDays)
   const yyyy = d.getFullYear()
   const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -29,10 +29,10 @@ export async function GET(req) {
     if (action === 'pending') {
       if (!phone) return NextResponse.json({ success: false, error: 'Phone required' }, { status: 400 })
       
-      // Check today + yesterday only. No keys() scan.
+      // Check today + yesterday in Uganda time. No keys() scan.
       let allItems = []
       for (let i = 0; i < 2; i++) {
-        const key = getDateKey(phone, i)
+        const key = getUgandaDateKey(phone, i)
         const items = await redis.lrange(key, 0, 199)
         allItems.push(...items)
       }
@@ -66,10 +66,10 @@ export async function POST(req) {
     if (action === 'updateStatus') {
       if (!id || !status || !phone) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
 
-      // Find tx in today or yesterday only
+      // Find tx in today or yesterday Uganda time
       let txObj = null, keyFound = null, idx = -1
       for (let i = 0; i < 2; i++) {
-        const key = getDateKey(phone, i)
+        const key = getUgandaDateKey(phone, i)
         const items = await redis.lrange(key, 0, 199)
         idx = items.findIndex(it => safeParse(it)?.id === id)
         if (idx !== -1) {
