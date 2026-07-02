@@ -6,6 +6,9 @@ export default function Register() {
   const router = useRouter()
   const lockRef = useRef(false)
 
+  // KEY FIX: Track whether the page has fully loaded on the phone browser
+  const [mounted, setMounted] = useState(false)
+
   const [form, setForm] = useState({
     username: '',
     phone: '',
@@ -18,10 +21,11 @@ export default function Register() {
   const [showRepeatPassword, setShowRepeatPassword] = useState(false)
   const [isLocked, setIsLocked] = useState(false) // <- lock the field if inviter exists
 
-  // Read inviter code securely only after environment mounts inside browser window
+  // Read inviter code securely ONLY after mounting on the client device
   useEffect(() => {
+    setMounted(true) // Marks the client environment as ready
+    
     if (typeof window !== 'undefined') {
-      // FIXED: Cross-checks all active storage identifiers used across your routing files
       const code = sessionStorage.getItem('activeInviterCode') || 
                    sessionStorage.getItem('referrer_code') || 
                    localStorage.getItem('referrer_code')
@@ -87,7 +91,6 @@ export default function Register() {
         }
         localStorage.setItem('palamedes_user', JSON.stringify(userSession))
         
-        // Clear all tracking caches cleanly on complete account creation
         sessionStorage.removeItem('activeInviterCode') 
         sessionStorage.removeItem('referrer_code')
         localStorage.removeItem('referrer_code')
@@ -152,14 +155,15 @@ export default function Register() {
 
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
-              Invite Code {isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>}
+              Invite Code {mounted && isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>}
             </label>
             <input
               type="text"
-              value={form.inviterCode}
+              // Only expose tracking codes after device environment mounts cleanly
+              value={mounted ? form.inviterCode : ''}
               readOnly
               placeholder="No inviter"
-              style={{...inputStyle, backgroundColor: isLocked? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: isLocked? '900' : '400'}}
+              style={{...inputStyle, backgroundColor: mounted && isLocked ? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: mounted && isLocked ? '900' : '400'}}
             />
           </div>
 
