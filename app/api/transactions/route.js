@@ -54,6 +54,30 @@ export async function POST(req) {
     }
 
     const isWithdrawal = String(type).toLowerCase() === 'withdraw'
+
+    // Enforce operational restrictions on withdrawals (Mon-Fri, 10:00 AM - 5:00 PM Ugandan time)
+    if (isWithdrawal) {
+      const ugandaTimeStr = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
+      const ugandaDate = new Date(ugandaTimeStr)
+      const day = ugandaDate.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      const hours = ugandaDate.getHours()
+      const minutes = ugandaDate.getMinutes()
+
+      // Block weekends
+      if (day < 1 || day > 5) {
+        return NextResponse.json({ error: 'Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
+      }
+
+      // Block hours outside 10:00 AM to 5:00 PM
+      const totalMinutes = hours * 60 + minutes
+      const startMinutes = 10 * 60 // 10:00 AM
+      const endMinutes = 17 * 60   // 05:00 PM
+
+      if (totalMinutes < startMinutes || totalMinutes > endMinutes) {
+        return NextResponse.json({ error: 'Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
+      }
+    }
+
     const userKey = `user:${phone}`
 
     // FIXED: Calculate the pre-fee gross amount to ensure correct Redis wallet deduction

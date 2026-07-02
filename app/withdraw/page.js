@@ -25,7 +25,33 @@ export default function Withdraw() {
       }).catch(() => setUser(localUser))
   }, [router])
 
+  // Helper function to check if the current time fits Ugandan operational hours
+  const isWithdrawalWindowOpen = () => {
+    // Create a date object localized strictly to Uganda (Africa/Kampala)
+    const ugandaTimeString = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
+    const ugandaDate = new Date(ugandaTimeString)
+
+    const day = ugandaDate.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const hours = ugandaDate.getHours()
+    const minutes = ugandaDate.getMinutes()
+
+    // Enforce Monday (1) to Friday (5)
+    if (day < 1 || day > 5) return false
+
+    // Convert time to total minutes from midnight for easy range check
+    const currentTotalMinutes = hours * 60 + minutes
+    const startMinutes = 10 * 60       // 10:00 AM
+    const endMinutes = 17 * 60         // 05:00 PM
+
+    return currentTotalMinutes >= startMinutes && currentTotalMinutes <= endMinutes
+  }
+
   const handleWithdraw = async () => {
+    // 1. Time restriction check
+    if (!isWithdrawalWindowOpen()) {
+      return alert('Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.')
+    }
+
     if (!method) return alert('Select a method first')
 
     if (!form.phoneNumber || form.phoneNumber.length !== 10 || !/^07\d{8}$/.test(form.phoneNumber)) {
