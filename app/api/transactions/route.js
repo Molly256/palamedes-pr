@@ -6,13 +6,16 @@ import { NextResponse } from 'next/server'
 
 const redis = Redis.fromEnv() 
 
+// FIXED: Added native matching pattern for clean share labels
 const getLabel = (tx) => {
-  const t = String(tx.type || '').toLowerCase()
+  const t = String(tx.type || '').toLowerCase().trim()
   if (t === 'buy_vip' || t === 'vip') return `VIP ${tx.vipLevel || ''} Purchase`.trim()
   if (t === 'deposit') return 'Deposit'
   if (t === 'withdraw') return 'Withdraw'
   if (t === 'refund_vip') return 'VIP Refund'
   if (t === 'daily_income' || t === 'book_income') return 'Daily Income'
+  if (t === 'shares') return 'Shares Purchase' // Fixed label mapping
+  if (t === 'shares_collected' || t === 'collect_hot') return 'Shares Payout Collected' // Fixed collection label
   return tx.type ? tx.type.replace(/_/g,' ').toUpperCase() : 'Transaction'
 }
 
@@ -48,25 +51,26 @@ export async function POST(req) {
     const userKey = `user:${phone}`
 
     if (isWithdrawal) {
-      // 1. Check current availableBalance explicitly 
       const currentAvailableBalance = Number(await redis.hget(userKey, 'availableBalance') || 0)
-      
       if (amt > currentAvailableBalance) {
         return NextResponse.json({ error: 'Insufficient availableBalance' }, { status: 400 })
       }
-
-      // 2. Safely deduct directly from availableBalance field to prevent race bugs
       await redis.hincrby(userKey, 'availableBalance', -amt)
     }
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    const status = (type === 'deposit' || isWithdrawal) ? 'pending' : 'success' 
+    
+    // Set standard transaction status flows
+    let status = 'success'
+    if (type === 'deposit' || isWithdrawal) status = 'pending'
+    if (type === 'completed') status = 'success' // Accounts for custom triggers
+
     const dateStr = getUgandaDateString();
     const timeStr = getUgandaDateTimeString();
 
     const tx = {
       id, 
-      type: String(type).toLowerCase(), 
+      type: String(type).toLowerCase().trim(), 
       label: getLabel({type, vipLevel}), 
       amount: String(amount), 
       status, 
@@ -104,6 +108,7 @@ export async function GET(request) {
     const userHash = await redis.hgetall(`user:${phone}`) || {}
     const availableBalance = Number(userHash.availableBalance || 0)
 
+    // Match patterns (Your 'tx:${phone}:2026-*' logic successfully sweeps up the newly fixed dates)
     const [txKeys, incomeKeys] = await Promise.all([
       redis.keys(`tx:${phone}:2026-*`),
       redis.keys(`income:${phone}:*`)
@@ -128,6 +133,9 @@ export async function GET(request) {
         let uiType = String(tx.type || '').toLowerCase().trim();
         if (uiType === 'buy_vip') uiType = 'vip' 
         if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
+        // FIXED: Preserves the 'shares' and 'shares_collected' UI type classification maps
+        if (uiType === 'shares') uiType = 'shares'
+        if (uiType === 'shares_collected') uiType = 'shares'
 
         return {
           id: String(tx.id), 
@@ -135,7 +143,8 @@ export async function GET(request) {
           label: tx.label || getLabel(tx), 
           amount: String(tx.amount),
           note: tx.note || '',
-          status: tx.status === 'completed' ? 'success' : tx.status, 
+          // Normalizes status checks down to standard web formats
+          status: (tx.status === 'completed' || tx.status === 'success') ? 'success' : tx.status, 
           createdAt: tx.createdAt, 
           phone: tx.phone || phone, 
           method: tx.method || '', 

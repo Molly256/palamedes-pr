@@ -5,13 +5,13 @@ import crypto from 'crypto';
 const redis = Redis.fromEnv();
 const toNum = (v, f = 0) => { const n = Number(v); return Number.isNaN(n) ? f : n; };
 
-// Single point of truth for date generation
+// FIXED: Single point of truth for date generation (Returns full 4-digit year: YYYY-MM-DD)
 const getTodayDateStr = () => {
   const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" }));
-  const yy = String(d.getFullYear()).slice(-2);
+  const yyyy = String(d.getFullYear()); // Keeps full year (e.g. 2026)
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 // Helper function to extract and parse pure item records out of the Redis List
@@ -37,8 +37,8 @@ const parseAndCategorizeList = (historyArray) => {
     // Push into global chronological history timeline
     history.push(parsed);
 
-    // Dynamic categorization based on action type state flags
-    if (parsed.type === 'buy_hot' && parsed.payload) {
+    // FIXED: Support 'shares' type categorization alongside 'buy_hot'
+    if ((parsed.type === 'buy_hot' || parsed.type === 'shares') && parsed.payload) {
       ongoing.push(parsed.payload);
     } else if (parsed.type === 'collect_hot' && parsed.payload) {
       expired.push(parsed.payload);
@@ -58,9 +58,8 @@ export async function GET(request) {
     const rootUserKey = `user:${phone}`;
     const listKey = `tx:${phone}:${dateStr}`; 
 
-    console.log('[HOT GET] Profile:', rootUserKey, 'List:', listKey);
+    console.log('[SHARES GET] Profile:', rootUserKey, 'List:', listKey);
 
-    // We only need to fetch the User profile and the single List key now
     const [userProfile, rawHistory] = await Promise.all([
       redis.hgetall(rootUserKey),
       redis.lrange(listKey, 0, -1)
@@ -71,13 +70,11 @@ export async function GET(request) {
     }
 
     const wallet = toNum(userProfile.availableBalance);
-    
-    // Process everything dynamically out of the clean List keys
     const { history, ongoing, expired } = parseAndCategorizeList(rawHistory);
 
     return NextResponse.json({ success: true, wallet, ongoing, expired, history });
   } catch (err) {
-    console.error('[HOT GET] Error:', err);
+    console.error('[SHARES GET] Error:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
@@ -96,9 +93,8 @@ export async function POST(request) {
     const rootUserKey = `user:${phone}`;
     const listKey = `tx:${phone}:${dateStr}`; 
     
-    console.log('[HOT POST] Action:', action, 'Profile:', rootUserKey, 'List:', listKey);
+    console.log('[SHARES POST] Action:', action, 'Profile:', rootUserKey, 'List:', listKey);
 
-    // Fetch the single List key to compute calculations on active datasets
     const [userProfile, rawHistory] = await Promise.all([
       redis.hgetall(rootUserKey),
       redis.lrange(listKey, 0, -1)
@@ -117,21 +113,22 @@ export async function POST(request) {
 
     const timestampStr = new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).replace(',', '').slice(0,16);
 
-    if (action === 'BUY_HOT') {
+    // FIXED: Matches either 'BUY_HOT' or 'BUY_SHARES' actions
+    if (action === 'BUY_HOT' || action === 'BUY_SHARES') {
       const price = toNum(payload?.price);
       if (wallet < price) return NextResponse.json({ success: false, error: "Insufficient balance" }, { status: 400 });
 
       wallet = wallet - price;
       
-      // Store the dynamic meta transaction info directly inside the single list log
+      // FIXED: Storing the transaction type explicitly as 'shares'
       const txItem = { 
         id: uuid,
-        type: 'buy_hot',
+        type: 'shares',
         amount: String(-price),
         note: `Bought share ${payload?.newHotInstance?.title || 'Item'}`,
         status: 'completed',
         createdAt: timestampStr,
-        payload: payload?.newHotInstance // Kept inside list log natively
+        payload: payload?.newHotInstance 
       };
 
       await Promise.all([
@@ -160,24 +157,23 @@ export async function POST(request) {
         note: `Collected share ${hot.title || 'Item'}`,
         status: 'completed',
         createdAt: timestampStr,
-        payload: hot // Saved into list dataset history context
+        payload: hot 
       };
 
-      // We need to mark the old matching item as redeemed so it doesn't get processed twice
+      // Support clearing out completed types for both 'buy_hot' and 'shares'
       const updatedHistoryArray = rawHistory.map(item => {
         let parsed = typeof item === 'string' ? JSON.parse(item) : item;
-        if (parsed?.type === 'buy_hot' && parsed?.payload?.hotId === hotIdToFind) {
-          parsed.type = 'buy_hot_collected'; // Modifies original status reference flags
+        if ((parsed?.type === 'buy_hot' || parsed?.type === 'shares') && parsed?.payload?.hotId === hotIdToFind) {
+          parsed.type = 'shares_collected'; 
         }
         return JSON.stringify(parsed);
       });
 
-      // Clear structural array data before rewriting pure lists down pipeline operations
       await redis.del(listKey);
 
       await Promise.all([
         redis.hset(rootUserKey, { availableBalance: String(wallet) }),
-        redis.rpush(listKey, ...updatedHistoryArray.reverse()), // Restores history stack index paths
+        redis.rpush(listKey, ...updatedHistoryArray.reverse()), 
         redis.lpush(listKey, JSON.stringify(txItem))
       ]);
 
@@ -189,7 +185,7 @@ export async function POST(request) {
 
     return NextResponse.json({ success: false, error: "Action error" }, { status: 400 });
   } catch (err) {
-    console.error('[HOT POST] Error:', err);
+    console.error('[SHARES POST] Error:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

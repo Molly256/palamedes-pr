@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 
 const TABS = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES']
 
+// FIXED: Added shares_collected mapping to group actions into the SHARES tab
 const TYPE_MAP = {
   'vip': 'viplevel purchase',
   'refund_vip': 'refund',
@@ -11,10 +12,11 @@ const TYPE_MAP = {
   'withdraw': 'withdraw',
   'daily income': 'daily income',
   'shares': 'shares',
+  'shares_collected': 'shares', // Maps collection payouts to the shares tab
 }
 
 const toTabKey = function(t) {
-  return TYPE_MAP[String(t || '').toLowerCase()] || String(t || '').toLowerCase().replace(/_/g, ' ').trim()
+  return TYPE_MAP[String(t || '').toLowerCase().trim()] || String(t || '').toLowerCase().replace(/_/g, ' ').trim()
 }
 
 export default function Transactions() {
@@ -39,7 +41,7 @@ export default function Transactions() {
     try {
       const res = await fetch(`/api/transactions?phone=${phone}&t=${Date.now()}`, { cache: 'no-store' })
       const data = await res.json()
-      setAllTxs(data.success? data.transactions : [])
+      setAllTxs(data.success ? data.transactions : [])
     } catch (err) {
       console.error('Error loading transactions:', err)
       setAllTxs([])
@@ -56,27 +58,26 @@ export default function Transactions() {
   const formatUgDate = function(createdAt) {
     if (!createdAt) return ''
     const [date, time] = String(createdAt).split(' ')
-    if (!date ||!time) return createdAt
+    if (!date || !time) return createdAt
     const [yyyy, mm, dd] = date.split('-')
     const yy = yyyy.slice(-2)
-    return yy + '-' + mm + '-' + dd + ' ' + time // 26-09-04 14:32 Uganda
+    return yy + '-' + mm + '-' + dd + ' ' + time
   }
 
   const renderTx = function(tx) {
     const amount = Number(tx.amount) || 0
-    const amountStr = Math.abs(amount).toLocaleString() + 'shs' // black light weight
+    const amountStr = Math.abs(amount).toLocaleString() + ' shs'
     const note = tx.label || 'Transaction'
 
     const statusColor = tx.status === 'success'
-   ? 'text-green-600'
+      ? 'text-green-600'
       : tx.status === 'pending'
-   ? 'text-red-600'
-      : 'text-gray-500'
+        ? 'text-red-600'
+        : 'text-gray-500'
 
     return (
       <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
         <div className="flex justify-between items-start">
-
           {/* LEFT: Note -> Amount -> Date */}
           <div className="flex flex-col">
             <p className="text-black text-sm font-light">{note}</p>
@@ -92,7 +93,6 @@ export default function Transactions() {
               {tx.status}
             </p>
           </div>
-
         </div>
       </div>
     )
@@ -114,8 +114,8 @@ export default function Transactions() {
                 <button
                   key={tab}
                   onClick={function() { setActiveTab(tab) }}
-                  className={'flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black ' +
-                    (activeTab === tab? 'bg-[#38bdf8]' : 'bg-[#bae6fd]')}
+                  className={'flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black transition-colors ' +
+                    (activeTab === tab ? 'bg-[#38bdf8]' : 'bg-[#bae6fd]')}
                 >
                   {tab}
                 </button>
@@ -124,10 +124,11 @@ export default function Transactions() {
           </div>
         </div>
 
-        <div className="px-4 pb-20 flex-col gap-3">
-          {loading? (
+        {/* FIXED: Changed flex-col to space-y-3 so that transaction cards vertical spacing renders accurately */}
+        <div className="px-4 pb-20 space-y-3">
+          {loading ? (
             <p className="text-black text-center py-10">Loading...</p>
-          ) : filteredTxs.length === 0? (
+          ) : filteredTxs.length === 0 ? (
             <p className="text-gray-500 text-center py-10">No transactions yet</p>
           ) : (
             filteredTxs.map(renderTx)

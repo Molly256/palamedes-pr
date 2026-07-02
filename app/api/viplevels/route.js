@@ -24,12 +24,12 @@ function shuffle(array) {
   return arr
 }
 
-// 2026-MM-DD full year Uganda
+// Outputs full 4-digit year format (e.g., 2026-07-02)
 function getUgandaDateString() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
-// 2026-06-30 14:32 Uganda
+// Outputs full time structure (e.g., 2026-07-02 14:32)
 function getUgandaDateTimeString() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ' ')
 }
@@ -79,7 +79,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    const { phone, action, payload } = await req.json() // <- match frontend Viplevels.js
+    const { phone, action, payload } = await req.json() 
     if (!phone || action!== 'BUY_VIP') return NextResponse.json({ success: false, message: 'Missing data' }, { status: 400 })
 
     const vipLevel = payload?.vipLevel
@@ -94,19 +94,19 @@ export async function POST(req) {
 
     const currentVip = Number(user.vip || 0)
     if (vipLevel <= currentVip) return NextResponse.json({ success: false, message: 'You already have this VIP or higher' }, { status: 400 })
-    if (vipLevel > 3) return NextResponse.json({ success: false, message: 'VIP 4-10 is locked' }, { status: 400 }) // <- padlock enforce
+    if (vipLevel > 3) return NextResponse.json({ success: false, message: 'VIP 4-10 is locked' }, { status: 400 }) 
 
     const currentPricePaid = Number(user.vipPricePaid || 0)
-    const upgradeCost = selectedVip.price // <- full price required
+    const upgradeCost = selectedVip.price 
     const currentBalance = Number(user.availableBalance || 0)
     if (currentBalance < upgradeCost) return NextResponse.json({ success: false, message: 'Insufficient Available Balance' }, { status: 400 })
 
     const isFirstTimePurchase = user.hasBoughtVip!== 'true' && user.hasBoughtVip!== true
-    let newBalance = currentBalance - upgradeCost // pay full first
+    let newBalance = currentBalance - upgradeCost 
 
-    const dateStr = getUgandaDateString() // 2026-MM-DD
-    const timeStr = getUgandaDateTimeString() // 2026-MM-DD HH:mm
-    const txKey = `tx:${phone}:${dateStr}` // <- full year key
+    const dateStr = getUgandaDateString() 
+    const timeStr = getUgandaDateTimeString() 
+    const txKey = `tx:${phone}:${dateStr}` 
 
     const pipeline = redis.pipeline()
     let unlockedBooks = safeParse(user.unlockedBooks)
@@ -117,32 +117,28 @@ export async function POST(req) {
       unlockedBooks = assignedData.unlockedBooks
       assignedBooksMeta = assignedData.assignedBooksMeta
 
-      // VIPLEVEL PURCHASE TX
       pipeline.lpush(txKey, JSON.stringify({
         id: `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        type: 'buy_vip', // <- for PURCHASE tab
+        type: 'buy_vip', 
         amount: String(-selectedVip.price),
         note: `${selectedVip.name} Purchase`,
         status: 'completed',
-        createdAt: timeStr, // <- under amount
+        createdAt: timeStr, 
         payload: { vipLevel, books: selectedVip.books, perBook: selectedVip.perBook }
       }))
     } else {
-      // Refund old level immediately
       newBalance = newBalance + currentPricePaid
 
-      // REFUND TAB TX
       pipeline.lpush(txKey, JSON.stringify({
         id: `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        type: 'refund_vip', // <- for REFUND tab
+        type: 'refund_vip', 
         amount: String(currentPricePaid),
         note: `VIP ${currentVip} Refund`,
         status: 'completed',
-        createdAt: timeStr, // <- under amount
+        createdAt: timeStr, 
         payload: { vipLevel: currentVip }
       }))
 
-      // VIPLEVEL PURCHASE TX for new level
       pipeline.lpush(txKey, JSON.stringify({
         id: `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         type: 'buy_vip',
@@ -170,8 +166,9 @@ export async function POST(req) {
 
     await pipeline.exec()
 
+    // Enforces payout strictly on the first VIP purchase
     if (isFirstTimePurchase) {
-      await payInvitationReward(phone, vipLevel)
+      await processHierarchicalCommissions(phone, vipLevel)
     }
 
     const updatedUser = await redis.hgetall(userKey) || {}
@@ -183,50 +180,81 @@ export async function POST(req) {
     return NextResponse.json({ success: true, user: updatedUser, books: assignedBooksMeta }, { status: 200 })
   } catch (err) {
     console.error('POST /api/viplevels error:', err)
-    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 }) // <- always return JSON
+    return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 }) 
   }
 }
 
-async function payInvitationReward(downlinePhone, vipLevelBought) {
+/**
+ * FIXED 3-TIER ENGINE
+ * Writes directly to full year key tx:phone:2026-mm-dd using "Invitation Rewards" header text
+ */
+async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
   try {
-    const inviterPhone = await redis.hget(`user:${downlinePhone}`, 'invited_by')
-    if (!inviterPhone) return
-
-    const inviterVip = Number(await redis.hget(`user:${inviterPhone}`, 'vip') || 0)
-    if (inviterVip === 0) return
-
     const vipAmounts = {
       1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000,
       6: 2100000, 7: 4000000, 8: 4600000, 9: 5000000, 10: 8000000
     }
+    const today = getUgandaDateString() // e.g. 2026-07-02
+    const timeStr = getUgandaDateTimeString()
 
-    const effectiveVipTier = Math.min(inviterVip, vipLevelBought)
-    const targetRewardAmount = vipAmounts[effectiveVipTier]
-    if (!targetRewardAmount) return
+    // TIER A UPLINE
+    const uplineAPhone = await redis.hget(`user:${buyerPhone}`, 'invited_by')
+    if (!uplineAPhone) return
 
-    const level = Number(await redis.hget(`downlines:${inviterPhone}`, downlinePhone))
-    if (!level || level > 3) return
+    const uplineAVip = Number(await redis.hget(`user:${uplineAPhone}`, 'vip') || 0)
+    if (uplineAVip > 0) {
+      const baseTier = Math.min(uplineAVip, buyerVipLevel)
+      const baseCost = vipAmounts[baseTier] || 0
+      const rewardA = Math.floor(baseCost * 0.05)
+      
+      if (rewardA > 0) {
+        await redis.lpush(`tx:${uplineAPhone}:${today}`, JSON.stringify({
+          id: `tx_${Date.now()}_A_${Math.random().toString(36).slice(2)}`,
+          type: 'commission', 
+          amount: String(rewardA),
+          note: `Invitation Rewards (Team A: ${buyerPhone})`,
+          status: 'completed',
+          createdAt: timeStr
+        }))
+        await redis.hincrbyfloat(`user:${uplineAPhone}`, 'availableBalance', rewardA)
+      }
+    }
 
-    const rate = level === 1? 0.05 : level === 2? 0.02 : 0.01
-    const rewardAmount = Math.floor(targetRewardAmount * rate)
-    if (rewardAmount <= 0) return
+    // TIER B UPLINE
+    const uplineBPhone = await redis.hget(`user:${uplineAPhone}`, 'invited_by')
+    if (!uplineBPhone) return
 
-    const today = getUgandaDateString()
+    const uplineBVip = Number(await redis.hget(`user:${uplineBPhone}`, 'vip') || 0)
+    if (uplineBVip > 0) {
+      const baseTier = Math.min(uplineBVip, buyerVipLevel)
+      const baseCost = vipAmounts[baseTier] || 0
+      const rewardB = Math.floor(baseCost * 0.02)
+      
+      if (rewardB > 0) {
+        await redis.lpush(`tx:${uplineBPhone}:${today}`, JSON.stringify({
+          id: `tx_${Date.now()}_B_${Math.random().toString(36).slice(2)}`,
+          type: 'commission',
+          amount: String(rewardB),
+          note: `Invitation Rewards (Team B: ${buyerPhone})`,
+          status: 'completed',
+          createdAt: timeStr
+        }))
+        await redis.hincrbyfloat(`user:${uplineBPhone}`, 'availableBalance', rewardB)
+      }
+    }
 
-    await redis.lpush(`tx:${inviterPhone}:${today}`, JSON.stringify({
-      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      type: 'invitation_reward',
-      amount: String(rewardAmount),
-      from: downlinePhone,
-      level,
-      vipLevel: String(vipLevelBought),
-      date: today,
-      status: 'completed',
-      createdAt: getUgandaDateTimeString()
-    }))
+    // TIER C UPLINE
+    const uplineCPhone = await redis.hget(`user:${uplineBPhone}`, 'invited_by')
+    if (!uplineCPhone) return
 
-    const inviterKey = `user:${inviterPhone}`
-    await redis.hincrbyfloat(inviterKey, 'availableBalance', rewardAmount)
-
-  } catch (err) { console.error('Invitation reward error:', err) }
-}
+    const uplineCVip = Number(await redis.hget(`user:${uplineCPhone}`, 'vip') || 0)
+    if (uplineCVip > 0) {
+      const baseTier = Math.min(uplineCVip, buyerVipLevel)
+      const baseCost = vipAmounts[baseTier] || 0
+      const rewardC = Math.floor(baseCost * 0.01)
+      
+      if (rewardC > 0) {
+        await redis.lpush(`tx:${uplineCPhone}:${today}`, JSON.stringify({
+          id: `tx_${Date.now()}_C_${Math.random().toString(36).slice(2)}`,
+          type: 'commission',
+          amount: String(rewardC),
