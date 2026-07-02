@@ -21,6 +21,20 @@ function SearchParamsTracker() {
 }
 
 export default function Home() {
+  
+  // Directly inject the browser tab icon (favicon) when the page loads
+  useEffect(() => {
+    let link = document.querySelector("link[rel~='icon']")
+    
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link) // Fixed targeting crash
+    }
+    
+    link.href = '/palamedes-icon-192.png'
+  }, [])
+
   return (
     <main style={{
       display: 'flex',
