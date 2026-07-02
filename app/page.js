@@ -24,19 +24,14 @@ export default function Home() {
   
   // Directly inject and force override the browser tab icon (favicon) 
   useEffect(() => {
-    // 1. Find all possible existing icon elements to overwrite them
     const links = document.querySelectorAll("link[rel*='icon']")
     links.forEach(el => el.parentNode.removeChild(el))
 
-    // 2. Build a brand new shortcut icon element structure
     const link = document.createElement('link')
     link.type = 'image/png'
     link.rel = 'shortcut icon'
-    
-    // 3. Use the exact same public folder root path style as bottom-bg.jpg
     link.href = '/palamedes-icon-192.png'
     
-    // 4. Mount it to the head layout template
     document.head.appendChild(link)
   }, [])
 
@@ -45,9 +40,10 @@ export default function Home() {
       display: 'flex',
       height: '100vh',
       flexDirection: 'column',
-      // CHANGED: Background now points directly to your logo icon image instead of hero-bg.jpg
-      backgroundImage: 'linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url(/palamedes-icon-512.png)',
-      backgroundSize: 'contain', 
+      // FIXED: Removed the linear-gradient overlay tint completely so the logo is perfectly clear
+      backgroundImage: 'url(/palamedes-icon-512.png)',
+      // FIXED: Switched to 'initial' size and centered it so it shows crisp and sharp
+      backgroundSize: 'auto', 
       backgroundPosition: 'center',
       backgroundRepeat: 'no-repeat',
       backgroundColor: '#ffffff', 
