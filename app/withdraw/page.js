@@ -26,16 +26,22 @@ export default function Withdraw() {
   }, [router])
 
   const verifyUgandanTime = () => {
-    const options = { timeZone: 'Africa/Kampala', hour12: false }
-    const hour = Number(new Date().toLocaleTimeString('en-US', options).split(':')[0])
-    const day = new Date(new Date().toLocaleString('en-US', options)).getDay()
+    // Converts current time accurately into Uganda's numeric hours and days
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Kampala',
+      hour: 'numeric',
+      hour12: false,
+      weekday: 'numeric'
+    })
+    
+    const parts = formatter.formatToParts(new Date())
+    const hour = Number(parts.find(p => p.type === 'hour').value)
+    // Intl weekday maps 1 = Monday, ..., 5 = Friday, 6 = Saturday, 7 = Sunday
+    const dayStr = parts.find(p => p.type === 'weekday').value 
 
-    if (day === 0 || day === 6) {
-      alert('Withdrawals are closed on weekends. Available Monday to Friday.')
-      return false
-    }
-    if (hour < 10 || hour >= 17) {
-      alert('Withdrawals are only open from 10:00 AM to 5:00 PM Ugandan Time.')
+    // Block weekends or times outside 10:00 AM - 5:00 PM (10 to 17)
+    if (dayStr === 'Saturday' || dayStr === 'Sunday' || hour < 10 || hour >= 17) {
+      alert('Not time fr withdraw') // <- CHANGED: Exact requested error text
       return false
     }
     return true
@@ -71,7 +77,7 @@ export default function Withdraw() {
       setUser(updatedUser)
       localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
-      alert('Withdraw request submitted and balance updated. Wait for admin approval.')
+      alert('Withdraw success') // <- CHANGED: Exact requested success text
       router.push('/transactions')
     } catch { alert('Something went wrong') } finally { setLoading(false) }
   }
@@ -130,7 +136,7 @@ export default function Withdraw() {
           <p>Minimum withdraw amount: <span className="text-black font-extrabold">10,000shs</span></p>
           <p>Withdraw days: <span className="text-black font-extrabold">Monday to Friday</span></p>
           <p>Withdraw time: <span className="text-black font-extrabold">10:00am -5:00pm</span></p>
-          <p>Money will arrive in your mobile money wallet within <span className="text-green-600 font-extrabold">30mins -24hors max.</span></p>
+          <p>Money will arrive in your mobile money wallet within <span className="text-green-600 font-extrabold">30mins -24hours max.</span></p>
         </div>
       </div>
     </div>
