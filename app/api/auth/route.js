@@ -66,18 +66,24 @@ export async function POST(req) {
         if (directInviterPhone && String(directInviterPhone) !== String(phone)) {
           const newUserPhoneKey = String(phone).trim();
           
-          // FIXED: Forces the 10-digit downline mobile number string to be the Field Key, and level string as value
-          pipeline.hset('downlines:' + String(directInviterPhone).trim(), newUserPhoneKey, '1') 
+          // BUG FIX: Wrap the field and value inside an object payload map so Upstash pipelines process it accurately!
+          const dataA = {};
+          dataA[newUserPhoneKey] = '1';
+          pipeline.hset('downlines:' + String(directInviterPhone).trim(), dataA) 
 
           // Find Grandparent (Team B) Phone
           const grandparentPhone = await redis.hget('user:' + String(directInviterPhone).trim(), 'invited_by')
           if (grandparentPhone && String(grandparentPhone) !== String(phone)) {
-            pipeline.hset('downlines:' + String(grandparentPhone).trim(), newUserPhoneKey, '2') 
+            const dataB = {};
+            dataB[newUserPhoneKey] = '2';
+            pipeline.hset('downlines:' + String(grandparentPhone).trim(), dataB) 
 
             // Find Great Grandparent (Team C) Phone
             const greatGrandparentPhone = await redis.hget('user:' + String(grandparentPhone).trim(), 'invited_by')
             if (greatGrandparentPhone && String(greatGrandparentPhone) !== String(phone)) {
-              pipeline.hset('downlines:' + String(greatGrandparentPhone).trim(), newUserPhoneKey, '3') 
+              const dataC = {};
+              dataC[newUserPhoneKey] = '3';
+              pipeline.hset('downlines:' + String(greatGrandparentPhone).trim(), dataC) 
             }
           }
         }
