@@ -22,17 +22,22 @@ function SearchParamsTracker() {
 
 export default function Home() {
   
-  // Directly inject the browser tab icon (favicon) when the page loads
+  // Directly inject and force override the browser tab icon (favicon) 
   useEffect(() => {
-    let link = document.querySelector("link[rel~='icon']")
+    // 1. Find all possible existing icon elements to overwrite them
+    const links = document.querySelectorAll("link[rel*='icon']")
+    links.forEach(el => el.parentNode.removeChild(el))
+
+    // 2. Build a brand new shortcut icon element structure
+    const link = document.createElement('link')
+    link.type = 'image/png'
+    link.rel = 'shortcut icon'
     
-    if (!link) {
-      link = document.createElement('link')
-      link.rel = 'icon'
-      document.head.appendChild(link) // Fixed targeting crash
-    }
-    
+    // 3. Use the exact same public folder root path style as bottom-bg.jpg
     link.href = '/palamedes-icon-192.png'
+    
+    // 4. Mount it to the head layout template
+    document.head.appendChild(link)
   }, [])
 
   return (
@@ -40,10 +45,12 @@ export default function Home() {
       display: 'flex',
       height: '100vh',
       flexDirection: 'column',
-      backgroundImage: 'linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(/hero-bg.jpg)',
-      backgroundSize: 'cover',
+      // CHANGED: Background now points directly to your logo icon image instead of hero-bg.jpg
+      backgroundImage: 'linear-gradient(rgba(255,255,255,0.85), rgba(255,255,255,0.85)), url(/palamedes-icon-512.png)',
+      backgroundSize: 'contain', 
       backgroundPosition: 'center',
       backgroundRepeat: 'no-repeat',
+      backgroundColor: '#ffffff', 
       paddingBottom: '90px'
     }}>
       
