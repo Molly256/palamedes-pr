@@ -6,7 +6,7 @@ export default function Register() {
   const router = useRouter()
   const lockRef = useRef(false)
 
-  // KEY FIX: Track whether the page has fully loaded on the phone browser
+  // Track client-side execution safety
   const [mounted, setMounted] = useState(false)
 
   const [form, setForm] = useState({
@@ -23,7 +23,7 @@ export default function Register() {
 
   // Read inviter code securely ONLY after mounting on the client device
   useEffect(() => {
-    setMounted(true) // Marks the client environment as ready
+    setMounted(true)
     
     if (typeof window !== 'undefined') {
       const code = sessionStorage.getItem('activeInviterCode') || 
@@ -107,6 +107,15 @@ export default function Register() {
     }
   }
 
+  // Prevent any execution until the phone browser is ready to paint the elements
+  if (!mounted) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ color: '#666', fontSize: '16px' }}>Loading form safely...</p>
+      </div>
+    )
+  }
+
   const inputStyle = {
     width: '100%',
     height: '44px',
@@ -155,15 +164,14 @@ export default function Register() {
 
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
-              Invite Code {mounted && isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>}
+              Invite Code {isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>}
             </label>
             <input
               type="text"
-              // Only expose tracking codes after device environment mounts cleanly
-              value={mounted ? form.inviterCode : ''}
+              value={form.inviterCode}
               readOnly
               placeholder="No inviter"
-              style={{...inputStyle, backgroundColor: mounted && isLocked ? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: mounted && isLocked ? '900' : '400'}}
+              style={{...inputStyle, backgroundColor: isLocked ? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: isLocked ? '900' : '400'}}
             />
           </div>
 
