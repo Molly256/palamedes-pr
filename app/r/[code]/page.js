@@ -14,13 +14,13 @@ export default function ReferralRedirect() {
 
   useEffect(() => {
     if (!code) {
-      router.push('/register')
+      router.push('/') // <- Changed: Redirect to homepage if no code
       return
     }
 
     if (!isValidInviteCode(code)) {
       setStatus('invalid')
-      setTimeout(() => router.push('/register'), 1500)
+      setTimeout(() => router.push('/'), 1500) // <- Changed: Redirect to homepage if invalid
       return
     }
 
@@ -30,10 +30,10 @@ export default function ReferralRedirect() {
       sessionStorage.setItem('referrer_code', code) // Safari backup
       setStatus('success')
       
-      setTimeout(() => router.push('/register'), 300) // Only redirect here
+      setTimeout(() => router.push('/'), 300) // <- Changed: Connect to homepage on success
     } catch (err) {
       console.error('Storage failed:', err)
-      router.push('/register')
+      router.push('/') // <- Changed: Redirect to homepage if storage fails
     }
   }, [code, router])
 

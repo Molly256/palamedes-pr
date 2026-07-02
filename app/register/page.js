@@ -18,9 +18,9 @@ export default function Register() {
   const [showRepeatPassword, setShowRepeatPassword] = useState(false)
   const [isLocked, setIsLocked] = useState(false) // <- lock the field if inviter exists
 
-  // Read inviter code from /r/PM530252
+  // Read inviter code from session storage captured by homepage
   useEffect(() => {
-    const code = localStorage.getItem('referrer_code') || sessionStorage.getItem('referrer_code')
+    const code = sessionStorage.getItem('activeInviterCode')
     if (code) {
       setForm(prev => ({ ...prev, inviterCode: code }))
       setIsLocked(true) // lock it
@@ -80,8 +80,7 @@ export default function Register() {
           inviteCode: data.inviteCode // <- John's own PM185973 from backend
         }
         localStorage.setItem('palamedes_user', JSON.stringify(userSession))
-        localStorage.removeItem('referrer_code') // Clear after use
-        sessionStorage.removeItem('referrer_code')
+        sessionStorage.removeItem('activeInviterCode') // Clear after use
         router.push('/login')
       } else {
         alert(data.error || 'Registration failed')
@@ -142,14 +141,14 @@ export default function Register() {
 
           <div>
             <label style={{ fontSize: '15px', color: '#000', display: 'block', marginBottom: '6px', fontWeight: '700' }}>
-              Invite Code {isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>} {/* 7. INSERTED: Show inviter */}
+              Invite Code {isLocked && <span style={{color:'#00BFFF', fontSize:'12px'}}>From {form.inviterCode}</span>}
             </label>
             <input
               type="text"
-              value={form.inviterCode} // <- was form.inviteCode
-              readOnly // <- Locked
+              value={form.inviterCode}
+              readOnly
               placeholder="No inviter"
-              style={{...inputStyle, backgroundColor: isLocked? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: isLocked? '900' : '400'}} // <- Yellow if locked
+              style={{...inputStyle, backgroundColor: isLocked? '#FEF3C7' : '#f3f4f6', color: '#000', fontWeight: isLocked? '900' : '400'}}
             />
           </div>
 
