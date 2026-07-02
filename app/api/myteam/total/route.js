@@ -12,7 +12,7 @@ const toNum = (v, f = 0) => {
   return Number.isNaN(n) ? f : n;
 };
 
-// FIXED: Outputs the full 4-digit year format (e.g., 2026-07-02) to match your VIP levels file exactly
+// Outputs the full 4-digit year format (e.g., 2026-07-02)
 const getUgandanFullDate = () => {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
 };
@@ -45,7 +45,7 @@ export async function GET(request) {
       if (stringLevel === '3') listC.push(p); // Indirect Team C
     });
 
-    // 2. FIXED: Pull transaction records using the exact matching full year date string pattern
+    // 2. Pull transaction records using the exact matching full year date string pattern
     const fullDateStr = getUgandanFullDate(); // Outputs YYYY-MM-DD
     
     // Fetch from both structural transaction arrays in your app architecture
@@ -60,13 +60,17 @@ export async function GET(request) {
       return typeof item === 'string' ? JSON.parse(item) : item;
     }).filter(Boolean);
 
-    // 3. FIXED: Compute aggregate cash total using your new header note criteria
-    const total = history.reduce((sum, tx) => {
+    // 3. FIXED: Calculate pure invitation rewards only (Completely removed system registration rewards)
+    const teamCommissionTotal = history.reduce((sum, tx) => {
       const txNote = String(tx.note || '');
+      const txType = String(tx.type || '').toLowerCase().trim();
+      
       if (
-        tx.type === 'commission' || 
-        txNote.includes('Invitation Rewards') || // <- MATCHES YOUR NEW TEXT LABEL
-        (tx.type === 'system_increase' && txNote === 'Registration Reward')
+        txType === 'commission' || 
+        txType === 'team_a_payout' ||
+        txType === 'team_b_payout' ||
+        txType === 'team_c_payout' ||
+        txNote.includes('Invitation Rewards')
       ) {
         return sum + toNum(tx.amount, 0);
       }
@@ -76,7 +80,8 @@ export async function GET(request) {
     // 4. Return matching payload interface structure for your frontend layout elements
     return NextResponse.json({
       success: true,
-      total, 
+      total: teamCommissionTotal, // Keeps backward compatibility safely
+      teamCommissionTotal,        // Strict commission variable used by updated frontend
       breakdown: {
         teamA: listA.length, 
         teamB: listB.length, 

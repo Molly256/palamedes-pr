@@ -13,7 +13,7 @@ const toNum = (v, f = 0) => {
   return Number.isNaN(n) ? f : n
 }
 
-// FIXED: Outputs full 4-digit year format (e.g., 2026-07-02) to match your VIP levels file perfectly
+// Outputs full 4-digit year format (e.g., 2026-07-02)
 const getUgandanFullDate = () => {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
@@ -47,7 +47,7 @@ export async function POST(req) {
       }
 
       const inviteCode = `PM${phone.slice(-6)}` 
-      const date = getUgandanFullDate() // <- FIXED: Using YYYY-MM-DD
+      const date = getUgandanFullDate() 
       const timeStr = getUgandanDateTimeString()
       const pipeline = redis.pipeline()
 
@@ -91,7 +91,6 @@ export async function POST(req) {
         createdAt: String(date) 
       }
 
-      // Explicitly tie tracking to profile object schema
       if (directInviterPhone && directInviterPhone !== phone) {
         userProfile.invited_by = String(directInviterPhone) 
       } else {
@@ -101,10 +100,11 @@ export async function POST(req) {
       pipeline.hset(userKey, userProfile)
       pipeline.set(`invite_code_map:${inviteCode}`, phone) 
 
-      // FIXED: Writes to your 4-digit date key format consistently
+      // FIXED: Generates standard clean structural values for transaction parsing safely
       pipeline.lpush(`tx:${phone}:${date}`, JSON.stringify({
         id: crypto.randomUUID(),
         type: 'system_increase',
+        label: 'Registration Reward', // Added explicit UI label field
         amount: '2500',
         note: 'Registration Reward',
         status: 'completed',
@@ -132,7 +132,7 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Wrong password' }, { status: 401 })
       }
 
-      const currentDate = getUgandanFullDate() // <- FIXED: Using YYYY-MM-DD
+      const currentDate = getUgandanFullDate() 
       const safeUser = {
         username: String(user.username),
         phone: String(user.phone),

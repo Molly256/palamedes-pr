@@ -2,9 +2,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 
-const TABS = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES']
+// Added COMMISSION to the visible tabs
+const TABS = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES', 'COMMISSION']
 
-// FIXED: Added shares_collected mapping to group actions into the SHARES tab
+// Maps network reward/invitation keys into the new COMMISSION tab
 const TYPE_MAP = {
   'vip': 'viplevel purchase',
   'refund_vip': 'refund',
@@ -12,7 +13,11 @@ const TYPE_MAP = {
   'withdraw': 'withdraw',
   'daily income': 'daily income',
   'shares': 'shares',
-  'shares_collected': 'shares', // Maps collection payouts to the shares tab
+  'shares_collected': 'shares', 
+  'commission': 'commission',        // Generic network reward flag
+  'team_a_payout': 'commission',     // Direct team invite reward
+  'team_b_payout': 'commission',     // Indirect team level 2 reward
+  'team_c_payout': 'commission',     // Indirect team level 3 reward
 }
 
 const toTabKey = function(t) {
@@ -78,7 +83,6 @@ export default function Transactions() {
     return (
       <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
         <div className="flex justify-between items-start">
-          {/* LEFT: Note -> Amount -> Date */}
           <div className="flex flex-col">
             <p className="text-black text-sm font-light">{note}</p>
             <p className="text-black text-base font-light mt-1">{amountStr}</p>
@@ -87,7 +91,6 @@ export default function Transactions() {
             </p>
           </div>
 
-          {/* RIGHT: Status only */}
           <div className="flex flex-col items-end justify-start">
             <p className={'text-xs font-light capitalize ' + statusColor}>
               {tx.status}
@@ -124,7 +127,6 @@ export default function Transactions() {
           </div>
         </div>
 
-        {/* FIXED: Changed flex-col to space-y-3 so that transaction cards vertical spacing renders accurately */}
         <div className="px-4 pb-20 space-y-3">
           {loading ? (
             <p className="text-black text-center py-10">Loading...</p>

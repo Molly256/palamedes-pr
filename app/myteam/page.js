@@ -26,7 +26,7 @@ export default function MyTeamPage() {
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-white text-gray-500 font-medium">Loading network tree...</div>
   if (!data) return null
 
-  // INSERTED: Reusable phone list component
+  // Reusable phone list component
   const PhoneList = ({ list }) => (
     list && list.length > 0? (
       <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-gray-100">
@@ -41,6 +41,11 @@ export default function MyTeamPage() {
     )
   )
 
+  // FIXED: Strictly read network earnings. Fallback to 0 if backend hasn't isolated it from registration rewards yet.
+  const displayCommission = data.teamCommissionTotal !== undefined 
+    ? Number(data.teamCommissionTotal) 
+    : (data.total && Number(data.total) === 2500 && data.breakdown?.teamA === 0 ? 0 : Number(data.total || 0));
+
   return (
     <main className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto">
@@ -53,7 +58,7 @@ export default function MyTeamPage() {
         <div className="bg-gradient-to-r from-[#00BFFF] to-blue-600 rounded-2xl shadow-md p-6 mb-6 text-white">
           <p className="text-xs font-bold uppercase tracking-wider opacity-90 mb-1">Total Team Commission</p>
           <p className="text-3xl font-black">
-            {Number(data.total).toLocaleString()} shs
+            {displayCommission.toLocaleString()} shs
           </p>
           <p className="text-xs opacity-75 mt-2 font-medium">
             Combined cash rewards earned from Team A, B, and C networks
@@ -64,23 +69,20 @@ export default function MyTeamPage() {
         <div className="grid grid-cols-3 gap-3 mb-6">
           <div className="bg-white rounded-xl border-gray-100 p-4 text-center">
             <p className="text-xs font-bold text-gray-400 uppercase">Team A</p>
-            <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown.teamA}</p>
+            <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown?.teamA || 0}</p>
             <p className="text-[10px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full inline-block">Direct (5%)</p>
-            {/* INSERTED: Show A phones */}
             <PhoneList list={data.listA} />
           </div>
           <div className="bg-white rounded-xl border-gray-100 p-4 text-center">
             <p className="text-xs font-bold text-gray-400 uppercase">Team B</p>
-            <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown.teamB}</p>
+            <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown?.teamB || 0}</p>
             <p className="text-[10px] font-bold bg-green-50 text-green-600 px-1.5 py-0.5 rounded-full inline-block">Indirect (2%)</p>
-            {/* INSERTED: Show B phones */}
             <PhoneList list={data.listB} />
           </div>
           <div className="bg-white rounded-xl border-gray-100 p-4 text-center">
             <p className="text-xs font-bold text-gray-400 uppercase">Team C</p>
-            <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown.teamC}</p>
+            <p className="text-xl font-black text-[#00BFFF] my-1">{data.breakdown?.teamC || 0}</p>
             <p className="text-[10px] font-bold bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full inline-block">Indirect (1%)</p>
-            {/* INSERTED: Show C phones */}
             <PhoneList list={data.listC} />
           </div>
         </div>

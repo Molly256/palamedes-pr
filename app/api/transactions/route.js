@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server'
 
 const redis = Redis.fromEnv() 
 
-// FIXED: Added native matching pattern for clean share labels
+// FIXED: Added nice formatting labels for team commission payouts
 const getLabel = (tx) => {
   const t = String(tx.type || '').toLowerCase().trim()
   if (t === 'buy_vip' || t === 'vip') return `VIP ${tx.vipLevel || ''} Purchase`.trim()
@@ -14,8 +14,15 @@ const getLabel = (tx) => {
   if (t === 'withdraw') return 'Withdraw'
   if (t === 'refund_vip') return 'VIP Refund'
   if (t === 'daily_income' || t === 'book_income') return 'Daily Income'
-  if (t === 'shares') return 'Shares Purchase' // Fixed label mapping
-  if (t === 'shares_collected' || t === 'collect_hot') return 'Shares Payout Collected' // Fixed collection label
+  if (t === 'shares') return 'Shares Purchase'
+  if (t === 'shares_collected' || t === 'collect_hot') return 'Shares Payout Collected'
+  
+  // Custom display cleanups for team commission payouts
+  if (t === 'team_a_payout') return 'Team A Direct Commission'
+  if (t === 'team_b_payout') return 'Team B Indirect Commission'
+  if (t === 'team_c_payout') return 'Team C Indirect Commission'
+  if (t === 'commission') return 'Team Commission'
+
   return tx.type ? tx.type.replace(/_/g,' ').toUpperCase() : 'Transaction'
 }
 
@@ -60,10 +67,9 @@ export async function POST(req) {
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
     
-    // Set standard transaction status flows
     let status = 'success'
     if (type === 'deposit' || isWithdrawal) status = 'pending'
-    if (type === 'completed') status = 'success' // Accounts for custom triggers
+    if (type === 'completed') status = 'success'
 
     const dateStr = getUgandaDateString();
     const timeStr = getUgandaDateTimeString();
@@ -108,7 +114,7 @@ export async function GET(request) {
     const userHash = await redis.hgetall(`user:${phone}`) || {}
     const availableBalance = Number(userHash.availableBalance || 0)
 
-    // Match patterns (Your 'tx:${phone}:2026-*' logic successfully sweeps up the newly fixed dates)
+    // Keeps your database keys logic completely untouched
     const [txKeys, incomeKeys] = await Promise.all([
       redis.keys(`tx:${phone}:2026-*`),
       redis.keys(`income:${phone}:*`)
@@ -133,9 +139,14 @@ export async function GET(request) {
         let uiType = String(tx.type || '').toLowerCase().trim();
         if (uiType === 'buy_vip') uiType = 'vip' 
         if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
-        // FIXED: Preserves the 'shares' and 'shares_collected' UI type classification maps
         if (uiType === 'shares') uiType = 'shares'
         if (uiType === 'shares_collected') uiType = 'shares'
+        
+        // FIXED: Preserves specific invitation types so frontend maps them to the commission header
+        if (uiType === 'team_a_payout') uiType = 'team_a_payout'
+        if (uiType === 'team_b_payout') uiType = 'team_b_payout'
+        if (uiType === 'team_c_payout') uiType = 'team_c_payout'
+        if (uiType === 'commission') uiType = 'commission'
 
         return {
           id: String(tx.id), 
@@ -143,7 +154,6 @@ export async function GET(request) {
           label: tx.label || getLabel(tx), 
           amount: String(tx.amount),
           note: tx.note || '',
-          // Normalizes status checks down to standard web formats
           status: (tx.status === 'completed' || tx.status === 'success') ? 'success' : tx.status, 
           createdAt: tx.createdAt, 
           phone: tx.phone || phone, 
