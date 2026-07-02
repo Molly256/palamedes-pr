@@ -141,9 +141,11 @@ export async function POST(req) {
         }
       } 
       else if (status === 'failed') {
-        // AUTOMATED REFUND SYSTEM: If withdrawal fails or is rejected, return the money instantly
+        // AUTOMATED REFUND SYSTEM: Reverse the 10% fee to return the exact gross balance
+        // If txObj.amount is 9,000shs, grossRefund is calculated back to exactly 10,000shs
         if (txObj.type === 'withdraw') {
-          await redis.hincrby(`user:${finalPhone}`, 'availableBalance', amount)
+          const grossRefund = Math.round(amount / 0.9)
+          await redis.hincrby(`user:${finalPhone}`, 'availableBalance', grossRefund)
         }
       }
 
