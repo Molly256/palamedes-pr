@@ -116,8 +116,9 @@ export default function MyTeamPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {getActiveList().map(function(phoneNum) {
                 return (
+                  /* FIXED: Displays the actual user phone number variable directly */
                   <div key={phoneNum} className="bg-gray-50 border border-gray-100 text-gray-700 text-xs font-bold py-2.5 px-3 rounded-lg text-center tracking-wider">
-                    Anonymized Link...
+                    📞 {phoneNum}
                   </div>
                 )
               })}
