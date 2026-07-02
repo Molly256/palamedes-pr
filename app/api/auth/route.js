@@ -7,25 +7,31 @@ import crypto from 'crypto'
 
 const redis = Redis.fromEnv()
 
-const toNum = (v, f = 0) => {
+const toNum = function(v, f) {
+  if (f === undefined) f = 0
   if (v === undefined || v === null) return f
   const n = Number(v)
   return Number.isNaN(n) ? f : n
 }
 
 // Outputs full 4-digit year format (e.g., 2026-07-02)
-const getUgandanFullDate = () => {
+const getUgandanFullDate = function() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
 // Outputs full time structure (e.g., 2026-07-02 14:32)
-const getUgandanDateTimeString = () => {
+const getUgandanDateTimeString = function() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ' ')
 }
 
 export async function POST(req) {
   try {
-    const { action, username, phone, password, inviterCode } = await req.json() 
+    const body = await req.json()
+    const action = body.action
+    const username = body.username
+    const phone = body.phone
+    const password = body.password
+    const inviterCode = body.inviterCode 
     const referrerCode = inviterCode 
     
     if (action === 'register') {
@@ -39,38 +45,39 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Password must be 6 alphanumeric chars' }, { status: 400 })
       }
 
-      const userKey = `user:${phone}`
+      const userKey = 'user:' + String(phone).trim()
       const exists = await redis.hget(userKey, 'phone')
       
       if (exists) {
         return NextResponse.json({ error: 'Phone already registered' }, { status: 400 })
       }
 
-      const inviteCode = `PM${phone.slice(-6)}` 
+      const inviteCode = 'PM' + String(phone).slice(-6)
       const date = getUgandanFullDate() 
       const timeStr = getUgandanDateTimeString()
       const pipeline = redis.pipeline()
 
       let directInviterPhone = null
 
-      // --- ASYNCHRONOUS CHAIN RESOLUTION BEFORE PIPELINE WRITING ---
+      // --- ASYNCHRONOUS REFERRAL CHAIN TREE RECONSTRUCTION ---
       if (referrerCode && /^PM\d{6}$/.test(referrerCode)) {
-        // Find Direct Inviter (Team A) Phone via code map
-        directInviterPhone = await redis.get(`invite_code_map:${referrerCode}`) 
+        directInviterPhone = await redis.get('invite_code_map:' + referrerCode) 
         
-        if (directInviterPhone && directInviterPhone !== phone) {
-          // Track to Direct Inviter's Team A Row
-          pipeline.hset(`downlines:${directInviterPhone}`, phone, '1') 
+        if (directInviterPhone && String(directInviterPhone) !== String(phone)) {
+          const newUserPhoneKey = String(phone).trim();
+          
+          // FIXED: Forces the 10-digit downline mobile number string to be the Field Key, and level string as value
+          pipeline.hset('downlines:' + String(directInviterPhone).trim(), newUserPhoneKey, '1') 
 
           // Find Grandparent (Team B) Phone
-          const grandparentPhone = await redis.hget(`user:${directInviterPhone}`, 'invited_by')
-          if (grandparentPhone && grandparentPhone !== phone) {
-            pipeline.hset(`downlines:${grandparentPhone}`, phone, '2') 
+          const grandparentPhone = await redis.hget('user:' + String(directInviterPhone).trim(), 'invited_by')
+          if (grandparentPhone && String(grandparentPhone) !== String(phone)) {
+            pipeline.hset('downlines:' + String(grandparentPhone).trim(), newUserPhoneKey, '2') 
 
             // Find Great Grandparent (Team C) Phone
-            const greatGrandparentPhone = await redis.hget(`user:${grandparentPhone}`, 'invited_by')
-            if (greatGrandparentPhone && greatGrandparentPhone !== phone) {
-              pipeline.hset(`downlines:${greatGrandparentPhone}`, phone, '3') 
+            const greatGrandparentPhone = await redis.hget('user:' + String(grandparentPhone).trim(), 'invited_by')
+            if (greatGrandparentPhone && String(greatGrandparentPhone) !== String(phone)) {
+              pipeline.hset('downlines:' + String(greatGrandparentPhone).trim(), newUserPhoneKey, '3') 
             }
           }
         }
@@ -91,20 +98,19 @@ export async function POST(req) {
         createdAt: String(date) 
       }
 
-      if (directInviterPhone && directInviterPhone !== phone) {
-        userProfile.invited_by = String(directInviterPhone) 
+      if (directInviterPhone && String(directInviterPhone) !== String(phone)) {
+        userProfile.invited_by = String(directInviterPhone)
       } else {
         userProfile.invited_by = ''
       }
 
       pipeline.hset(userKey, userProfile)
-      pipeline.set(`invite_code_map:${inviteCode}`, phone) 
+      pipeline.set('invite_code_map:' + inviteCode, String(phone).trim()) 
 
-      // FIXED: Generates standard clean structural values for transaction parsing safely
-      pipeline.lpush(`tx:${phone}:${date}`, JSON.stringify({
+      pipeline.lpush('tx:' + String(phone).trim() + ':' + date, JSON.stringify({
         id: crypto.randomUUID(),
         type: 'system_increase',
-        label: 'Registration Reward', // Added explicit UI label field
+        label: 'Registration Reward', 
         amount: '2500',
         note: 'Registration Reward',
         status: 'completed',
@@ -112,8 +118,7 @@ export async function POST(req) {
       }));
 
       await pipeline.exec()
-
-      return NextResponse.json({ success: true, inviteCode }) 
+      return NextResponse.json({ success: true, inviteCode: inviteCode }) 
     }
 
     if (action === 'login') {
@@ -121,7 +126,7 @@ export async function POST(req) {
         return NextResponse.json({ error: 'Invalid phone or password' }, { status: 400 })
       }
 
-      const userKey = `user:${phone}`
+      const userKey = 'user:' + String(phone).trim()
       const user = await redis.hgetall(userKey)
 
       if (!user || Object.keys(user).length === 0 || !user.phone) {
