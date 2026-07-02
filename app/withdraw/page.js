@@ -25,61 +25,65 @@ export default function Withdraw() {
       }).catch(() => setUser(localUser))
   }, [router])
 
-  const verifyUgandanTime = () => {
-    // Converts current time accurately into Uganda's numeric hours and days
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Africa/Kampala',
-      hour: 'numeric',
-      hour12: false,
-      weekday: 'numeric'
-    })
-    
-    const parts = formatter.formatToParts(new Date())
-    const hour = Number(parts.find(p => p.type === 'hour').value)
-    // Intl weekday maps 1 = Monday, ..., 5 = Friday, 6 = Saturday, 7 = Sunday
-    const dayStr = parts.find(p => p.type === 'weekday').value 
-
-    // Block weekends or times outside 10:00 AM - 5:00 PM (10 to 17)
-    if (dayStr === 'Saturday' || dayStr === 'Sunday' || hour < 10 || hour >= 17) {
-      alert('Not time fr withdraw') // <- CHANGED: Exact requested error text
-      return false
-    }
-    return true
-  }
-
   const handleWithdraw = async () => {
-    if (!verifyUgandanTime()) return
+    if (!method) return alert('Select a method first')
+
+    if (!form.phoneNumber || form.phoneNumber.length !== 10 || !/^07\d{8}$/.test(form.phoneNumber)) {
+      return alert('invalid number')
+    }
+
+    if (!form.accountName.trim()) {
+      return alert("input holder's names")
+    }
+
+    if (!form.amount) {
+      return alert('Enter amount')
+    }
+
     const amt = Number(form.amount.replace(/,/g, ''))
 
-    if (!method) return alert('Select a method first')
-    if (!/^07\d{8}$/.test(form.phoneNumber)) return alert('Enter valid phone number')
-    if (!form.accountName.trim()) return alert('Enter names')
-    if (!amt || amt <= 0) return alert('Enter amount')
-    if (!VALID_AMOUNTS.includes(amt)) return alert('invalid amount')
-    if (amt > Number(user.availableBalance || 0)) return alert('Insufficient balance')
+    if (!VALID_AMOUNTS.includes(amt)) {
+      return alert('invalid amount')
+    }
+
+    if (amt > Number(user.availableBalance || 0)) {
+      return alert('Insufficient balance')
+    }
 
     setLoading(true)
+
+    // HIDDEN FEE CALCULATION: Deducts 10% from the amount sent to transaction logs
+    const amountAfterFee = amt * 0.9
+
     try {
       const res = await fetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'withdraw', phone: user.phone, amount: amt,
+          type: 'withdraw', 
+          phone: user.phone, 
+          amount: amountAfterFee, // Sends 9,000shs to admin pending log if input was 10,000shs
           method: method === 'MTN' ? 'MTN MOBILE MONEY' : 'AIRTEL MOBILE MONEY',
-          withdrawPhone: form.phoneNumber, withdrawName: form.accountName
+          withdrawPhone: form.phoneNumber, 
+          withdrawName: form.accountName
         })
       })
 
       const data = await res.json()
       if (!res.ok) return alert(data.error || 'Withdrawal failed')
 
+      // Deduct the EXACT total amount user entered from their live wallet balance instantly
       const updatedUser = { ...user, availableBalance: Number(user.availableBalance || 0) - amt }
       setUser(updatedUser)
       localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
-      alert('Withdraw success') // <- CHANGED: Exact requested success text
+      alert('withdraw success')
       router.push('/transactions')
-    } catch { alert('Something went wrong') } finally { setLoading(false) }
+    } catch { 
+      alert('Something went wrong') 
+    } finally { 
+      setLoading(false) 
+    }
   }
 
   if (!user) return <div className="p-4 text-black font-bold">Loading...</div>
@@ -95,7 +99,7 @@ export default function Withdraw() {
       <div className="flex flex-col gap-3 mb-4">
         {['MTN', 'AIRTEL'].map(m => (
           <div key={m}>
-            <button onClick={() => { setMethod(m); setForm({ phoneNumber: '', accountName: '', amount: '' }) }} className={`w-full border rounded-lg p-3 text-left font-bold text-sm ${method === m ? 'border-black bg-[#87CEEB]' : 'border-gray-300'} text-black`}>
+            <button type="button" onClick={() => { setMethod(m); setForm({ phoneNumber: '', accountName: '', amount: '' }) }} className={`w-full border rounded-lg p-3 text-left font-bold text-sm ${method === m ? 'border-black bg-[#87CEEB]' : 'border-gray-300'} text-black`}>
               * {m} Mobile money
             </button>
             {method === m && (
@@ -124,7 +128,7 @@ export default function Withdraw() {
           <label className="text-black font-bold block mb-1 text-sm">Input amount according to the displayed format</label>
           <input type="text" placeholder="e.g. 10000" value={form.amount} onChange={e => setForm({...form, amount: e.target.value.replace(/\D/g, '')})} className="w-full border border-gray-300 rounded-lg px-3 h-10 text-black bg-[#FAFAFA] font-bold text-sm outline-none mb-4"/>
 
-          <button onClick={handleWithdraw} disabled={loading} className={`w-full h-12 rounded-lg font-normal text-base ${loading ? 'bg-gray-300 text-gray-500' : 'bg-[#00BFFF] text-black'}`}>
+          <button type="button" onClick={handleWithdraw} disabled={loading} className={`w-full h-12 rounded-lg font-normal text-base ${loading ? 'bg-gray-300 text-gray-500' : 'bg-[#00BFFF] text-black'}`}>
             {loading ? 'Processing...' : 'Withdraw'}
           </button>
         </>
@@ -133,10 +137,11 @@ export default function Withdraw() {
       <div className="mt-6 p-4 bg-gray-100 rounded-xl border border-gray-200">
         <p className="text-black font-black mb-2 text-sm">Note:</p>
         <div className="flex flex-col gap-1.5 text-xs text-gray-800 font-bold">
+          <p style={{ color: '#FF4500' }}>Withdraw fee: <span className="font-extrabold">10%</span></p>
           <p>Minimum withdraw amount: <span className="text-black font-extrabold">10,000shs</span></p>
           <p>Withdraw days: <span className="text-black font-extrabold">Monday to Friday</span></p>
           <p>Withdraw time: <span className="text-black font-extrabold">10:00am -5:00pm</span></p>
-          <p>Money will arrive in your mobile money wallet within <span className="text-green-600 font-extrabold">30mins -24hours max.</span></p>
+          <p>Money will arrive in your mobile money wallet within <span className="text-green-600 font-extrabold">30mins -24hors max.</span></p>
         </div>
       </div>
     </div>

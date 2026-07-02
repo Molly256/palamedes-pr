@@ -2,10 +2,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 
-// Added COMMISSION to the visible tabs
 const TABS = ['ALL', 'DEPOSIT', 'WITHDRAW', 'DAILY INCOME', 'VIPLEVEL PURCHASE', 'REFUND', 'SHARES', 'COMMISSION']
 
-// Maps network reward/invitation keys into the new COMMISSION tab
 const TYPE_MAP = {
   'vip': 'viplevel purchase',
   'refund_vip': 'refund',
@@ -14,10 +12,10 @@ const TYPE_MAP = {
   'daily income': 'daily income',
   'shares': 'shares',
   'shares_collected': 'shares', 
-  'commission': 'commission',        // Generic network reward flag
-  'team_a_payout': 'commission',     // Direct team invite reward
-  'team_b_payout': 'commission',     // Indirect team level 2 reward
-  'team_c_payout': 'commission',     // Indirect team level 3 reward
+  'commission': 'commission',
+  'team_a_payout': 'commission',
+  'team_b_payout': 'commission',
+  'team_c_payout': 'commission',
 }
 
 const toTabKey = function(t) {
@@ -73,6 +71,7 @@ export default function Transactions() {
     const amount = Number(tx.amount) || 0
     const amountStr = Math.abs(amount).toLocaleString() + ' shs'
     const note = tx.label || 'Transaction'
+    const isWithdraw = String(tx.type || '').toLowerCase().trim() === 'withdraw'
 
     const statusColor = tx.status === 'success'
       ? 'text-green-600'
@@ -81,19 +80,31 @@ export default function Transactions() {
         : 'text-gray-500'
 
     return (
-      <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+      <div key={tx.id} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
         <div className="flex justify-between items-start">
-          <div className="flex flex-col">
-            <p className="text-black text-sm font-light">{note}</p>
-            <p className="text-black text-base font-light mt-1">{amountStr}</p>
-            <p className="text-gray-500 text-xs font-light mt-1">
-              {formatUgDate(tx.createdAt)}
-            </p>
+          <div className="flex flex-col w-full">
+            <p className="text-black text-sm font-semibold uppercase tracking-tight">{tx.type || 'Transaction'}</p>
+            <p className="text-gray-600 text-xs font-light mt-0.5">{note}</p>
+            
+            {/* If the transaction object item is a withdrawal layout block, render your exact required user tracking logs context stacked down here */}
+            {isWithdraw && (
+              <div className="mt-2.5 pt-2.5 border-t border-dashed border-gray-200 flex flex-col gap-1 text-xs text-gray-700 font-normal">
+                <p>Requested Phone: <span className="text-black font-semibold ml-1">{tx.phone || user?.phone}</span></p>
+                <p>Mobile Money Number: <span className="text-black font-semibold ml-1">{tx.withdrawPhone || tx.phoneNumber}</span></p>
+                <p>Holder Name: <span className="text-black font-semibold ml-1">{tx.withdrawName || tx.accountName}</span></p>
+                <p>Network Gateway: <span className="text-blue-600 font-semibold ml-1">{tx.method || 'MOBILE MONEY'}</span></p>
+              </div>
+            )}
+
+            <div className="mt-3 flex justify-between items-center bg-gray-50 p-2 rounded-md">
+              <span className="text-gray-500 text-xs font-light">{formatUgDate(tx.createdAt)}</span>
+              <span className="text-black text-sm font-bold">{amountStr}</span>
+            </div>
           </div>
 
-          <div className="flex flex-col items-end justify-start">
-            <p className={'text-xs font-light capitalize ' + statusColor}>
-              {tx.status}
+          <div className="flex flex-col items-end justify-start ml-2">
+            <p className={'text-xs font-bold capitalize ' + statusColor}>
+              {tx.status || 'pending'}
             </p>
           </div>
         </div>
@@ -116,6 +127,7 @@ export default function Transactions() {
               return (
                 <button
                   key={tab}
+                  type="button"
                   onClick={function() { setActiveTab(tab) }}
                   className={'flex-shrink-0 px-4 py-2 rounded-lg whitespace-nowrap font-light text-black transition-colors ' +
                     (activeTab === tab ? 'bg-[#38bdf8]' : 'bg-[#bae6fd]')}

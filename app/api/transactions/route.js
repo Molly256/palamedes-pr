@@ -17,7 +17,6 @@ const getLabel = (tx) => {
   if (t === 'shares') return 'Shares Purchase'
   if (t === 'shares_collected' || t === 'collect_hot') return 'Shares Payout Collected'
   
-  // Custom display cleanups for team commission payouts
   if (t === 'team_a_payout') return 'Team A Direct Commission'
   if (t === 'team_b_payout') return 'Team B Indirect Commission'
   if (t === 'team_c_payout') return 'Team C Indirect Commission'
@@ -49,7 +48,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const amt = Number(amount)
+    let amt = Number(amount)
     if (isNaN(amt) || amt <= 0) {
       return NextResponse.json({ error: 'Invalid amount value' }, { status: 400 })
     }
@@ -57,12 +56,17 @@ export async function POST(req) {
     const isWithdrawal = String(type).toLowerCase() === 'withdraw'
     const userKey = `user:${phone}`
 
+    // FIXED: Calculate the pre-fee gross amount to ensure correct Redis wallet deduction
+    // If frontend sends 9,000shs (after fee), grossDeduction is exactly 10,000shs
+    const grossDeduction = isWithdrawal ? Math.round(amt / 0.9) : amt
+
     if (isWithdrawal) {
       const currentAvailableBalance = Number(await redis.hget(userKey, 'availableBalance') || 0)
-      if (amt > currentAvailableBalance) {
+      if (grossDeduction > currentAvailableBalance) {
         return NextResponse.json({ error: 'Insufficient availableBalance' }, { status: 400 })
       }
-      await redis.hincrby(userKey, 'availableBalance', -amt)
+      // Deduct the full raw total (10,000shs) from Redis securely
+      await redis.hincrby(userKey, 'availableBalance', -grossDeduction)
     }
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -78,7 +82,7 @@ export async function POST(req) {
       id, 
       type: String(type).toLowerCase().trim(), 
       label: getLabel({type, vipLevel}), 
-      amount: String(amount), 
+      amount: String(amount), // Keeps the post-fee value (9,000shs) for admin pending history
       status, 
       createdAt: timeStr, 
       phone, 
@@ -114,7 +118,6 @@ export async function GET(request) {
     const userHash = await redis.hgetall(`user:${phone}`) || {}
     const availableBalance = Number(userHash.availableBalance || 0)
 
-    // Keeps your database keys logic completely untouched
     const [txKeys, incomeKeys] = await Promise.all([
       redis.keys(`tx:${phone}:2026-*`),
       redis.keys(`income:${phone}:*`)
@@ -142,7 +145,6 @@ export async function GET(request) {
         if (uiType === 'shares') uiType = 'shares'
         if (uiType === 'shares_collected') uiType = 'shares'
         
-        // FIXED: Preserves specific invitation types so frontend maps them to the commission header
         if (uiType === 'team_a_payout') uiType = 'team_a_payout'
         if (uiType === 'team_b_payout') uiType = 'team_b_payout'
         if (uiType === 'team_c_payout') uiType = 'team_c_payout'
