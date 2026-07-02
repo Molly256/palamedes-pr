@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useEffect } from 'react'
+import { useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-export default function Home() {
+// 1. Separate component to safely process URL params without crashing Vercel
+function SearchParamsTracker() {
   const searchParams = useSearchParams()
   const refCode = searchParams.get('ref')
 
@@ -16,6 +17,10 @@ export default function Home() {
     }
   }, [refCode])
 
+  return null // Hidden utility logic, does not change your UI layout
+}
+
+export default function Home() {
   return (
     <main style={{
       display: 'flex',
@@ -27,6 +32,11 @@ export default function Home() {
       backgroundRepeat: 'no-repeat',
       paddingBottom: '90px'
     }}>
+      
+      {/* 2. Wrap your search hook component inside a native Suspense container */}
+      <Suspense fallback={null}>
+        <SearchParamsTracker />
+      </Suspense>
       
       <div style={{
         display: 'flex',
