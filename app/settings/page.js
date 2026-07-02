@@ -3,330 +3,88 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import AvatarWithBadge from '../../components/AvatarWithBadge'
 
-const sectionStyle = {
-  backgroundColor: 'white',
-  padding: '16px',
-  marginBottom: '1px',
-  borderBottom: '1px solid #e5e7eb'
-}
-const labelStyle = { fontSize: '14px', fontWeight: '300', color: 'black', marginBottom: '4px' }
-const inputStyle = {
-  width: '180px',
-  height: '36px',
-  padding: '0 10px',
-  borderRadius: '6px',
-  border: '1px solid #d1d5db',
-  backgroundColor: 'white',
-  color: 'black',
-  fontWeight: '300',
-  fontSize: '14px',
-  marginBottom: '10px'
-}
-const btnStyle = {
-  backgroundColor: '#00BFFF',
-  color: 'black',
-  fontWeight: '300',
-  padding: '6px 14px',
-  borderRadius: '6px',
-  border: 'none',
-  cursor: 'pointer',
-  fontSize: '14px'
-}
-const logoutBtn = {
-  backgroundColor: '#00BFFF',
-  color: 'black',
-  fontWeight: '300',
-  fontSize: '13px',
-  padding: '5px 12px',
-  borderRadius: '16px',
-  border: 'none',
-  cursor: 'pointer',
-  marginTop: '24px'
-}
+const S = '#00BFFF' // hot skyblue
+const box = {padding:16, background:'#fff', borderBottom:'1px solid #eee'}
+const inpt = {width:'100%', maxWidth:300, height:36, padding:'0 10px', border:'1px solid #ddd', borderRadius:6, margin:'6px 0', fontWeight:300}
+const btn = {background:S, color:'black', border:'none', borderRadius:6, padding:'8px 16px', fontWeight:300, cursor:'pointer'}
+const lgBtn = {...btn, borderRadius:16, width:'100%', maxWidth:300, marginTop:24}
 
-export default function SettingsPage() {
-  const router = useRouter()
-  const fileInputRef = useRef(null)
+export default function Settings(){
+  const r = useRouter()
+  const file = useRef()
+  const [u,setU] = useState({phone:'',nickname:'',username:'',vip:0,avatar:'',password:''})
+  const [nick,setNick] = useState('')
+  const [o,setO] = useState(''),[n,setN] = useState(''),[p,setP] = useState('')
+  const [vipPop,setVipPop] = useState(false)
 
-  const [user, setUser] = useState({
-    avatar: '',
-    phone: '',
-    nickname: '',
-    username: '',
-    vip: 0,
-    bankMTN: null,
-    bankAirtel: null,
-    password: ''
-  })
-
-  const [nickname, setNickname] = useState('')
-  const [mtnNumber, setMtnNumber] = useState('')
-  const [mtnNames, setMtnNames] = useState('')
-  const [airtelNumber, setAirtelNumber] = useState('')
-  const [airtelNames, setAirtelNames] = useState('')
-  const [oldPass, setOldPass] = useState('')
-  const [newPass, setNewPass] = useState('')
-  const [repeatPass, setRepeatPass] = useState('')
-  const [showVipPopup, setShowVipPopup] = useState(false)
-
-  useEffect(() => {
-    loadUser()
-  }, [])
-
-  const loadUser = async () => {
-    const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}')
-    if (!saved.phone) return router.push('/login')
-
-    try {
-      const res = await fetch(`/api/user?phone=${saved.phone}`)
-      const data = await res.json()
-      if (data.success) {
-        setUser(data.user)
-        setNickname(data.user.nickname || data.user.username || '')
-        setMtnNumber(data.user.bankMTN?.number || '')
-        setMtnNames(data.user.bankMTN?.names || '')
-        setAirtelNumber(data.user.bankAirtel?.number || '')
-        setAirtelNames(data.user.bankAirtel?.names || '')
-        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const saveUser = (data) => {
-    localStorage.setItem('palamedes_user', JSON.stringify(data))
-    setUser(data)
-  }
-
-  const handleAvatarClick = () => {
-    if (!user.vip || user.vip < 1) {
-      setShowVipPopup(true)
-      return
-    }
-    fileInputRef.current?.click()
-  }
-
-  const handleAvatarChange = async (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = async () => {
-        const base64 = reader.result
-
-        const res = await fetch('/api/user', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            action: 'updateProfile',
-            phone: user.phone,
-            field: 'avatar',
-            value: base64
-          })
-        })
-        const data = await res.json()
-
-        if (data.success) {
-          const updated = {...user, avatar: base64}
-          saveUser(updated)
-        } else {
-          alert(data.message)
-        }
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const saveNickname = async () => {
-    if (nickname.length > 6) return alert('Nickname max 6 letters only')
-
-    const res = await fetch('/api/user', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        action: 'updateProfile',
-        phone: user.phone,
-        field: 'nickname',
-        value: nickname
-      })
+  useEffect(()=>{
+    const s = JSON.parse(localStorage.getItem('palamedes_user')||'{}')
+    if(!s.phone) return r.push('/login')
+    fetch(`/api/user?phone=${s.phone}`).then(res=>res.json()).then(d=>{
+      if(d.success){ setU(d.user); setNick(d.user.nickname||d.user.username||'') }
     })
-    const data = await res.json()
-    alert(data.message)
+  },[])
 
-    if (data.success) {
-      const updated = {...user, nickname}
-      saveUser(updated)
-    }
+  const save = (data)=>{ localStorage.setItem('palamedes_user',JSON.stringify(data)); setU(data) }
+
+  const avatar = ()=> u.vip<1? setVipPop(true) : file.current.click()
+
+  const upAvatar = async(e)=>{
+    const f=e.target.files[0]; if(!f) return
+    const b=await new Promise(res=>{const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.readAsDataURL(f)})
+    const res=await fetch('/api/user',{method:'POST',body:JSON.stringify({action:'updateProfile',phone:u.phone,field:'avatar',value:b})})
+    if((await res.json()).success) save({...u,avatar:b})
   }
 
-  const saveBank = async (method) => {
-    if (method === 'mtn') {
-      if (user.bankMTN) return alert('MTN bank details already saved')
-      if (!mtnNumber ||!mtnNames) return alert('Fill all MTN fields')
-
-      const bankData = {number: mtnNumber, names: mtnNames}
-
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          action: 'updateProfile',
-          phone: user.phone,
-          field: 'bankMTN',
-          value: bankData // send object, not string
-        })
-      })
-      const data = await res.json()
-      alert(data.message)
-      if (data.success) {
-        const updated = {...user, bankMTN: bankData}
-        saveUser(updated)
-      }
-    }
-
-    if (method === 'airtel') {
-      if (user.bankAirtel) return alert('Airtel bank details already saved')
-      if (!airtelNumber ||!airtelNames) return alert('Fill all Airtel fields')
-
-      const bankData = {number: airtelNumber, names: airtelNames}
-
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          action: 'updateProfile',
-          phone: user.phone,
-          field: 'bankAirtel',
-          value: bankData // send object, not string
-        })
-      })
-      const data = await res.json()
-      alert(data.message)
-      if (data.success) {
-        const updated = {...user, bankAirtel: bankData}
-        saveUser(updated)
-      }
-    }
+  const saveNick = async()=>{
+    if(!nick||nick.length>6) return alert('Max 6 chars')
+    const res=await fetch('/api/user',{method:'POST',body:JSON.stringify({action:'updateProfile',phone:u.phone,field:'nickname',value:nick})})
+    if((await res.json()).success) save({...u,nickname:nick})
   }
 
-  const changePassword = async () => {
-    if (oldPass!== user.password) return alert('Old password incorrect')
-    if (newPass.length < 6) return alert('New password must be at least 6 characters')
-    if (newPass!== repeatPass) return alert('New passwords do not match')
-
-    const res = await fetch('/api/user', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        action: 'changePassword',
-        phone: user.phone,
-        oldPass,
-        newPass
-      })
-    })
-    const data = await res.json()
-    alert(data.message)
-
-    if (data.success) {
-      const updated = {...user, password: newPass}
-      saveUser(updated)
-      setOldPass(''); setNewPass(''); setRepeatPass('')
-    }
+  const savePass = async()=>{
+    if(!o||!n||!p||n!==p||n.length<6) return alert('Check all 3 fields')
+    const res=await fetch('/api/user',{method:'POST',body:JSON.stringify({action:'changePassword',phone:u.phone,oldPass:o,newPass:n})})
+    const d=await res.json(); alert(d.message)
+    if(d.success){ save({...u,password:n}); setO('');setN('');setP('') }
   }
 
-  const logout = () => {
-    localStorage.removeItem('palamedes_user')
-    router.push('/login')
-  }
+  return(
+    <div style={{minHeight:'100vh',background:'#f9fafb'}}>
+      <h1 style={{textAlign:'center',padding:16,background:'#fff',borderBottom:'1px solid #eee'}}>Settings</h1>
 
-  return (
-    <div style={{minHeight: '100vh', backgroundColor: '#f9fafb', paddingBottom: '96px'}}>
-      <h1 style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', padding: '16px', backgroundColor: 'white', color: 'black', borderBottom: '1px solid #e5e7eb'}}>Settings</h1>
+      <div style={{...box,display:'flex',flexDirection:'column',alignItems:'center'}}>
+        <div onClick={avatar}><AvatarWithBadge username={u.username} vipLevel={u.vip} size={90} avatar={u.avatar}/></div>
+        <p style={{fontSize:12,color:'#666'}}>{u.vip<1?'VIP1+ for photo':'Tap to change'}</p>
+        <p>{nick||u.username}</p>
+      </div>
+      <input type="file" ref={file} accept="image/*" onChange={upAvatar} hidden/>
 
-      <div style={{...sectionStyle, display: 'flex', flexDirection: 'column', alignItems: 'flex-end'}}>
-        <div onClick={handleAvatarClick} style={{cursor: user.vip >= 1? 'pointer' : 'default'}}>
-          <AvatarWithBadge
-            username={user.username}
-            vipLevel={user.vip || 0}
-            size={80}
-            avatar={user.avatar}
-          />
+      <div style={box}>
+        <p style={{fontSize:14,fontWeight:300}}>Phone</p>
+        <input style={{...inpt,background:'#f3f3f3'}} value={u.phone} readOnly/>
+        <p style={{fontSize:14,fontWeight:300}}>Nickname 6 max</p>
+        <input style={inpt} value={nick} maxLength={6} onChange={e=>setNick(e.target.value.slice(0,6))}/>
+        <button style={btn} onClick={saveNick}>Save</button>
+      </div>
+
+      <div style={box}>
+        <p style={{fontSize:14,fontWeight:300}}>Password</p>
+        <input style={inpt} type="password" placeholder="Old" value={o} onChange={e=>setO(e.target.value)}/>
+        <input style={inpt} type="password" placeholder="New" value={n} onChange={e=>setN(e.target.value)}/>
+        <input style={inpt} type="password" placeholder="Repeat" value={p} onChange={e=>setP(e.target.value)}/>
+        <button style={btn} onClick={savePass}>Save</button>
+      </div>
+
+      <div style={{...box,border:'none',display:'flex',justifyContent:'center'}}>
+        <button style={lgBtn} onClick={()=>{localStorage.removeItem('palamedes_user');r.push('/login')}}>Logout</button>
+      </div>
+
+      {vipPop&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+        <div style={{background:'#fff',padding:24,borderRadius:8,textAlign:'center'}}>
+          <p>VIP1+ needed for avatar</p><button style={btn} onClick={()=>setVipPop(false)}>OK</button>
         </div>
-        <p style={{fontSize: '16px', fontWeight: '300', color: 'black', marginTop: '8px'}}>
-          {user.nickname || user.username || 'User'}
-        </p>
-      </div>
-      <input type="file" ref={fileInputRef} accept="image/*" onChange={handleAvatarChange} style={{display: 'none'}} />
-
-      <div style={sectionStyle}>
-        <p style={labelStyle}>Phone number</p>
-        <input style={{...inputStyle, backgroundColor: '#f3f4f6'}} value={user.phone} readOnly />
-
-        <p style={labelStyle}>Nickname</p>
-        <input style={inputStyle} value={nickname} onChange={(e) => setNickname(e.target.value.slice(0, 6))} maxLength={6} />
-        <br />
-        <button style={btnStyle} onClick={saveNickname}>Save</button>
-      </div>
-
-      <div style={sectionStyle}>
-        <p style={labelStyle}>Bank details</p>
-
-        <p style={labelStyle}>MTN Mobile money</p>
-        <input style={{...inputStyle, backgroundColor: user.bankMTN? '#f3f4f6' : 'white'}}
-          placeholder="Phone" value={mtnNumber}
-          onChange={(e) =>!user.bankMTN && setMtnNumber(e.target.value)}
-          readOnly={!!user.bankMTN} />
-        <br />
-        <input style={{...inputStyle, backgroundColor: user.bankMTN? '#f3f4f6' : 'white'}}
-          placeholder="Names" value={mtnNames}
-          onChange={(e) =>!user.bankMTN && setMtnNames(e.target.value)}
-          readOnly={!!user.bankMTN} />
-        <br />
-        {!user.bankMTN && <button style={btnStyle} onClick={() => saveBank('mtn')}>Save</button>}
-
-        <p style={{...labelStyle, marginTop: '12px'}}>Airtel mobile money</p>
-        <input style={{...inputStyle, backgroundColor: user.bankAirtel? '#f3f4f6' : 'white'}}
-          placeholder="Phone" value={airtelNumber}
-          onChange={(e) =>!user.bankAirtel && setAirtelNumber(e.target.value)}
-          readOnly={!!user.bankAirtel} />
-        <br />
-        <input style={{...inputStyle, backgroundColor: user.bankAirtel? '#f3f4f6' : 'white'}}
-          placeholder="Names" value={airtelNames}
-          onChange={(e) =>!user.bankAirtel && setAirtelNames(e.target.value)}
-          readOnly={!!user.bankAirtel} />
-        <br />
-        {!user.bankAirtel && <button style={btnStyle} onClick={() => saveBank('airtel')}>Save</button>}
-      </div>
-
-      <div style={sectionStyle}>
-        <p style={labelStyle}>Modify password</p>
-        <input style={inputStyle} type="password" placeholder="Old password" value={oldPass} onChange={(e) => setOldPass(e.target.value)} />
-        <br />
-        <input style={inputStyle} type="password" placeholder="New password" value={newPass} onChange={(e) => setNewPass(e.target.value)} />
-        <br />
-        <input style={inputStyle} type="password" placeholder="Repeat new password" value={repeatPass} onChange={(e) => setRepeatPass(e.target.value)} />
-        <br />
-        <button style={btnStyle} onClick={changePassword}>Save</button>
-      </div>
-
-      {showVipPopup && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center', zIndex: 50
-        }}>
-          <div style={{backgroundColor: 'white', padding: '24px', borderRadius: '8px', textAlign: 'center'}}>
-            <p style={{fontSize: '16px', fontWeight: '300', color: 'black', marginBottom: '16px'}}>
-              Buy VIP Task to edit avatar
-            </p>
-            <button style={btnStyle} onClick={() => setShowVipPopup(false)}>OK</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{textAlign: 'center', padding: '16px'}}>
-        <button style={logoutBtn} onClick={logout}>Logout</button>
-      </div>
+      </div>}
     </div>
   )
 }
