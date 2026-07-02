@@ -18,12 +18,18 @@ export default function Register() {
   const [showRepeatPassword, setShowRepeatPassword] = useState(false)
   const [isLocked, setIsLocked] = useState(false) // <- lock the field if inviter exists
 
-  // Read inviter code from session storage captured by homepage
+  // Read inviter code securely only after environment mounts inside browser window
   useEffect(() => {
-    const code = sessionStorage.getItem('activeInviterCode')
-    if (code) {
-      setForm(prev => ({ ...prev, inviterCode: code }))
-      setIsLocked(true) // lock it
+    if (typeof window !== 'undefined') {
+      // FIXED: Cross-checks all active storage identifiers used across your routing files
+      const code = sessionStorage.getItem('activeInviterCode') || 
+                   sessionStorage.getItem('referrer_code') || 
+                   localStorage.getItem('referrer_code')
+
+      if (code) {
+        setForm(prev => ({ ...prev, inviterCode: code }))
+        setIsLocked(true) // lock it
+      }
     }
   }, [])
 
@@ -80,7 +86,12 @@ export default function Register() {
           inviteCode: data.inviteCode // <- John's own PM185973 from backend
         }
         localStorage.setItem('palamedes_user', JSON.stringify(userSession))
-        sessionStorage.removeItem('activeInviterCode') // Clear after use
+        
+        // Clear all tracking caches cleanly on complete account creation
+        sessionStorage.removeItem('activeInviterCode') 
+        sessionStorage.removeItem('referrer_code')
+        localStorage.removeItem('referrer_code')
+        
         router.push('/login')
       } else {
         alert(data.error || 'Registration failed')
