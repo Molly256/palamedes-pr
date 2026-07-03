@@ -40,7 +40,7 @@ export default function InvitePage() {
   const VIPS = [
     { level: 1, price: 80000, perBook: 625, books: 4 },
     { level: 2, price: 250000, perBook: 2000, books: 4 },
-    { level: 3, price: 700000, perBook: 6500, books: 4 },
+    { level: 3, price: 790000, perBook: 6500, books: 4 },
     { level: 4, price: 1000000, perBook: 7000, books: 5 },
     { level: 5, price: 1500000, perBook: 10000, books: 5 },
     { level: 6, price: 2100000, perBook: 14000, books: 5 },
