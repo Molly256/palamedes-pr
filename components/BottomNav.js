@@ -1,10 +1,14 @@
 'use client'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 export default function BottomNav() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   
+  // Extract the phone number parameter to carry it into the settings page
+  const currentPhone = searchParams.get('phone') || ''
+
   // Only hide on login + register. Admin stays visible.
   const hideOnRoutes = ['/', '/login', '/register'] 
   if (hideOnRoutes.includes(pathname)) {
@@ -41,8 +45,14 @@ export default function BottomNav() {
     }}>
       {navItems.map(item => {
         const isActive = pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/dashboard/'))
+        
+        // FIXED: Only modify the destination path if it's the settings tab
+        const destinationUrl = (item.href === '/settings' && currentPhone)
+          ? `${item.href}?phone=${encodeURIComponent(currentPhone)}`
+          : item.href
+
         return (
-          <Link key={item.href} href={item.href} style={{ 
+          <Link key={item.href} href={destinationUrl} style={{ 
             textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', gap: '4px', flex: 1, height: '56px', borderRadius: '12px', 
             background: isActive ? '#F8FAFC' : 'transparent', transform: isActive ? 'scale(1.03)' : 'scale(1)',
