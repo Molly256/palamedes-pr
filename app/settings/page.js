@@ -1,12 +1,9 @@
 "use client";
 import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
 import AvatarWithBadge from "@/components/AvatarWithBadge";
 
 function SettingsContent() {
-  const searchParams = useSearchParams();
-  const userPhone = searchParams.get("phone") || ""; 
-
+  const [userPhone, setUserPhone] = useState(""); 
   const [username, setUsername] = useState("");
   const [vipLevel, setVipLevel] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -16,12 +13,17 @@ function SettingsContent() {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    const saved = JSON.parse(localStorage.getItem('palamedes_user')||'{}');
+    const phone = saved.phone || "";
+    setUserPhone(phone);
+
     async function loadData() {
-      if (!userPhone) return;
+      if (!phone) { setLoaded(true); return; }
       try {
-        const response = await fetch(`/api/user?phone=${encodeURIComponent(userPhone)}`);
+        const response = await fetch(`/api/user?phone=${encodeURIComponent(phone)}`);
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.user) {
@@ -32,9 +34,10 @@ function SettingsContent() {
           }
         }
       } catch (err) { console.error("Failed to load:", err); }
+      setLoaded(true);
     }
     loadData();
-  }, [userPhone]);
+  }, []);
 
   const handleSaveUsername = async () => {
     if (!newUsername.trim()) return;
@@ -65,25 +68,28 @@ function SettingsContent() {
     } catch (err) { alert("Error saving password"); }
   };
 
-  if (!userPhone) {
+  if (!loaded) {
     return React.createElement("div", { className: "flex items-center justify-center min-h-screen text-slate-500 text-sm" }, "Loading user session...");
+  }
+
+  if (!userPhone) {
+    return React.createElement("div", { className: "flex items-center justify-center min-h-screen text-slate-500 text-sm" }, "Session expired");
   }
 
   const skyBlueBtnClass = "bg-[#00CCFF] text-black px-4 py-2 rounded text-sm";
 
   return React.createElement("div", { className: "max-w-4xl mx-auto p-6 relative min-h-screen text-slate-800" },
     React.createElement("div", { className: "absolute top-6 right-6 flex items-center" },
-      // Swapped out custom structural markup for the exact dashboard visual component reference
       React.createElement(AvatarWithBadge, {
         avatar: avatarUrl,
-        vip: vipLevel
+        vipLevel: vipLevel
       })
     ),
     React.createElement("div", { className: "mt-24 max-w-md space-y-8" },
       React.createElement("div", { className: "flex justify-between items-center border-b pb-3" }, React.createElement("span", { className: "text-sm" }, "Phone"), React.createElement("span", { className: "text-slate-400 font-mono text-sm" }, userPhone)),
       React.createElement("div", { className: "border-b pb-3 space-y-3" },
         React.createElement("div", { className: "flex justify-between items-center" }, React.createElement("span", { className: "text-sm" }, "Username"), !isEditingUsername ? React.createElement("button", { onClick: () => setIsEditingUsername(true), className: "text-blue-500 text-sm" }, username || "Set Username") : React.createElement("span", { className: "text-xs text-slate-400" }, "Modifying...")),
-        isEditingUsername && React.createElement("div", { className: "bg-slate-50 p-3 rounded border flex gap-3 items-center" }, React.createElement("input", { type: "text", value: newUsername, onChange: (e) => setNewUsername(e.target.value), className: "border p-2 rounded flex-1 text-sm" }), React.createElement("button", { onClick: handleSaveUsername, className: skyBlueBtnClass }, "Save"))
+        isEditingUsername && React.createElement("div", { className: "bg-slate-50 p-3 rounded border flex gap-3 items-center" }, React.createElement("input", { type: "text", value: newUsername, maxLength: 6, onChange: (e) => setNewUsername(e.target.value.slice(0,6)), className: "border p-2 rounded flex-1 text-sm" }), React.createElement("button", { onClick: handleSaveUsername, className: skyBlueBtnClass }, "Save"))
       ),
       React.createElement("div", { className: "border-b pb-3 space-y-3" },
         React.createElement("div", { className: "flex justify-between items-center" }, React.createElement("span", { className: "text-sm" }, "Modify password"), React.createElement("button", { onClick: () => setIsEditingPassword(!isEditingPassword), className: "text-blue-500 text-sm" }, "Modify Password")),
@@ -94,15 +100,15 @@ function SettingsContent() {
           React.createElement("div", { className: "flex justify-end pt-2" }, React.createElement("button", { onClick: handleSavePassword, className: skyBlueBtnClass }, "Save Password"))
         )
       ),
-      React.createElement("div", { className: "pt-6 flex justify-center" }, React.createElement("button", { onClick: () => alert("Logging out..."), className: skyBlueBtnClass + " px-12" }, "Logout"))
+      React.createElement("div", { className: "pt-6 flex justify-center" }, React.createElement("button", { onClick: () => {localStorage.removeItem('palamedes_user'); window.location.href='/login'}, className: skyBlueBtnClass + " px-12" }, "Logout"))
     )
   );
 }
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-sm text-slate-500">Loading user session...</div>}>
-      <SettingsContent />
-    </Suspense>
+    React.createElement(Suspense, { fallback: React.createElement("div", { className: "flex items-center justify-center min-h-screen text-sm text-slate-500" }, "Loading user session...") },
+      React.createElement(SettingsContent, null)
+    )
   );
 }
