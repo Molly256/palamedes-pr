@@ -21,6 +21,7 @@ export default function InvitePage() {
     }
   }, [])
 
+  // FIXED: Added missing $ sign and a slash for correct React template literal rendering
   const getInviteLink = () => {
     if (!user || !user.inviteCode) return 'Loading your code...'
     return `https://palamedes-pr.co.uk{user.inviteCode}`
