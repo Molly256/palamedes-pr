@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function SettingsPage() {
+// Inner component that handles the search parameters safely
+function SettingsContent() {
   const searchParams = useSearchParams();
   
   // Dynamically reads the active user's phone number from the URL context (e.g., ?phone=+1234567)
@@ -269,5 +270,18 @@ export default function SettingsPage() {
         )
       )
     )
+  );
+}
+
+// Main page export wrapped in a Suspense boundary to fix the build error
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen text-slate-500 text-sm">
+        Loading user session...
+      </div>
+    }>
+      <SettingsContent />
+    </Suspense>
   );
 }
