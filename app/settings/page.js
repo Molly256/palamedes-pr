@@ -1,90 +1,273 @@
-'use client'
-import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
-import AvatarWithBadge from '../../components/AvatarWithBadge'
+"use client";
 
-const S = '#00BFFF' // hot skyblue
-const box = {padding:16, background:'#fff', borderBottom:'1px solid #eee'}
-const inpt = {width:'100%', maxWidth:300, height:36, padding:'0 10px', border:'1px solid #ddd', borderRadius:6, margin:'6px 0', fontWeight:300}
-const btn = {background:S, color:'black', border:'none', borderRadius:6, padding:'8px 16px', fontWeight:300, cursor:'pointer'}
-const lgBtn = {...btn, borderRadius:16, width:'100%', maxWidth:300, marginTop:24}
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 
-export default function Settings(){
-  const r = useRouter()
-  const file = useRef()
-  const [u,setU] = useState({phone:'',nickname:'',username:'',vip:0,avatar:'',password:''})
-  const [nick,setNick] = useState('')
-  const [o,setO] = useState(''),[n,setN] = useState(''),[p,setP] = useState('')
-  const [vipPop,setVipPop] = useState(false)
+export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  
+  // Dynamically reads the active user's phone number from the URL context (e.g., ?phone=+1234567)
+  const userPhone = searchParams.get("phone") || ""; 
 
-  useEffect(()=>{
-    const s = JSON.parse(localStorage.getItem('palamedes_user')||'{}')
-    if(!s.phone) return r.push('/login')
-    fetch(`/api/user?phone=${s.phone}`).then(res=>res.json()).then(d=>{
-      if(d.success){ setU(d.user); setNick(d.user.nickname||d.user.username||'') }
-    })
-  },[])
+  const [username, setUsername] = useState("");
+  const [vipColor, setVipColor] = useState("#64748B");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
 
-  const save = (data)=>{ localStorage.setItem('palamedes_user',JSON.stringify(data)); setU(data) }
+  const [isEditingPassword, setIsEditingPassword] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [repeatPassword, setRepeatPassword] = useState("");
 
-  const avatar = ()=> u.vip<1? setVipPop(true) : file.current.click()
+  // Load backend profile data on component load using the dynamic phone number
+  useEffect(() => {
+    async function loadData() {
+      if (!userPhone) return;
+      try {
+        const response = await fetch(`/api/user-settings?phone=${encodeURIComponent(userPhone)}`);
+        if (response.ok) {
+          const data = await response.json();
+          setUsername(data.username);
+          setNewUsername(data.username);
+          setVipColor(data.vipColor);
+          setAvatarUrl(data.avatarUrl);
+        }
+      } catch (err) {
+        console.error("Failed to load user settings:", err);
+      }
+    }
+    loadData();
+  }, [userPhone]);
 
-  const upAvatar = async(e)=>{
-    const f=e.target.files[0]; if(!f) return
-    const b=await new Promise(res=>{const rd=new FileReader(); rd.onload=()=>res(rd.result); rd.readAsDataURL(f)})
-    const res=await fetch('/api/user',{method:'POST',body:JSON.stringify({action:'updateProfile',phone:u.phone,field:'avatar',value:b})})
-    if((await res.json()).success) save({...u,avatar:b})
+  const handleSaveUsername = async () => {
+    if (!newUsername.trim()) return;
+
+    try {
+      const response = await fetch("/api/user-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "updateUsername",
+          phone: userPhone,
+          username: newUsername,
+        }),
+      });
+
+      if (response.ok) {
+        setUsername(newUsername);
+        setIsEditingUsername(false);
+      } else {
+        alert("Failed to update username");
+      }
+    } catch (err) {
+      alert("Error saving username");
+    }
+  };
+
+  const handleSavePassword = async () => {
+    if (newPassword !== repeatPassword) {
+      alert("New passwords do not match!");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/user-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "updatePassword",
+          phone: userPhone,
+          oldPassword,
+          newPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert("Password updated successfully!");
+        setIsEditingPassword(false);
+        setOldPassword("");
+        setNewPassword("");
+        setRepeatPassword("");
+      } else {
+        alert(data.error || "Failed to update password");
+      }
+    } catch (err) {
+      alert("Error saving password");
+    }
+  };
+
+  const handleLogout = () => {
+    alert("Logging out...");
+  };
+
+  const skyBlueBtnClass = "bg-[#00CCFF] hover:bg-[#00B3E6] text-black font-light px-4 py-2 rounded transition-colors shadow-sm text-sm";
+
+  // Render loading screen if the dynamic phone number hasn't loaded into context yet
+  if (!userPhone) {
+    return React.createElement(
+      "div",
+      { className: "flex items-center justify-center min-h-screen text-slate-500 text-sm" },
+      "Loading user session..."
+    );
   }
 
-  const saveNick = async()=>{
-    if(!nick||nick.length>6) return alert('Max 6 chars')
-    const res=await fetch('/api/user',{method:'POST',body:JSON.stringify({action:'updateProfile',phone:u.phone,field:'nickname',value:nick})})
-    if((await res.json()).success) save({...u,nickname:nick})
-  }
+  return React.createElement(
+    "div",
+    { className: "max-w-4xl mx-auto p-6 relative min-h-screen text-slate-800" },
+    
+    // Top Right Layout Anchor: Avatar and VIP Badge Display
+    React.createElement(
+      "div",
+      { className: "absolute top-6 right-6 flex items-center" },
+      React.createElement(
+        "div",
+        { className: "relative w-16 h-16 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center overflow-hidden" },
+        React.createElement("img", {
+          src: avatarUrl || "https://unsplash.com",
+          alt: "User Avatar",
+          className: "w-full h-full object-cover"
+        }),
+        React.createElement(
+          "div",
+          {
+            className: "absolute bottom-0 right-0 w-5 h-5 rounded-full border border-white flex items-center justify-center shadow-md",
+            style: { backgroundColor: vipColor },
+            title: "VIP Badge"
+          },
+          React.createElement("span", { className: "text-[10px] text-white" }, "★")
+        )
+      )
+    ),
 
-  const savePass = async()=>{
-    if(!o||!n||!p||n!==p||n.length<6) return alert('Check all 3 fields')
-    const res=await fetch('/api/user',{method:'POST',body:JSON.stringify({action:'changePassword',phone:u.phone,oldPass:o,newPass:n})})
-    const d=await res.json(); alert(d.message)
-    if(d.success){ save({...u,password:n}); setO('');setN('');setP('') }
-  }
+    // Primary Left/Below Content Grid
+    React.createElement(
+      "div",
+      { className: "mt-24 max-w-md space-y-8" },
+      
+      // Row 1: Locked Phone Number Interface
+      React.createElement(
+        "div",
+        { className: "flex justify-between items-center border-b pb-3" },
+        React.createElement("span", { className: "font-medium text-slate-600 text-sm" }, "Phone"),
+        React.createElement("span", { className: "text-slate-400 font-mono tracking-wider text-sm" }, userPhone)
+      ),
 
-  return(
-    <div style={{minHeight:'100vh',background:'#f9fafb'}}>
-      <h1 style={{textAlign:'center',padding:16,background:'#fff',borderBottom:'1px solid #eee'}}>Settings</h1>
+      // Row 2: Pop-down Username Modification Box
+      React.createElement(
+        "div",
+        { className: "border-b pb-3 space-y-3" },
+        React.createElement(
+          "div",
+          { className: "flex justify-between items-center" },
+          React.createElement("span", { className: "font-medium text-slate-600 text-sm" }, "Username"),
+          !isEditingUsername
+            ? React.createElement(
+                "button",
+                {
+                  onClick: function() { setIsEditingUsername(true); },
+                  className: "text-blue-500 hover:underline text-sm font-normal"
+                },
+                username || "Set Username"
+              )
+            : React.createElement("span", { className: "text-xs text-slate-400" }, "Modifying Username...")
+        ),
+        isEditingUsername && React.createElement(
+          "div",
+          { className: "bg-slate-50 p-3 rounded border flex gap-3 items-center" },
+          React.createElement("input", {
+            type: "text",
+            value: newUsername,
+            onChange: function(e) { setNewUsername(e.target.value); },
+            className: "border p-2 rounded flex-1 bg-white text-sm focus:outline-none focus:ring-1 focus:ring-[#00CCFF]",
+            placeholder: "Modify username"
+          }),
+          React.createElement(
+            "button",
+            { onClick: handleSaveUsername, className: skyBlueBtnClass },
+            "Save"
+          )
+        )
+      ),
 
-      <div style={{...box,display:'flex',flexDirection:'column',alignItems:'center'}}>
-        <div onClick={avatar}><AvatarWithBadge username={u.username} vipLevel={u.vip} size={90} avatar={u.avatar}/></div>
-        <p style={{fontSize:12,color:'#666'}}>{u.vip<1?'VIP1+ for photo':'Tap to change'}</p>
-        <p>{nick||u.username}</p>
-      </div>
-      <input type="file" ref={file} accept="image/*" onChange={upAvatar} hidden/>
+      // Row 3: Secure 3-Input Password Box Array
+      React.createElement(
+        "div",
+        { className: "border-b pb-3 space-y-3" },
+        React.createElement(
+          "div",
+          { className: "flex justify-between items-center" },
+          React.createElement("span", { className: "font-medium text-slate-600 text-sm" }, "Modify password"),
+          React.createElement(
+            "button",
+            {
+              onClick: function() { setIsEditingPassword(!isEditingPassword); },
+              className: "text-blue-500 hover:underline text-sm font-normal"
+            },
+            "Modify Password"
+          )
+        ),
+        isEditingPassword && React.createElement(
+          "div",
+          { className: "bg-slate-50 p-4 rounded border space-y-3" },
+          React.createElement(
+            "div",
+            null,
+            React.createElement("label", { className: "block text-xs text-slate-500 mb-1" }, "Input old password"),
+            React.createElement("input", {
+              type: "password",
+              value: oldPassword,
+              onChange: function(e) { setOldPassword(e.target.value); },
+              className: "border p-2 rounded w-full bg-white text-sm focus:outline-none focus:ring-1 focus:ring-[#00CCFF]"
+            })
+          ),
+          React.createElement(
+            "div",
+            null,
+            React.createElement("label", { className: "block text-xs text-slate-500 mb-1" }, "Input new password"),
+            React.createElement("input", {
+              type: "password",
+              value: newPassword,
+              onChange: function(e) { setNewPassword(e.target.value); },
+              className: "border p-2 rounded w-full bg-white text-sm focus:outline-none focus:ring-1 focus:ring-[#00CCFF]"
+            })
+          ),
+          React.createElement(
+            "div",
+            null,
+            React.createElement("label", { className: "block text-xs text-slate-500 mb-1" }, "Repeat new password"),
+            React.createElement("input", {
+              type: "password",
+              value: repeatPassword,
+              onChange: function(e) { setRepeatPassword(e.target.value); },
+              className: "border p-2 rounded w-full bg-white text-sm focus:outline-none focus:ring-1 focus:ring-[#00CCFF]"
+            })
+          ),
+          React.createElement(
+            "div",
+            { className: "flex justify-end pt-2" },
+            React.createElement(
+              "button",
+              { onClick: handleSavePassword, className: skyBlueBtnClass },
+              "Save Password"
+            )
+          )
+        )
+      ),
 
-      <div style={box}>
-        <p style={{fontSize:14,fontWeight:300}}>Phone</p>
-        <input style={{...inpt,background:'#f3f3f3'}} value={u.phone} readOnly/>
-        <p style={{fontSize:14,fontWeight:300}}>Nickname 6 max</p>
-        <input style={inpt} value={nick} maxLength={6} onChange={e=>setNick(e.target.value.slice(0,6))}/>
-        <button style={btn} onClick={saveNick}>Save</button>
-      </div>
-
-      <div style={box}>
-        <p style={{fontSize:14,fontWeight:300}}>Password</p>
-        <input style={inpt} type="password" placeholder="Old" value={o} onChange={e=>setO(e.target.value)}/>
-        <input style={inpt} type="password" placeholder="New" value={n} onChange={e=>setN(e.target.value)}/>
-        <input style={inpt} type="password" placeholder="Repeat" value={p} onChange={e=>setP(e.target.value)}/>
-        <button style={btn} onClick={savePass}>Save</button>
-      </div>
-
-      <div style={{...box,border:'none',display:'flex',justifyContent:'center'}}>
-        <button style={lgBtn} onClick={()=>{localStorage.removeItem('palamedes_user');r.push('/login')}}>Logout</button>
-      </div>
-
-      {vipPop&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-        <div style={{background:'#fff',padding:24,borderRadius:8,textAlign:'center'}}>
-          <p>VIP1+ needed for avatar</p><button style={btn} onClick={()=>setVipPop(false)}>OK</button>
-        </div>
-      </div>}
-    </div>
-  )
+      // Exact Centered Layout Placement: Logout Action
+      React.createElement(
+        "div",
+        { className: "pt-6 flex justify-center" },
+        React.createElement(
+          "button",
+          { onClick: handleLogout, className: skyBlueBtnClass + " px-12 py-2.5 text-base" },
+          "Logout"
+        )
+      )
+    )
+  );
 }

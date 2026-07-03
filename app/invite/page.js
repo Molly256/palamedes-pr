@@ -23,7 +23,7 @@ export default function InvitePage() {
 
   const getInviteLink = () => {
     if (!user || !user.inviteCode) return 'Loading your code...'
-    return `https://www.palamedes-pr.co.uk/r/${user.inviteCode}` // <- CHANGED: added /r/
+    return `https://palamedes-pr.co.uk{user.inviteCode}`
   }
 
   const handleCopy = async () => {
@@ -38,16 +38,16 @@ export default function InvitePage() {
   }
 
   const VIPS = [
-    { level: 1, perBook: 625, books: 4 },
-    { level: 2, perBook: 2000, books: 4 },
-    { level: 3, perBook: 6500, books: 4 },
-    { level: 4, perBook: 7000, books: 5 },
-    { level: 5, perBook: 10000, books: 5 },
-    { level: 6, perBook: 14000, books: 5 },
-    { level: 7, perBook: 28000, books: 5 },
-    { level: 8, perBook: 32000, books: 5 },
-    { level: 9, perBook: 40000, books: 5 },
-    { level: 10, perBook: 60000, books: 5 },
+    { level: 1, price: 80000, perBook: 625, books: 4 },
+    { level: 2, price: 250000, perBook: 2000, books: 4 },
+    { level: 3, price: 700000, perBook: 6500, books: 4 },
+    { level: 4, price: 1000000, perBook: 7000, books: 5 },
+    { level: 5, price: 1500000, perBook: 10000, books: 5 },
+    { level: 6, price: 2100000, perBook: 14000, books: 5 },
+    { level: 7, price: 4000000, perBook: 28000, books: 5 },
+    { level: 8, price: 4600000, perBook: 32000, books: 5 },
+    { level: 9, price: 5000000, perBook: 40000, books: 5 },
+    { level: 10, price: 8000000, perBook: 60000, books: 5 },
   ]
 
   const MONTHLY_SALARY_DATA = [
@@ -62,25 +62,24 @@ export default function InvitePage() {
     { level: 'Level 3 (Indirect)', rate: '1%', desc: 'Invited by Level 2' },
   ]
 
+  // CHANGED: Reduced padding and removed whiteSpace: 'nowrap' to prevent overflow swiping
   const tableHeaderStyle = { 
-    padding: '5px 3px', 
-    fontSize: '10px', 
-    fontWeight: '400', 
+    padding: '4px 2px', 
+    fontSize: '9px', 
+    fontWeight: '700', 
     background: '#87CEEB', 
     border: '1px solid #000', 
     color: '#000', 
-    textAlign: 'center',
-    whiteSpace: 'nowrap'
+    textAlign: 'center'
   }
 
   const tableCellStyle = { 
-    padding: '5px 3px', 
-    fontSize: '9.5px', 
+    padding: '4px 2px', 
+    fontSize: '8.5px', 
     fontWeight: '700', 
     border: '1px solid #000', 
     color: '#1E293B', 
-    textAlign: 'center',
-    whiteSpace: 'nowrap'
+    textAlign: 'center'
   }
 
   return (
@@ -118,12 +117,13 @@ export default function InvitePage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <thead>
             <tr>
+              <th style={{ ...tableHeaderStyle, width: '18%' }}>Price</th>
               <th style={{ ...tableHeaderStyle, width: '11%' }}>VIP</th>
-              <th style={{ ...tableHeaderStyle, width: '15%' }}>Tasks</th>
-              <th style={{ ...tableHeaderStyle, width: '14%' }}>Each</th>
-              <th style={{ ...tableHeaderStyle, width: '18%' }}>Daily</th>
-              <th style={{ ...tableHeaderStyle, width: '21%' }}>Monthly</th>
-              <th style={{ ...tableHeaderStyle, width: '21%' }}>Annual</th>
+              <th style={{ ...tableHeaderStyle, width: '13%' }}>Tasks</th>
+              <th style={{ ...tableHeaderStyle, width: '12%' }}>Each</th>
+              <th style={{ ...tableHeaderStyle, width: '14%' }}>Daily</th>
+              <th style={{ ...tableHeaderStyle, width: '16%' }}>Monthly</th>
+              <th style={{ ...tableHeaderStyle, width: '16%' }}>Annual</th>
             </tr>
           </thead>
           <tbody>
@@ -133,6 +133,7 @@ export default function InvitePage() {
               const annual = daily * 365
               return (
                 <tr key={vip.level}>
+                  <td style={{ ...tableCellStyle, color: '#475569' }}>{vip.price.toLocaleString()}</td>
                   <td style={tableCellStyle}>V{vip.level}</td>
                   <td style={tableCellStyle}>{vip.books} bks</td>
                   <td style={tableCellStyle}>{vip.perBook}</td>
@@ -146,7 +147,7 @@ export default function InvitePage() {
         </table>
       </div>
 
-      {/* 3. FIXED: ADDED MONTHLY FIXED TEAM SALARY BONUS MATRIX HERE */}
+      {/* 3. MONTHLY FIXED TEAM SALARY BONUS MATRIX */}
       <h3 style={{ margin: '0 0 8px 4px', fontSize: '13px', fontWeight: '900', color: '#1E293B' }}>💰 MONTHLY SALARY</h3>
       <div style={{ width: '100%', overflowX: 'hidden', marginBottom: '8px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
