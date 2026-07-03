@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, Suspense, useRef } from "react";
+// FIXED: Standard single component import line
 import AvatarWithBadge from "@/components/AvatarWithBadge";
 
 function SettingsContent() {
@@ -13,18 +14,31 @@ function SettingsContent() {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
-  const [loaded, setLoaded] = useState(false);
+  
+  // Keeps the screen invisible for a single millisecond while checking browser data
+  const [isCheckingCache, setIsCheckingCache] = useState(true); 
 
-  // Reference for the hidden file upload selector element
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem('palamedes_user')||'{}');
+    // Safely check for browser environment before hitting localStorage
+    if (typeof window === "undefined") return;
+
+    // 1. Instantly pull whatever data we already have from memory
+    const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}');
     const phone = saved.phone || "";
     setUserPhone(phone);
+    
+    if (saved.username) { setUsername(saved.username); setNewUsername(saved.username); }
+    if (saved.vip) setVipLevel(saved.vip);
+    if (saved.avatar) setAvatarUrl(saved.avatar);
 
+    // Memory reading is complete! Smoothly display layout items
+    setIsCheckingCache(false);
+
+    // 2. Fetch fresh data from the server quietly in the background
     async function loadData() {
-      if (!phone) { setLoaded(true); return; }
+      if (!phone) return;
       try {
         const response = await fetch(`/api/user?phone=${encodeURIComponent(phone)}`);
         if (response.ok) {
@@ -34,10 +48,14 @@ function SettingsContent() {
             setNewUsername(data.user.username || "");
             setVipLevel(data.user.vip || 0);
             setAvatarUrl(data.user.avatar || "");
+            
+            const updatedCache = { ...saved, ...data.user };
+            localStorage.setItem('palamedes_user', JSON.stringify(updatedCache));
           }
         }
-      } catch (err) { console.error("Failed to load:", err); }
-      setLoaded(true);
+      } catch (err) { 
+        console.error("Failed to load fresh backend session sync:", err); 
+      }
     }
     loadData();
   }, []);
@@ -50,7 +68,14 @@ function SettingsContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "updateUsername", phone: userPhone, username: newUsername }),
       });
-      if (response.ok) { setUsername(newUsername); setIsEditingUsername(false); }
+      if (response.ok) { 
+        setUsername(newUsername); 
+        setIsEditingUsername(false); 
+        
+        const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}');
+        saved.username = newUsername;
+        localStorage.setItem('palamedes_user', JSON.stringify(saved));
+      }
     } catch (err) { alert("Error saving username"); }
   };
 
@@ -71,16 +96,15 @@ function SettingsContent() {
     } catch (err) { alert("Error saving password"); }
   };
 
-  // Triggers the hidden upload selection box when clicking the avatar
   const handleAvatarTap = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
 
-  // Processes image file selections directly from the device gallery
   const handleFileChange = async (event) => {
-    const file = event.target.files?.[0];
+    // FIXED: Safe alternative fallback configuration to handle array index items safely
+    const file = event.target.files ? event.target.files[0] : null;
     if (!file) return;
 
     const reader = new FileReader();
@@ -98,6 +122,10 @@ function SettingsContent() {
         });
         if (response.ok) {
           setAvatarUrl(base64String);
+          
+          const saved = JSON.parse(localStorage.getItem('palamedes_user') || '{}');
+          saved.avatar = base64String;
+          localStorage.setItem('palamedes_user', JSON.stringify(saved));
         } else {
           alert("Failed to save selected image");
         }
@@ -109,8 +137,9 @@ function SettingsContent() {
     reader.readAsDataURL(file);
   };
 
-  if (!loaded) {
-    return React.createElement("div", { className: "flex items-center justify-center min-h-screen text-slate-500 text-sm" }, "Loading user session...");
+  // Keep a clean empty screen during server compilation frames
+  if (isCheckingCache) {
+    return React.createElement("div", { className: "min-h-screen bg-transparent" });
   }
 
   if (!userPhone) {

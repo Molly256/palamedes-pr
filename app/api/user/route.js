@@ -46,14 +46,16 @@ export async function GET(request) {
         return Response.json({ success: false, message: "User not found" }, { status: 404 });
       }
 
-      // FIXED: Reads data keys matching dashboard logic precisely
+      // FIXED: Added inviteCode and availableBalance here so your dashboard data doesn't get wiped out!
       return Response.json({
         success: true,
         user: {
           phone: data.phone ? String(data.phone) : phone,
           username: data.username ? String(data.username) : '',
           avatar: data.avatar || '',
-          vip: safeNumber(data.vip)
+          vip: safeNumber(data.vip),
+          inviteCode: data.inviteCode ? String(data.inviteCode) : '',
+          availableBalance: safeNumber(data.availableBalance, 0)
         }
       });
     }
