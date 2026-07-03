@@ -52,7 +52,7 @@ export async function GET(req) {
 
         for (const key of allKeys) {
           const keyParts = key.split(':')
-          const extractedPhone = keyParts[1] || ''
+          const extractedPhone = keyParts[1] || '' // Fixed back to array position [1] ✅
 
           const items = await redis.lrange(key, 0, 199)
           const filtered = items
@@ -133,19 +133,16 @@ export async function POST(req) {
 
       const amount = Number(String(txObj.amount || 0).replace(/,/g, ''))
 
-      // FIXED LOGIC PATHS
+      // FIXED LOGIC PATHS WITH hincrbyfloat
       if (status === 'success') {
-        // Only deposits increase balance here now. Withdrawals were already deducted upfront!
         if (txObj.type === 'deposit') {
-          await redis.hincrby(`user:${finalPhone}`, 'availableBalance', amount)
+          await redis.hincrbyfloat(`user:${finalPhone}`, 'availableBalance', amount)
         }
       } 
       else if (status === 'failed') {
-        // AUTOMATED REFUND SYSTEM: Reverse the 10% fee to return the exact gross balance
-        // If txObj.amount is 9,000shs, grossRefund is calculated back to exactly 10,000shs
         if (txObj.type === 'withdraw') {
           const grossRefund = Math.round(amount / 0.9)
-          await redis.hincrby(`user:${finalPhone}`, 'availableBalance', grossRefund)
+          await redis.hincrbyfloat(`user:${finalPhone}`, 'availableBalance', grossRefund)
         }
       }
 
