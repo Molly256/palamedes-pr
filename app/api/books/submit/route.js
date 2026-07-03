@@ -42,6 +42,7 @@ export async function POST(request) {
     const bookKey = `book:${phone}:${today}:${bookId}`;
     const userKey = `user:${phone}`;
     const txKey = `tx:${phone}:${today}`;
+    const historyKey = `tx:${phone}:history`; // FIXED: Added your master history timeline key
     const incomeKey = `income:${phone}:${today}`; 
 
     const userData = await redis.hgetall(userKey);
@@ -123,9 +124,11 @@ export async function POST(request) {
         completedBooks: JSON.stringify(currentCompleted)
       });
 
-      // 3. Document logs to ledger histories
-      await redis.lpush(txKey, JSON.stringify(tx)); 
-      await redis.lpush(incomeKey, JSON.stringify(tx)); 
+      // 3. Document logs to ledger histories (FIXED: Added dual-writing execution link to historyKey)
+      const txString = JSON.stringify(tx);
+      await redis.lpush(txKey, txString); 
+      await redis.lpush(historyKey, txString); 
+      await redis.lpush(incomeKey, txString); 
 
       return NextResponse.json({
         success: true,
@@ -136,10 +139,10 @@ export async function POST(request) {
       });
     }
 
-    return NextResponse.json({ error: 'Invalid action specified' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid action specified' }, { status: 400 })
 
   } catch (error) {
-    console.error('API /books/submit Error:', error);
-    return NextResponse.json({ error: 'Internal system failure' }, { status: 500 });
+    console.error('API /books/submit Error:', error)
+    return NextResponse.json({ error: 'Internal system failure' }, { status: 500 })
   }
 }

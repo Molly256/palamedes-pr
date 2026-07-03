@@ -3,28 +3,57 @@ export const dynamic = 'force-dynamic';
 
 import { Redis } from '@upstash/redis'; 
 import { NextResponse } from 'next/server';
-import fs from 'fs/promises'; 
+import fs from 'fs'; 
 import path from 'path'; 
-import crypto from 'crypto';
 import { VIPS } from '@/app/config/vips';
 
 const redis = Redis.fromEnv();
+
+// --- INSTANT LAG FIX: PRE-LOAD AND CACHE BOOKS MEMORY ENGINE ---
+let CACHED_VALID_BOOKS = null;
+
+function getValidBooksCached() {
+  if (CACHED_VALID_BOOKS) return CACHED_VALID_BOOKS;
+  try {
+    const booksPath = path.join(process.cwd(), 'app/data/books.json');
+    const coversPath = path.join(process.cwd(), 'public/books/covers');
+    
+    const allBooks = JSON.parse(fs.readFileSync(booksPath, 'utf8'));
+    const coverFiles = fs.readdirSync(coversPath);
+    const coverIds = new Set(coverFiles.map(f => f.replace(/\.jpg$/i, '')));
+    
+    CACHED_VALID_BOOKS = allBooks.filter(b => coverIds.has(String(b.id)));
+    return CACHED_VALID_BOOKS;
+  } catch (err) {
+    console.error("Failed to cache books library:", err);
+    return [];
+  }
+}
+
+// Ultra-fast random picking engine that avoids heavy array duplication loops
+function pickRandomBooks(count) {
+  const pool = getValidBooksCached();
+  if (pool.length === 0) return [];
+  
+  const result = [];
+  const chosenIndices = new Set();
+  const actualCount = Math.min(count, pool.length);
+  
+  while (chosenIndices.size < actualCount) {
+    const randIdx = Math.floor(Math.random() * pool.length);
+    if (!chosenIndices.has(randIdx)) {
+      chosenIndices.add(randIdx);
+      result.push(pool[randIdx]);
+    }
+  }
+  return result;
+}
+
 const safeParse = function(s, f) { 
   if (f === undefined) f = [];
   if (!s) return f; 
   return typeof s === 'object' ? s : JSON.parse(s); 
 };
-
-function shuffle(a) { 
-  var r = a.slice(); 
-  for (var i = r.length - 1; i > 0; i--) { 
-    var j = Math.floor(Math.random() * (i + 1)); 
-    var tmp = r[i];
-    r[i] = r[j];
-    r[j] = tmp;
-  } 
-  return r; 
-}
 
 const getUgandaDateString = function() { 
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' }); 
@@ -34,17 +63,14 @@ const getUgandaDateTimeString = function() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0, 16).replace(',', ' '); 
 };
 
-async function assignBooksToUser(phone, vipLevel, today, pipeline) {
+// Optimized assignBooksToUser runs instantaneously from server memory cache
+function assignBooksToUser(phone, vipLevel, today, pipeline) {
   const selectedVip = VIPS[vipLevel];
-  const allBooks = await fs.readFile(path.join(process.cwd(), 'app/data/books.json'), 'utf8').then(JSON.parse);
-  const coverFiles = await fs.readdir(path.join(process.cwd(), 'public/books/covers'));
-  const coverIds = new Set(coverFiles.map(function(f) { return f.replace(/\.jpg$/i, ''); }));
-  const validBooks = allBooks.filter(function(b) { return coverIds.has(String(b.id)); });
+  const validBooks = pickRandomBooks(selectedVip.books);
   
   if (validBooks.length === 0) throw new Error('No books found');
-  const assigned = shuffle(validBooks).slice(0, Math.min(selectedVip.books, validBooks.length));
   
-  assigned.forEach(function(b) {
+  validBooks.forEach(function(b) {
     pipeline.hset('book:' + phone + ':' + today + ':' + b.id, { 
       phone: phone, 
       bookId: String(b.id), 
@@ -60,8 +86,8 @@ async function assignBooksToUser(phone, vipLevel, today, pipeline) {
   });
   
   return { 
-    unlockedBooks: assigned.map(function(b) { return String(b.id); }), 
-    assignedBooksMeta: assigned.map(function(b) { 
+    unlockedBooks: validBooks.map(function(b) { return String(b.id); }), 
+    assignedBooksMeta: validBooks.map(function(b) { 
       return { id: String(b.id), title: b.title, cover: '/books/covers/' + b.id + '.jpg', reward: selectedVip.perBook }; 
     }) 
   };
@@ -111,11 +137,11 @@ export async function POST(req) {
     const isFirst = user.hasBoughtVip !== 'true' && user.hasBoughtVip !== true;
     const dateStr = getUgandaDateString();
     const timeStr = getUgandaDateTimeString();
-    const txKey = 'tx:' + phone + ':' + dateStr;
+    const historyKey = 'tx:' + phone + ':history'; 
     const pipeline = redis.pipeline();
     
     let assignResult = isFirst 
-      ? await assignBooksToUser(phone, vipLevel, dateStr, pipeline) 
+      ? assignBooksToUser(phone, vipLevel, dateStr, pipeline) // Async dropped completely for speed!
       : { unlockedBooks: safeParse(user.unlockedBooks), assignedBooksMeta: [] };
       
     let unlockedBooks = assignResult.unlockedBooks;
@@ -123,22 +149,22 @@ export async function POST(req) {
     let newBalance = currentBalance - upgradeCost + (isFirst ? 0 : currentPricePaid);
 
     if (!isFirst) {
-      pipeline.lpush(txKey, JSON.stringify({ 
+      pipeline.lpush(historyKey, JSON.stringify({ 
         id: 'rf_' + Date.now(), 
         type: 'refund_vip', 
         amount: String(currentPricePaid), 
         note: 'VIP ' + currentVip + ' Refund', 
-        status: 'completed', 
+        status: 'success', 
         createdAt: timeStr 
       }));
     }
     
-    pipeline.lpush(txKey, JSON.stringify({ 
+    pipeline.lpush(historyKey, JSON.stringify({ 
       id: 'by_' + Date.now(), 
       type: 'buy_vip', 
       amount: String(-upgradeCost), 
       note: VIPS[vipLevel].name + ' Purchase', 
-      status: 'completed', 
+      status: 'success', 
       createdAt: timeStr 
     }));
     
@@ -172,49 +198,71 @@ export async function POST(req) {
   }
 }
 
-// FIXED: PROCESS HIERARCHICAL REWARDS ALIGNED TO PROPER A, B, C STORAGE KEYS
 async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
   try {
-    const vipAmts = { 1: 80000, 2: 250000, 3: 790000, 4: 1000000, 5: 1500000, 6: 2100000, 7: 4000000, 8: 4600000, 9: 5000000, 10: 8000000 };
-    const today = getUgandaDateString();
-    const timeStr = getUgandaDateTimeString();
+    const vipAmts = { 1: 80000, 2: 250000, 3: 790000 };
+    const timeStr = getUgandanDateTimeString();
     const rates = [0.05, 0.02, 0.01];
     const labels = ['A', 'B', 'C'];
-    
-    // Aligns logs perfectly to match custom filters inside transaction page history maps
     const typeFlags = ['team_a_payout', 'team_b_payout', 'team_c_payout'];
     
-    let currentBuyer = buyerPhone;
+    const parent = await redis.hget('user:' + buyerPhone, 'invited_by');
+    if (!parent || !/^07\d{8}$/.test(String(parent).trim())) return;
+    const cleanParent = String(parent).trim();
+
+    const grandparent = await redis.hget('user:' + cleanParent, 'invited_by');
+    const cleanGrandparent = grandparent && /^07\d{8}$/.test(String(grandparent).trim()) ? String(grandparent).trim() : null;
+
+    let greatGrandparent = null;
+    if (cleanGrandparent) {
+      const ggrand = await redis.hget('user:' + cleanGrandparent, 'invited_by');
+      greatGrandparent = ggrand && /^07\d{8}$/.test(String(ggrand).trim()) ? String(ggrand).trim() : null;
+    }
+
+    const chain = [cleanParent, cleanGrandparent, greatGrandparent];
+    
+    const vipFetches = chain.map(function(phone) {
+      return phone ? redis.hget('user:' + phone, 'vip') : Promise.resolve(null);
+    });
+    const vips = await Promise.all(vipFetches);
+
+    const commissionPipeline = redis.pipeline();
+    let hasQueuedOps = false;
 
     for (let i = 0; i < 3; i++) {
-      const upline = await redis.hget('user:' + currentBuyer, 'invited_by'); 
-      if (!upline) break;
-      
-      // FIXED: Strict safety shield. If it reads a legacy index or broken field pattern, skip immediately.
-      if (!/^07\d{8}$/.test(String(upline).trim())) {
-        break;
-      }
-      
-      const uplineVip = Number(await redis.hget('user:' + upline, 'vip') || 0);
+      const uplinePhone = chain[i];
+      if (!uplinePhone) break;
+
+      const uplineVip = Number(vips[i] || 0);
       if (uplineVip > 0) {
         const reward = Math.floor((vipAmts[Math.min(uplineVip, buyerVipLevel)] || 0) * rates[i]);
         if (reward > 0) {
-          // FIXED: Uses distinct matching type parameters so items land safely into your COMMISSION directory blocks
-          await redis.lpush('tx:' + upline + ':' + today, JSON.stringify({ 
-            id: 'tx_' + Date.now() + '_' + labels[i], 
-            type: typeFlags[i], // Saves as team_a_payout, team_b_payout, or team_c_payout
-            label: 'Team ' + labels[i] + ' Commission',
+          hasQueuedOps = true;
+          const uplineHistoryKey = 'tx:' + uplinePhone + ':history';
+          
+          commissionPipeline.lpush(uplineHistoryKey, JSON.stringify({ 
+            id: 'tx_' + Date.now() + '_' + labels[i] + '_' + Math.random().toString(36).slice(2, 5), 
+            type: typeFlags[i], 
+            label: 'commission', 
             amount: String(reward), 
             note: 'Invitation Rewards (Team ' + labels[i] + ': ' + buyerPhone + ')', 
-            status: 'completed', 
+            status: 'success', 
             createdAt: timeStr 
           }));
-          await redis.hincrbyfloat('user:' + upline, 'availableBalance', reward);
+          
+          commissionPipeline.hincrby('user:' + uplinePhone, 'availableBalance', reward);
         }
       }
-      currentBuyer = upline;
+    }
+
+    if (hasQueuedOps) {
+      await commissionPipeline.exec();
     }
   } catch (err) { 
     console.error('Commission crash:', err); 
   }
+}
+
+function getUgandanDateTimeString() {
+  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '');
 }

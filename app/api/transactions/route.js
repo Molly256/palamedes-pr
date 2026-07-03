@@ -6,7 +6,6 @@ import { NextResponse } from 'next/server'
 
 const redis = Redis.fromEnv() 
 
-// FIXED: Added nice formatting labels for team commission payouts
 const getLabel = (tx) => {
   const t = String(tx.type || '').toLowerCase().trim()
   if (t === 'buy_vip' || t === 'vip') return `VIP ${tx.vipLevel || ''} Purchase`.trim()
@@ -16,6 +15,7 @@ const getLabel = (tx) => {
   if (t === 'daily_income' || t === 'book_income') return 'Daily Income'
   if (t === 'shares') return 'Shares Purchase'
   if (t === 'shares_collected' || t === 'collect_hot') return 'Shares Payout Collected'
+  if (t === 'system_increase') return 'Registration Reward'
   
   if (t === 'team_a_payout') return 'Team A Direct Commission'
   if (t === 'team_b_payout') return 'Team B Indirect Commission'
@@ -55,25 +55,23 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Invalid amount value' }, { status: 400 })
     }
 
-    const isWithdrawal = String(type).toLowerCase() === 'withdraw'
+    const cleanType = String(type).toLowerCase().trim()
+    const isWithdrawal = cleanType === 'withdraw'
 
-    // Enforce operational restrictions on withdrawals (Mon-Fri, 10:00 AM - 5:00 PM Ugandan time)
     if (isWithdrawal) {
       const ugandaTimeStr = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
       const ugandaDate = new Date(ugandaTimeStr)
-      const day = ugandaDate.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      const day = ugandaDate.getDay() 
       const hours = ugandaDate.getHours()
       const minutes = ugandaDate.getMinutes()
 
-      // Block weekends
       if (day < 1 || day > 5) {
         return NextResponse.json({ error: 'Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
       }
 
-      // Block hours outside 10:00 AM to 5:00 PM
       const totalMinutes = hours * 60 + minutes
-      const startMinutes = 10 * 60 // 10:00 AM
-      const endMinutes = 17 * 60   // 05:00 PM
+      const startMinutes = 10 * 60 
+      const endMinutes = 17 * 60   
 
       if (totalMinutes < startMinutes || totalMinutes > endMinutes) {
         return NextResponse.json({ error: 'Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
@@ -81,8 +79,6 @@ export async function POST(req) {
     }
 
     const userKey = `user:${phone}`
-
-    // FIXED: Calculate the pre-fee gross amount to ensure correct Redis wallet deduction
     const grossDeduction = isWithdrawal ? Math.round(amt / 0.9) : amt
 
     if (isWithdrawal) {
@@ -90,23 +86,22 @@ export async function POST(req) {
       if (grossDeduction > currentAvailableBalance) {
         return NextResponse.json({ error: 'Insufficient availableBalance' }, { status: 400 })
       }
-      // Deduct the full raw total from Redis securely
       await redis.hincrby(userKey, 'availableBalance', -grossDeduction)
     }
 
     const id = customId || `tx_${Date.now()}_${Math.random().toString(36).slice(2)}`
     
     let status = 'success'
-    if (type === 'deposit' || isWithdrawal) status = 'pending'
-    if (type === 'completed') status = 'success'
+    if (cleanType === 'deposit' || isWithdrawal) status = 'pending'
+    if (cleanType === 'completed' || cleanType === 'success') status = 'success'
 
     const dateStr = getUgandaDateString();
     const timeStr = getUgandaDateTimeString();
 
     const tx = {
       id, 
-      type: String(type).toLowerCase().trim(), 
-      label: getLabel({type, vipLevel}), 
+      type: cleanType, 
+      label: getLabel({type: cleanType, vipLevel}), 
       amount: String(amount), 
       status, 
       createdAt: timeStr, 
@@ -125,14 +120,10 @@ export async function POST(req) {
 
     const pipeline = redis.pipeline()
     
-    // 1. Push into today's specific daily list log
     pipeline.lpush(dayKey, txString)
-    
-    // 2. DUAL-WRITE: Push to the user's permanent lifetime history master log
     pipeline.lpush(historyKey, txString)
     
     if (status === 'pending') {
-      // 3. Pin today's daily key onto the Admin Notification Board so they don't lag
       pipeline.sadd('admin:pending_txs', dayKey)
       pipeline.lpush('pending_tx', id) 
     }
@@ -147,18 +138,19 @@ export async function POST(req) {
 }
 
 // =========================================================================
-// GET: Fetch user transactions instantly from the single lifetime history key
+// GET: Fetch user transactions strictly from the single lifetime history key
 // =========================================================================
 export async function GET(request) {
   try {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    // Read user details and lifetime history list in parallel
     const historyKey = `tx:${phone}:history`
+
+    // Read details and history in parallel cleanly without executing sync loops
     const [userHash, rawItems] = await Promise.all([
       redis.hgetall(`user:${phone}`) || {},
-      redis.lrange(historyKey, 0, 399) || [] // Fetches up to 400 recent transactions fast
+      redis.lrange(historyKey, 0, 399) || []
     ])
     
     const availableBalance = Number(userHash.availableBalance || 0)
@@ -173,6 +165,7 @@ export async function GET(request) {
         if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
         if (uiType === 'shares') uiType = 'shares'
         if (uiType === 'shares_collected') uiType = 'shares'
+        if (uiType === 'system_increase') uiType = 'system_increase'
         
         if (uiType === 'team_a_payout') uiType = 'team_a_payout'
         if (uiType === 'team_b_payout') uiType = 'team_b_payout'
