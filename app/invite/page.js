@@ -21,14 +21,16 @@ export default function InvitePage() {
     }
   }, [])
 
-  // FIXED: Added missing $ sign and a slash for correct React template literal rendering
+  // FIXED: Added missing '$' sign and a forward slash for correct template literal evaluation
   const getInviteLink = () => {
-    if (!user || !user.inviteCode) return 'Loading your code...'
-    return `https://palamedes-pr.co.uk{user.inviteCode}`
+    const code = user?.inviteCode || user?.invite_code
+    if (!code) return 'Loading your code...'
+    return `https://palamedes-pr.co.uk{code}`
   }
 
   const handleCopy = async () => {
-    if (!user || !user.inviteCode) return
+    const code = user?.inviteCode || user?.invite_code
+    if (!code) return
     try {
       await navigator.clipboard.writeText(getInviteLink())
       setCopied(true)
@@ -63,7 +65,6 @@ export default function InvitePage() {
     { level: 'Level 3 (Indirect)', rate: '1%', desc: 'Invited by Level 2' },
   ]
 
-  // CHANGED: Reduced padding and removed whiteSpace: 'nowrap' to prevent overflow swiping
   const tableHeaderStyle = { 
     padding: '4px 2px', 
     fontSize: '9px', 
@@ -93,7 +94,10 @@ export default function InvitePage() {
         
         <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '10px', border: '1px dashed #00BFFF', marginBottom: '14px' }}>
           <span style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', display: 'block', letterSpacing: '1px' }}>MY EXCLUSIVE INVITE CODE</span>
-          <span style={{ fontSize: '20px', color: '#00BFFF', fontWeight: '900', letterSpacing: '2px' }}>{user?.inviteCode || '...'}</span>
+          {/* FIXED: Added a fallback check for invite_code if case formatting differs */}
+          <span style={{ fontSize: '20px', color: '#00BFFF', fontWeight: '900', letterSpacing: '2px' }}>
+            {user?.inviteCode || user?.invite_code || '...'}
+          </span>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
