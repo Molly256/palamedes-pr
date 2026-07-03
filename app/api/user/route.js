@@ -167,16 +167,20 @@ export async function POST(request) {
       return Response.json({ success: true });
     }
 
-    // Handle Password Update from settings block
+    // Handle Password Update from settings block - FIXED ONLY THIS BLOCK
     if (action === "updatePassword") {
-      const currentPassword = await redis.hget(userKey, "password");
-
-      if (!currentPassword || currentPassword !== oldPassword) {
-        return Response.json({ error: "Incorrect old password" }, { status: 400 });
+      const user = await redis.hgetall(userKey); // 1. Read user:phone key from Redis
+      if (isEmptyHash(user)) {
+        return Response.json({ success: false, message: "User not found" }, { status: 404 });
       }
 
-      await redis.hset(userKey, { password: newPassword });
-      return Response.json({ success: true });
+      const currentPassword = String(user.password || ''); // 2. Lookup password field
+      if (currentPassword !== String(oldPassword)) { // 3. If user old password matches Redis password
+        return Response.json({ success: false, message: "Incorrect old password" }, { status: 400 });
+      }
+
+      await redis.hset(userKey, { password: String(newPassword) }); // 4. Remove old, store new password
+      return Response.json({ success: true, message: "Password updated" });
     }
 
     return Response.json({ success: false, message: 'Invalid action' }, { status: 400 })
