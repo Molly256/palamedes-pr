@@ -14,12 +14,10 @@ const toNum = function(v, f) {
   return Number.isNaN(n) ? f : n
 }
 
-// Outputs full 4-digit year format (e.g., 2026-07-02)
 const getUgandanFullDate = function() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' })
 }
 
-// Outputs full time structure (e.g., 2026-07-02 14:32)
 const getUgandanDateTimeString = function() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ' ')
 }
@@ -59,31 +57,35 @@ export async function POST(req) {
 
       let directInviterPhone = null
 
-      // --- ASYNCHRONOUS REFERRAL CHAIN TREE RECONSTRUCTION ---
       if (referrerCode && /^PM\d{6}$/.test(referrerCode)) {
         directInviterPhone = await redis.get('invite_code_map:' + referrerCode) 
         
         if (directInviterPhone && String(directInviterPhone) !== String(phone)) {
-          const newUserPhoneKey = String(phone).trim();
+          const cleanInviter = String(directInviterPhone).trim()
+          const newUserPhoneKey = String(phone).trim()
           
-          // BUG FIX: Wrap the field and value inside an object payload map so Upstash pipelines process it accurately!
-          const dataA = {};
-          dataA[newUserPhoneKey] = '1';
-          pipeline.hset('downlines:' + String(directInviterPhone).trim(), dataA) 
+          const parentData = await redis.hget('user:' + cleanInviter, 'invited_by')
+          const grandparentPhone = parentData ? String(parentData).trim() : null
+          
+          let greatGrandparentPhone = null
+          if (grandparentPhone) {
+            const grandData = await redis.hget('user:' + grandparentPhone, 'invited_by')
+            greatGrandparentPhone = grandData ? String(grandData).trim() : null
+          }
 
-          // Find Grandparent (Team B) Phone
-          const grandparentPhone = await redis.hget('user:' + String(directInviterPhone).trim(), 'invited_by')
-          if (grandparentPhone && String(grandparentPhone) !== String(phone)) {
-            const dataB = {};
-            dataB[newUserPhoneKey] = '2';
-            pipeline.hset('downlines:' + String(grandparentPhone).trim(), dataB) 
+          const dataA = {}
+          dataA[newUserPhoneKey] = '1'
+          pipeline.hset('downlines:' + cleanInviter, dataA)
 
-            // Find Great Grandparent (Team C) Phone
-            const greatGrandparentPhone = await redis.hget('user:' + String(grandparentPhone).trim(), 'invited_by')
-            if (greatGrandparentPhone && String(greatGrandparentPhone) !== String(phone)) {
-              const dataC = {};
-              dataC[newUserPhoneKey] = '3';
-              pipeline.hset('downlines:' + String(greatGrandparentPhone).trim(), dataC) 
+          if (grandparentPhone && grandparentPhone !== newUserPhoneKey) {
+            const dataB = {}
+            dataB[newUserPhoneKey] = '2'
+            pipeline.hset('downlines:' + grandparentPhone, dataB)
+
+            if (greatGrandparentPhone && greatGrandparentPhone !== newUserPhoneKey) {
+              const dataC = {}
+              dataC[newUserPhoneKey] = '3'
+              pipeline.hset('downlines:' + greatGrandparentPhone, dataC)
             }
           }
         }
@@ -105,7 +107,7 @@ export async function POST(req) {
       }
 
       if (directInviterPhone && String(directInviterPhone) !== String(phone)) {
-        userProfile.invited_by = String(directInviterPhone)
+        userProfile.invited_by = String(directInviterPhone).trim()
       } else {
         userProfile.invited_by = ''
       }
@@ -113,15 +115,18 @@ export async function POST(req) {
       pipeline.hset(userKey, userProfile)
       pipeline.set('invite_code_map:' + inviteCode, String(phone).trim()) 
 
-      pipeline.lpush('tx:' + String(phone).trim() + ':' + date, JSON.stringify({
+      const txPayload = JSON.stringify({
         id: crypto.randomUUID(),
-        type: 'system_increase',
+        type: 'system_increase', 
         label: 'Registration Reward', 
         amount: '2500',
         note: 'Registration Reward',
-        status: 'completed',
+        status: 'success', 
         createdAt: timeStr
-      }));
+      });
+
+      pipeline.lpush('tx:' + String(phone).trim() + ':' + date, txPayload)
+      pipeline.lpush('tx:' + String(phone).trim() + ':history', txPayload)
 
       await pipeline.exec()
       return NextResponse.json({ success: true, inviteCode: inviteCode }) 
@@ -144,6 +149,21 @@ export async function POST(req) {
       }
 
       const currentDate = getUgandanFullDate() 
+
+      const rawDownlines = await redis.hgetall('downlines:' + String(phone).trim()) || {}
+      
+      let teamACount = 0
+      let teamBCount = 0
+      let teamCCount = 0
+
+      const keys = Object.keys(rawDownlines);
+      for (let i = 0; i < keys.length; i++) {
+        const val = rawDownlines[keys[i]];
+        if (val === '1') teamACount++
+        else if (val === '2') teamBCount++
+        else if (val === '3') teamCCount++
+      }
+
       const safeUser = {
         username: String(user.username),
         phone: String(user.phone),
@@ -152,7 +172,13 @@ export async function POST(req) {
         availableBalance: toNum(user.availableBalance, 2500),
         books_read_today: toNum(user.books_read_today),
         dailyIncome: toNum(user.dailyIncome),
-        createdAt: String(user.createdAt || currentDate) 
+        createdAt: String(user.createdAt || currentDate),
+        teamStats: {
+          teamA: teamACount,
+          teamB: teamBCount,
+          teamC: teamCCount,
+          totalTeamSize: teamACount + teamBCount + teamCCount
+        }
       }
 
       return NextResponse.json({ success: true, user: safeUser })
