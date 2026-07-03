@@ -221,10 +221,11 @@ async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
 
     const chain = [cleanParent, cleanGrandparent, greatGrandparent];
     
-    const vipFetches = chain.map(function(phone) {
-      return phone ? redis.hget('user:' + phone, 'vip') : Promise.resolve(null);
+    // --- EDITED HERE: Fetch both 'vip' AND 'hasBoughtVip' for all upline users concurrently ---
+    const dataFetches = chain.map(function(phone) {
+      return phone ? redis.hmget('user:' + phone, ['vip', 'hasBoughtVip']) : Promise.resolve(null);
     });
-    const vips = await Promise.all(vipFetches);
+    const uplineData = await Promise.all(dataFetches);
 
     const commissionPipeline = redis.pipeline();
     let hasQueuedOps = false;
@@ -233,7 +234,16 @@ async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
       const uplinePhone = chain[i];
       if (!uplinePhone) break;
 
-      const uplineVip = Number(vips[i] || 0);
+      // --- EDITED HERE: Parse data or fall back to defaults ---
+      const userData = uplineData[i] || [null, null];
+      const uplineVip = Number(userData[0] || 0);
+      const hasBoughtVipStatus = userData[1];
+
+      // RESTRICTION CHECK: Skip this user completely if they haven't bought VIP
+      if (hasBoughtVipStatus !== 'true' && hasBoughtVipStatus !== true) {
+        continue; // Bypasses the payment logic entirely for this specific user
+      }
+
       if (uplineVip > 0) {
         const reward = Math.floor((vipAmts[Math.min(uplineVip, buyerVipLevel)] || 0) * rates[i]);
         if (reward > 0) {
