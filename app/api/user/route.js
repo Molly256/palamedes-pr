@@ -100,7 +100,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, phone, username, password, oldPassword, newPassword } = body
+    // Added avatar to the destructured body fields
+    const { action, phone, username, avatar, password, oldPassword, newPassword } = body
 
     if (!phone) {
       return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
@@ -138,6 +139,8 @@ export async function POST(request) {
       const updateData = {}
       if (username) updateData.username = String(username)
       if (password) updateData.password = String(password)
+      // 👇 FIXED: This saves the avatar string to your Upstash Redis database
+      if (avatar) updateData.avatar = String(avatar) 
 
       // FIXED: Stop empty hash writes from crashing your database execution pipeline
       if (Object.keys(updateData).length === 0) {

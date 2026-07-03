@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useRef } from "react";
 import AvatarWithBadge from "@/components/AvatarWithBadge";
 
 function SettingsContent() {
@@ -14,6 +14,9 @@ function SettingsContent() {
   const [newPassword, setNewPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
   const [loaded, setLoaded] = useState(false);
+
+  // Reference for the hidden file upload selector element
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem('palamedes_user')||'{}');
@@ -68,6 +71,44 @@ function SettingsContent() {
     } catch (err) { alert("Error saving password"); }
   };
 
+  // Triggers the hidden upload selection box when clicking the avatar
+  const handleAvatarTap = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  // Processes image file selections directly from the device gallery
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result;
+      try {
+        const response = await fetch("/api/user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update",
+            phone: userPhone,
+            avatar: base64String
+          }),
+        });
+        if (response.ok) {
+          setAvatarUrl(base64String);
+        } else {
+          alert("Failed to save selected image");
+        }
+      } catch (err) {
+        console.error("Error uploading image:", err);
+        alert("Error saving image");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   if (!loaded) {
     return React.createElement("div", { className: "flex items-center justify-center min-h-screen text-slate-500 text-sm" }, "Loading user session...");
   }
@@ -80,9 +121,19 @@ function SettingsContent() {
 
   return React.createElement("div", { className: "max-w-4xl mx-auto p-6 relative min-h-screen text-slate-800" },
     React.createElement("div", { className: "absolute top-6 right-6 flex items-center" },
-      React.createElement(AvatarWithBadge, {
-        avatar: avatarUrl,
-        vipLevel: vipLevel
+      React.createElement("div", { onClick: handleAvatarTap, style: { cursor: "pointer" } },
+        React.createElement(AvatarWithBadge, {
+          avatar: avatarUrl,
+          vipLevel: vipLevel,
+          username: username
+        })
+      ),
+      React.createElement("input", {
+        type: "file",
+        ref: fileInputRef,
+        onChange: handleFileChange,
+        accept: "image/*",
+        style: { display: "none" }
       })
     ),
     React.createElement("div", { className: "mt-24 max-w-md space-y-8" },
