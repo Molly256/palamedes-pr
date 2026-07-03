@@ -21,11 +21,11 @@ export default function InvitePage() {
     }
   }, [])
 
-  // FIXED: Added missing '$' sign and a forward slash for correct template literal evaluation
+  // FIXED: Generates the tracking link layout with the /r/ subpath included
   const getInviteLink = () => {
     const code = user?.inviteCode || user?.invite_code
     if (!code) return 'Loading your code...'
-    return `https://palamedes-pr.co.uk{code}`
+    return 'https://www.palamedes-pr.co.uk/r/' + code
   }
 
   const handleCopy = async () => {
@@ -94,7 +94,6 @@ export default function InvitePage() {
         
         <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '10px', border: '1px dashed #00BFFF', marginBottom: '14px' }}>
           <span style={{ fontSize: '10px', fontWeight: '800', color: '#94A3B8', display: 'block', letterSpacing: '1px' }}>MY EXCLUSIVE INVITE CODE</span>
-          {/* FIXED: Added a fallback check for invite_code if case formatting differs */}
           <span style={{ fontSize: '20px', color: '#00BFFF', fontWeight: '900', letterSpacing: '2px' }}>
             {user?.inviteCode || user?.invite_code || '...'}
           </span>
