@@ -13,11 +13,6 @@ const toNum = function(v, f) {
   return Number.isNaN(n) ? f : n;
 };
 
-// Outputs the full 4-digit year format (e.g., 2026-07-02)
-const getUgandanFullDate = function() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Kampala' });
-};
-
 /**
  * GET: Fetches actual user live data directly out from Upstash Redis hashes and lists
  */
@@ -30,8 +25,10 @@ export async function GET(request) {
       return NextResponse.json({ success: false, error: 'Valid phone parameter is required' }, { status: 400 }); 
     }
 
+    const cleanPhone = String(phone).trim();
+
     // 1. Parse Upstash Redis hgetall downlines mapping tree
-    const downlinesData = await redis.hgetall('downlines:' + phone);
+    const downlinesData = await redis.hgetall('downlines:' + cleanPhone);
     const downlines = downlinesData && typeof downlinesData === 'object' ? downlinesData : {};
     
     const rawListA = [];
@@ -46,30 +43,35 @@ export async function GET(request) {
       if (stringLevel === '3') rawListC.push(p); // Indirect Team C
     });
 
-    // FIXED: Enforce strict structural integrity check to remove ghost entries
-    // If you have no members in Team A, you cannot logically have a Team B or C.
-    // If you have no members in Team B, you cannot logically have a Team C.
     const cleanListA = rawListA;
     const cleanListB = cleanListA.length === 0 ? [] : rawListB;
     const cleanListC = (cleanListA.length === 0 || cleanListB.length === 0) ? [] : rawListC;
 
-    // 2. Pull transaction records using the exact matching full year date string pattern
-    const fullDateStr = getUgandanFullDate(); // Outputs YYYY-MM-DD
+    // 2. FIXED: Scan for EVERY date list matching your pattern "tx:phone:2026-mm-dd"
+    let allRecords = [];
+
+    // A. Grab the primary persistent transaction file array if it exists
+    const rawHistoryMain = await redis.lrange('user:' + cleanPhone + ':tx_history', 0, -1) || [];
+    allRecords = allRecords.concat(rawHistoryMain);
+
+    // B. Find all historical date lists across your entire system timeline
+    const userKeysPattern = `tx:${cleanPhone}:*`;
+    const historicalDateLists = await redis.keys(userKeysPattern) || [];
+
+    // Loop through every single day folder list found in memory
+    for (const listKey of historicalDateLists) {
+      const recordsForDay = await redis.lrange(listKey, 0, -1) || [];
+      allRecords = allRecords.concat(recordsForDay);
+    }
     
-    // Fetch from both structural transaction arrays in your app architecture
-    const rawHistoryMain = await redis.lrange('user:' + phone + ':tx_history', 0, -1) || [];
-    const rawHistoryDaily = await redis.lrange('tx:' + phone + ':' + fullDateStr, 0, -1) || [];
-    
-    // Combine logs into a unified processing stack
-    const combinedRaw = rawHistoryMain.concat(rawHistoryDaily);
-    
-    const history = combinedRaw.map(function(item) {
+    // Process and parse all raw transaction JSON strings safely into standard objects
+    const history = allRecords.map(function(item) {
       if (!item) return null;
       return typeof item === 'string' ? JSON.parse(item) : item;
     }).filter(Boolean);
 
-    // 3. Calculate pure invitation rewards only (Completely removed system registration rewards)
-    const teamCommissionTotal = history.reduce(function(sum, tx) {
+    // 3. FIXED: Loops through all dates and compiles old plus new payouts into one massive total
+    const cumulativeCommission = history.reduce(function(sum, tx) {
       const txNote = String(tx.note || '');
       const txType = String(tx.type || '').toLowerCase().trim();
       
@@ -78,7 +80,8 @@ export async function GET(request) {
         txType === 'team_a_payout' ||
         txType === 'team_b_payout' ||
         txType === 'team_c_payout' ||
-        txNote.includes('Invitation Rewards')
+        txNote.includes('Invitation Rewards') ||
+        txNote.toLowerCase().includes('commission')
       ) {
         return sum + toNum(tx.amount, 0);
       }
@@ -88,8 +91,8 @@ export async function GET(request) {
     // 4. Return matching payload interface structure for your frontend layout elements
     return NextResponse.json({
       success: true,
-      total: teamCommissionTotal, 
-      teamCommissionTotal: teamCommissionTotal,        
+      total: cumulativeCommission, 
+      teamCommissionTotal: cumulativeCommission,        
       breakdown: {
         teamA: cleanListA.length, 
         teamB: cleanListB.length, 
