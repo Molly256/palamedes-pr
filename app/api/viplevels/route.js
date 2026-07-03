@@ -202,6 +202,8 @@ async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
   try {
     const vipAmts = { 1: 80000, 2: 250000, 3: 790000 };
     const timeStr = getUgandanDateTimeString();
+    
+    // Original locked rates: Index 0 = 5% (Team A), Index 1 = 2% (Team B), Index 2 = 1% (Team C)
     const rates = [0.05, 0.02, 0.01];
     const labels = ['A', 'B', 'C'];
     const typeFlags = ['team_a_payout', 'team_b_payout', 'team_c_payout'];
@@ -221,7 +223,7 @@ async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
 
     const chain = [cleanParent, cleanGrandparent, greatGrandparent];
     
-    // --- EDITED HERE: Fetch both 'vip' AND 'hasBoughtVip' for all upline users concurrently ---
+    // Fetch both 'vip' AND 'hasBoughtVip' for all upline users concurrently
     const dataFetches = chain.map(function(phone) {
       return phone ? redis.hmget('user:' + phone, ['vip', 'hasBoughtVip']) : Promise.resolve(null);
     });
@@ -232,19 +234,24 @@ async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
 
     for (let i = 0; i < 3; i++) {
       const uplinePhone = chain[i];
-      if (!uplinePhone) break;
+      
+      // Keep moving up the tree chain even if an intermediate parent number is blank
+      if (!uplinePhone) {
+        continue; 
+      }
 
-      // --- EDITED HERE: Parse data or fall back to defaults ---
       const userData = uplineData[i] || [null, null];
       const uplineVip = Number(userData[0] || 0);
       const hasBoughtVipStatus = userData[1];
 
-      // RESTRICTION CHECK: Skip this user completely if they haven't bought VIP
+      // RESTRICTION CHECK: Skip this specific user completely if they haven't bought VIP.
+      // They get nothing, but 'i' keeps increasing so the next parent keeps their original rate!
       if (hasBoughtVipStatus !== 'true' && hasBoughtVipStatus !== true) {
-        continue; // Bypasses the payment logic entirely for this specific user
+        continue; 
       }
 
       if (uplineVip > 0) {
+        // Uses the exact index 'i' so rates/labels match their real tree placement perfectly
         const reward = Math.floor((vipAmts[Math.min(uplineVip, buyerVipLevel)] || 0) * rates[i]);
         if (reward > 0) {
           hasQueuedOps = true;
@@ -274,5 +281,3 @@ async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
 }
 
 function getUgandanDateTimeString() {
-  return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '');
-}
