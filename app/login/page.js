@@ -31,6 +31,7 @@ export default function Login() {
     }
 
     try {
+      // FIXED: Strictly calls /api/auth to verify system credentials
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -44,13 +45,16 @@ export default function Login() {
       const data = await res.json()
 
       if (!res.ok) {
+        // FIXED: Reads data.error to match your /api/auth backend file structure
         alert(data.error || 'Authentication failed')
         lockRef.current = false 
         return
       }
 
       if (data && data.user) {
-        localStorage.setItem('palamedes_user', JSON.stringify({user: data.user})) // FIXED
+        localStorage.setItem('palamedes_user', JSON.stringify(data.user))
+
+        // FIXED: Forced admin redirect is removed. Everyone lands on the dashboard!
         router.push('/dashboard')
       } else {
         alert('Server returned an incomplete user session. Please try again.')
