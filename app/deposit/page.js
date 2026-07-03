@@ -107,9 +107,9 @@ export default function Deposit() {
       <button
         onClick={handleDeposit}
         disabled={loading}
-        className="w-full py-3 bg-green-500 text-white rounded font-bold text-lg disabled:opacity-50"
+        className="w-full py-3 bg-[#00CCFF] text-black font-light text-lg rounded disabled:opacity-50" // CHANGED: hot skyblue + light weight black text
       >
-        {loading? 'Processing...' : 'I HAVE PAID THE MONEY'}
+        {loading? 'Processing...' : 'PAYMENT DONE'}
       </button>
 
       <p className="text-gray-600 text-sm mt-3 text-center">
