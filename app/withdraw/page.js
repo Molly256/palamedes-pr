@@ -167,7 +167,7 @@ export default function Withdraw() {
           <p>Minimum withdraw amount: <span className="text-black font-extrabold">10,000shs</span></p>
           <p>Withdraw days: <span className="text-black font-extrabold">Monday to Friday</span></p>
           <p>Withdraw time: <span className="text-black font-extrabold">10:00am -5:00pm</span></p>
-          <p>Money will arrive in your mobile money wallet within <span className="text-green-600 font-extrabold">30mins -24hors max.</span></p>
+          <p>Money will arrive in your mobile money wallet within <span className="text-green-600 font-extrabold">30mins -24hours max.</span></p>
         </div>
       </div>
     </div>
