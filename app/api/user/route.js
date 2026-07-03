@@ -43,14 +43,18 @@ export async function GET(request) {
       const data = await redis.hgetall(userKey);
 
       if (isEmptyHash(data)) {
-        return Response.json({ error: "User not found" }, { status: 404 });
+        return Response.json({ success: false, message: "User not found" }, { status: 404 });
       }
 
+      // FIXED: Reads data keys matching dashboard logic precisely
       return Response.json({
-        phone: data.phone || phone,
-        username: data.username || "",
-        avatarUrl: data.avatarUrl || "",
-        vipColor: VIP_COLORS[data.vipLevel] || "#64748B",
+        success: true,
+        user: {
+          phone: data.phone ? String(data.phone) : phone,
+          username: data.username ? String(data.username) : '',
+          avatar: data.avatar || '',
+          vip: safeNumber(data.vip)
+        }
       });
     }
 

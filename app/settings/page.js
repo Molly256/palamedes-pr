@@ -1,13 +1,14 @@
 "use client";
 import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import AvatarWithBadge from "@/components/AvatarWithBadge";
 
 function SettingsContent() {
   const searchParams = useSearchParams();
   const userPhone = searchParams.get("phone") || ""; 
 
   const [username, setUsername] = useState("");
-  const [vipColor, setVipColor] = useState("#64748B");
+  const [vipLevel, setVipLevel] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState("");
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [newUsername, setNewUsername] = useState("");
@@ -26,8 +27,8 @@ function SettingsContent() {
           if (data.success && data.user) {
             setUsername(data.user.username || "");
             setNewUsername(data.user.username || "");
-            setVipColor(data.user.vipColor || "#64748B");
-            setAvatarUrl(data.user.avatarUrl || "");
+            setVipLevel(data.user.vip || 0);
+            setAvatarUrl(data.user.avatar || "");
           }
         }
       } catch (err) { console.error("Failed to load:", err); }
@@ -72,10 +73,11 @@ function SettingsContent() {
 
   return React.createElement("div", { className: "max-w-4xl mx-auto p-6 relative min-h-screen text-slate-800" },
     React.createElement("div", { className: "absolute top-6 right-6 flex items-center" },
-      React.createElement("div", { className: "relative w-16 h-16 rounded-full bg-slate-200 border overflow-hidden" },
-        React.createElement("img", { src: avatarUrl || "https://unsplash.com", className: "w-full h-full object-cover" }),
-        React.createElement("div", { className: "absolute bottom-0 right-0 w-5 h-5 rounded-full border border-white flex items-center justify-center shadow", style: { backgroundColor: vipColor } }, React.createElement("span", { className: "text-[10px] text-white" }, "★"))
-      )
+      // Swapped out custom structural markup for the exact dashboard visual component reference
+      React.createElement(AvatarWithBadge, {
+        avatar: avatarUrl,
+        vip: vipLevel
+      })
     ),
     React.createElement("div", { className: "mt-24 max-w-md space-y-8" },
       React.createElement("div", { className: "flex justify-between items-center border-b pb-3" }, React.createElement("span", { className: "text-sm" }, "Phone"), React.createElement("span", { className: "text-slate-400 font-mono text-sm" }, userPhone)),
