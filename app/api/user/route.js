@@ -6,6 +6,13 @@ export const dynamic = 'force-dynamic';
 // FIXED: Using standard fromEnv initializer prevents configuration sync mismatches
 const redis = Redis.fromEnv()
 
+const VIP_COLORS = {
+  bronze: "#CD7F32",
+  silver: "#C0C0C0",
+  gold: "#FFD700",
+  platinum: "#E5E4E2",
+};
+
 function safeNumber(val, fallback = 0) {
   if (val === undefined || val === null) return fallback
   const n = Number(val)
@@ -28,6 +35,23 @@ export async function GET(request) {
 
     if (!phone) {
       return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
+    }
+
+    // Settings block feature fallback: handled if no specific action is provided
+    if (!action) {
+      const userKey = `user:${phone}`;
+      const data = await redis.hgetall(userKey);
+
+      if (isEmptyHash(data)) {
+        return Response.json({ error: "User not found" }, { status: 404 });
+      }
+
+      return Response.json({
+        phone: data.phone || phone,
+        username: data.username || "",
+        avatarUrl: data.avatarUrl || "",
+        vipColor: VIP_COLORS[data.vipLevel] || "#64748B",
+      });
     }
 
     if (action === 'getDashboard') {
@@ -72,7 +96,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { action, phone, username, password } = body
+    const { action, phone, username, password, oldPassword, newPassword } = body
 
     if (!phone) {
       return Response.json({ success: false, message: 'Phone required' }, { status: 400 })
@@ -131,6 +155,24 @@ export async function POST(request) {
           avatar: updatedUser.avatar || ''
         }
       })
+    }
+
+    // Handle Username Update from settings block
+    if (action === "updateUsername") {
+      await redis.hset(userKey, { username });
+      return Response.json({ success: true });
+    }
+
+    // Handle Password Update from settings block
+    if (action === "updatePassword") {
+      const currentPassword = await redis.hget(userKey, "password");
+
+      if (!currentPassword || currentPassword !== oldPassword) {
+        return Response.json({ error: "Incorrect old password" }, { status: 400 });
+      }
+
+      await redis.hset(userKey, { password: newPassword });
+      return Response.json({ success: true });
     }
 
     return Response.json({ success: false, message: 'Invalid action' }, { status: 400 })
