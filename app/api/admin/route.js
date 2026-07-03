@@ -5,155 +5,105 @@ import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
 const redis = Redis.fromEnv()
+const parse = s => typeof s === 'object' ? s : JSON.parse(s || 'null')
 
-const safeParse = (s) => { 
-  if (typeof s === 'object') return s
-  try { return JSON.parse(s) } catch { return null } 
+const dateKey = (p, d = 0) => { 
+  const x = new Date()
+  x.setUTCDate(x.getUTCDate() - d)
+  return `tx:${p}:${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}` 
 }
 
-// Generates the pattern with the full 4-digit year (e.g., 2026)
-const getDateKey = (phone, offsetDays = 0) => {
-  const d = new Date()
-  d.setDate(d.getDate() - offsetDays)
-  const yyyy = d.getFullYear() 
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `tx:${phone}:${yyyy}-${mm}-${dd}`
-}
-
-// GET: /api/admin?action=pending
 export async function GET(req) {
   try {
-    const action = req.nextUrl.searchParams.get('action')
-    const phone = req.nextUrl.searchParams.get('phone')
+    const a = req.nextUrl.searchParams.get('action'), ph = req.nextUrl.searchParams.get('phone')
 
-    if (action === 'pending') {
-      let pending = []
+    if (a === 'pending') {
+      const keys = ph ? [dateKey(ph, 0), dateKey(ph, 1)] : await redis.smembers('admin:pending_txs') || []
+      let list = []
 
-      if (phone) {
-        let allItems = []
-        for (let i = 0; i < 2; i++) {
-          const key = getDateKey(phone, i)
-          const items = await redis.lrange(key, 0, 199)
-          allItems.push(...items)
-        }
-        pending = allItems
-          .map(raw => safeParse(raw))
-          .filter(tx => tx && tx.status === 'pending')
-          .map(tx => ({ ...tx, phone })) 
-      } 
-      else {
-        const todayPattern = getDateKey('*', 0)
-        const yesterdayPattern = getDateKey('*', 1)
+      if (keys.length > 0) {
+        const allLists = await Promise.all(keys.map(k => redis.lrange(k, 0, 199))), deadKeys = []
 
-        const todayKeys = await redis.keys(todayPattern) || []
-        const yesterdayKeys = await redis.keys(yesterdayPattern) || []
-        const allKeys = [...todayKeys, ...yesterdayKeys]
-
-        for (const key of allKeys) {
-          const keyParts = key.split(':')
-          const extractedPhone = keyParts[1] || '' // Fixed back to array position [1] ✅
-
-          const items = await redis.lrange(key, 0, 199)
-          const filtered = items
-            .map(raw => safeParse(raw))
-            .filter(tx => tx && tx.status === 'pending')
-            .map(tx => ({ ...tx, phone: tx.phone || extractedPhone })) 
-            
-          pending.push(...filtered)
-        }
+        keys.forEach((k, idx) => {
+          const parts = String(k || '').split(':'), phKey = ph || parts[1] || '', items = allLists[idx] || []
+          const filtered = items.map(parse).filter(t => t?.status === 'pending').map(t => ({ ...t, phone: t.phone || phKey }))
+          if (!ph && filtered.length === 0) deadKeys.push(k)
+          else list.push(...filtered)
+        })
+        if (deadKeys.length > 0) await redis.srem('admin:pending_txs', ...deadKeys)
       }
-      
-      return NextResponse.json({ success: true, pending })
+      return NextResponse.json({ success: true, pending: list })
     }
 
-    if (action === 'user') {
-      if (!phone) return NextResponse.json({ success: false, error: 'Phone required' }, { status: 400 })
-      const user = await redis.hgetall(`user:${phone}`)
-      if (!user || !Object.keys(user).length) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
+    if (a === 'user') {
+      if (!ph) return NextResponse.json({ success: false, error: 'Phone required' }, { status: 400 })
+      const u = await redis.hgetall(`user:${ph}`)
+      if (!u || !u.phone) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
       
-      try { user.unlockedBooks = JSON.parse(user.unlockedBooks || '[]'); user.completedBooks = JSON.parse(user.completedBooks || '[]') } catch { user.unlockedBooks = []; user.completedBooks = [] }
-      user.availableBalance = Number(user.availableBalance || 0)
-      user.vip = Number(user.vip || 0)
-      return NextResponse.json({ success: true, user })
+      try { u.unlockedBooks = JSON.parse(u.unlockedBooks || '[]') } catch { u.unlockedBooks = [] }
+      try { u.completedBooks = JSON.parse(u.completedBooks || '[]') } catch { u.completedBooks = [] }
+      u.availableBalance = +u.availableBalance || 0; u.vip = +u.vip || 0
+      return NextResponse.json({ success: true, user: u })
     }
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
   } catch (err) { return NextResponse.json({ success: false, error: err.message }, { status: 500 }) }
 }
 
-// POST: updateStatus, resetPassword
 export async function POST(req) {
   try {
-    const { action, id, status, password, phone: inputPhone } = await req.json()
+    const { action, id, status, password, phone: ph } = await req.json()
 
     if (action === 'updateStatus') {
-      if (!id || !status) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      let key = await redis.hget('tx:lookup', id), p = ph
 
-      let txObj = null, keyFound = null, idx = -1, finalPhone = inputPhone
-
-      if (finalPhone) {
-        for (let i = 0; i < 2; i++) {
-          const key = getDateKey(finalPhone, i)
-          const items = await redis.lrange(key, 0, 199)
-          idx = items.findIndex(it => safeParse(it)?.id === id)
-          if (idx !== -1) {
-            keyFound = key
-            txObj = safeParse(items[idx])
-            break
-          }
-        }
+      if (!key && p) {
+        const uKeys = [dateKey(p, 0), dateKey(p, 1)], res = await Promise.all(uKeys.map(k => redis.lrange(k, 0, 199)))
+        for (let i = 0; i < 2; i++) { if ((res[i] || []).findIndex(x => parse(x)?.id === id) > -1) { key = uKeys[i]; break; } }
+      }
+      if (!key) {
+        const activeKeys = await redis.smembers('admin:pending_txs') || [], res = await Promise.all(activeKeys.map(k => redis.lrange(k, 0, 199)))
+        for (let i = 0; i < activeKeys.length; i++) { if ((res[i] || []).findIndex(x => parse(x)?.id === id) > -1) { key = activeKeys[i]; break; } }
       }
 
-      if (!txObj) {
-        const todayKeys = await redis.keys(getDateKey('*', 0)) || []
-        const yesterdayKeys = await redis.keys(getDateKey('*', 1)) || []
-        const allKeys = [...todayKeys, ...yesterdayKeys]
+      if (!key) return NextResponse.json({ success: false, error: `Transaction not found: ${id}` }, { status: 404 })
 
-        for (const key of allKeys) {
-          const items = await redis.lrange(key, 0, 199)
-          idx = items.findIndex(it => safeParse(it)?.id === id)
-          if (idx !== -1) {
-            keyFound = key
-            txObj = safeParse(items[idx])
-            const keyParts = key.split(':')
-            finalPhone = keyParts[1] 
-            break
-          }
-        }
+      const items = await redis.lrange(key, 0, 199) || [], originalItemString = items.find(x => parse(x)?.id === id)
+      if (!originalItemString) return NextResponse.json({ success: false, error: 'Transaction missing' }, { status: 404 })
+      
+      const tx = parse(originalItemString)
+      
+      // FIXED: Always fallback to the phone number embedded inside the transaction object itself
+      if (!p) p = tx.phone || key.split(':')[1] || ''
+      if (!p) return NextResponse.json({ success: false, error: 'Could not resolve user phone number' }, { status: 400 })
+      if (tx.status !== 'pending') return NextResponse.json({ success: false, error: 'Transaction already processed' }, { status: 400 })
+
+      const updatedTx = { ...tx, status, updatedAt: String(Date.now()) }, updatedTxString = JSON.stringify(updatedTx)
+      
+      // FIXED: Removed Promise.all here. We must remove the old item BEFORE pushing the new one to prevent list bugs.
+      await redis.lrem(key, 1, originalItemString)
+      await redis.lpush(key, updatedTxString)
+
+      const hKey = `tx:${p}:history`, hItems = await redis.lrange(hKey, 0, 399) || [], oldHistoryString = hItems.find(x => parse(x)?.id === id)
+      if (oldHistoryString) {
+        await redis.lrem(hKey, 1, oldHistoryString)
+        await redis.lpush(hKey, updatedTxString)
       }
 
-      if (!txObj || !finalPhone) return NextResponse.json({ success: false, error: `Transaction not found: ${id}` }, { status: 404 })
-      if (txObj.status === 'success' || txObj.status === 'failed') {
-        return NextResponse.json({ success: false, error: 'Transaction already processed' }, { status: 400 })
+      if (!items.map(x => parse(x)?.id === id ? updatedTx : parse(x)).some(t => t?.status === 'pending')) {
+        await redis.srem('admin:pending_txs', key)
       }
 
-      txObj.status = status
-      txObj.updatedAt = String(Date.now())
-      await redis.lset(keyFound, idx, JSON.stringify(txObj))
-
-      const amount = Number(String(txObj.amount || 0).replace(/,/g, ''))
-
-      // FIXED LOGIC PATHS WITH hincrbyfloat
-      if (status === 'success') {
-        if (txObj.type === 'deposit') {
-          await redis.hincrbyfloat(`user:${finalPhone}`, 'availableBalance', amount)
-        }
-      } 
-      else if (status === 'failed') {
-        if (txObj.type === 'withdraw') {
-          const grossRefund = Math.round(amount / 0.9)
-          await redis.hincrbyfloat(`user:${finalPhone}`, 'availableBalance', grossRefund)
-        }
-      }
+      const amt = +String(tx.amount || 0).replace(/,/g, '')
+      if (status === 'success' && tx.type === 'deposit') await redis.hincrbyfloat(`user:${p}`, 'availableBalance', amt)
+      if (status === 'failed' && tx.type === 'withdraw') await redis.hincrbyfloat(`user:${p}`, 'availableBalance', Math.round(amt / 0.9))
 
       return NextResponse.json({ success: true })
     }
 
     if (action === 'resetPassword') {
-      if (!inputPhone || !password) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
-      const user = await redis.hgetall(`user:${inputPhone}`)
-      if (!user || !Object.keys(user).length) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
-      await redis.hset(`user:${inputPhone}`, { password })
+      if (!ph || !password) return NextResponse.json({ success: false, error: 'Missing data' }, { status: 400 })
+      if (!await redis.hexists(`user:${ph}`, 'phone')) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
+      await redis.hset(`user:${ph}`, { password })
       return NextResponse.json({ success: true })
     }
     return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })

@@ -38,7 +38,9 @@ function getUgandaDateTimeString() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '');
 }
 
+// =========================================================================
 // POST: Save transaction entry and update availableBalance atomically
+// =========================================================================
 export async function POST(req) {
   try {
     const body = await req.json()
@@ -81,7 +83,6 @@ export async function POST(req) {
     const userKey = `user:${phone}`
 
     // FIXED: Calculate the pre-fee gross amount to ensure correct Redis wallet deduction
-    // If frontend sends 9,000shs (after fee), grossDeduction is exactly 10,000shs
     const grossDeduction = isWithdrawal ? Math.round(amt / 0.9) : amt
 
     if (isWithdrawal) {
@@ -89,7 +90,7 @@ export async function POST(req) {
       if (grossDeduction > currentAvailableBalance) {
         return NextResponse.json({ error: 'Insufficient availableBalance' }, { status: 400 })
       }
-      // Deduct the full raw total (10,000shs) from Redis securely
+      // Deduct the full raw total from Redis securely
       await redis.hincrby(userKey, 'availableBalance', -grossDeduction)
     }
 
@@ -106,7 +107,7 @@ export async function POST(req) {
       id, 
       type: String(type).toLowerCase().trim(), 
       label: getLabel({type, vipLevel}), 
-      amount: String(amount), // Keeps the post-fee value (9,000shs) for admin pending history
+      amount: String(amount), 
       status, 
       createdAt: timeStr, 
       phone, 
@@ -118,13 +119,25 @@ export async function POST(req) {
       note: note || ''
     }
 
+    const txString = JSON.stringify(tx)
+    const dayKey = `tx:${phone}:${dateStr}`
+    const historyKey = `tx:${phone}:history`
+
     const pipeline = redis.pipeline()
-    pipeline.lpush(`tx:${phone}:${dateStr}`, JSON.stringify(tx))
+    
+    // 1. Push into today's specific daily list log
+    pipeline.lpush(dayKey, txString)
+    
+    // 2. DUAL-WRITE: Push to the user's permanent lifetime history master log
+    pipeline.lpush(historyKey, txString)
+    
     if (status === 'pending') {
+      // 3. Pin today's daily key onto the Admin Notification Board so they don't lag
+      pipeline.sadd('admin:pending_txs', dayKey)
       pipeline.lpush('pending_tx', id) 
     }
-    await pipeline.exec()
     
+    await pipeline.exec()
     return NextResponse.json({ success: true, transaction: tx })
     
   } catch (err) {
@@ -133,36 +146,28 @@ export async function POST(req) {
   }
 }
 
-// GET: Fetch user transactions and pass exact availableBalance format to UI
+// =========================================================================
+// GET: Fetch user transactions instantly from the single lifetime history key
+// =========================================================================
 export async function GET(request) {
   try {
     const phone = request.nextUrl.searchParams.get('phone')
     if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
 
-    const userHash = await redis.hgetall(`user:${phone}`) || {}
+    // Read user details and lifetime history list in parallel
+    const historyKey = `tx:${phone}:history`
+    const [userHash, rawItems] = await Promise.all([
+      redis.hgetall(`user:${phone}`) || {},
+      redis.lrange(historyKey, 0, 399) || [] // Fetches up to 400 recent transactions fast
+    ])
+    
     const availableBalance = Number(userHash.availableBalance || 0)
 
-    const [txKeys, incomeKeys] = await Promise.all([
-      redis.keys(`tx:${phone}:2026-*`),
-      redis.keys(`income:${phone}:*`)
-    ])
-
-    const allKeys = [...txKeys, ...incomeKeys]
-    if (!allKeys.length) {
-      return NextResponse.json({ success: true, availableBalance, transactions: [] })
-    }
-
-    const all = []
-    for (const k of allKeys) {
-      const items = await redis.lrange(k, 0, 199)
-      for (const item of items) {
+    const transactions = rawItems
+      .map(item => {
         const tx = safeParse(item)
-        if (tx) all.push(tx)
-      }
-    }
+        if (!tx) return null
 
-    const transactions = all
-      .map(tx => {
         let uiType = String(tx.type || '').toLowerCase().trim();
         if (uiType === 'buy_vip') uiType = 'vip' 
         if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
@@ -190,6 +195,7 @@ export async function GET(request) {
           vipLevel: tx.vipLevel || ''
         };
       })
+      .filter(Boolean)
       .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
 
