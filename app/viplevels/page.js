@@ -68,7 +68,7 @@ export default function VipLevels() {
     const today = new Date().toISOString().split('T')[0]
     const lastReset = userData.lastResetDate || ''
 
-    if (lastReset!== today) {
+    if (lastReset !== today) {
       userData.books_read_today = 0
       userData.dailyIncome = 0
       userData.lastResetDate = today
@@ -100,7 +100,7 @@ export default function VipLevels() {
     }
 
     const currentPricePaid = Number(user.vipPricePaid || 0)
-    const upgradeCost = vip.price - currentPricePaid // full diff required
+    const upgradeCost = vip.price - currentPricePaid 
 
     if ((user.availableBalance || 0) < vip.price) {
       showToast('Insufficient Available Balance')
@@ -111,7 +111,7 @@ export default function VipLevels() {
     try {
       const dateStr = getTodayDateStrFullYear();
       const timeStr = getTodayTimeStrKampala();
-      const isWeekend = isWeekendUganda();
+      const isWeekend = isWeekendUganda(); 
 
       const res = await fetch('/api/viplevels', {
         method: 'POST',
@@ -124,26 +124,25 @@ export default function VipLevels() {
             vipName: vip.name,
             price: vip.price,
             books: vip.books,
-            dateStr, // 2026-MM-DD
-            timeStr, // 2026-MM-DD HH:mm
-            assignBooks:!isWeekend // false on Saturday/Sunday Uganda time, true Mon-Fri
+            dateStr, 
+            timeStr, 
+            assignBooks: !isWeekend 
           }
         })
       })
 
       const data = await res.json()
 
-      if (!data.success ||!data.user) {
+      if (!data.success || !data.user) {
         showToast(data.message || 'Purchase failed')
         setLoading(false)
         return
       }
 
-      // Instant books on first buy: backend returns unlockedBooks
-      const updatedUser = {...data.user }
+      const updatedUser = { ...data.user }
       localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
       setUser(updatedUser)
-      showToast(isWeekend? 'VIP Buy Successful - Books unlock on Monday' : 'VIP Buy Successful') // auto-dismiss, no OK
+      showToast(isWeekend ? 'VIP Buy Successful - Books unlock on Monday' : 'VIP Buy Successful') 
 
     } catch (err) {
       showToast('Error: ' + err.message)
@@ -195,13 +194,13 @@ export default function VipLevels() {
           const isCurrent = currentVipLevel === vip.level
           const isOwned = currentVipLevel >= vip.level
           const isLocked = vip.level >= 4
-          const canBuy = vip.level > currentVipLevel &&!isLocked
+          const canBuy = vip.level > currentVipLevel && !isLocked
 
           return (
             <div key={vip.level} style={{
               background: hotColors[vip.level],
               padding: '18px 20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between',
-              alignItems: 'center', minHeight: '75px', opacity: isOwned? 0.6 : 1
+              alignItems: 'center', minHeight: '75px', opacity: isOwned ? 0.6 : 1
             }}>
               <div style={{ color: '#000' }}>
                 <p style={{ margin: 0, fontWeight: '900', fontSize: '16px', color: '#000' }}>{vip.name}</p>
@@ -218,8 +217,8 @@ export default function VipLevels() {
                     disabled={loading}
                     style={{
                       padding: '10px 24px', borderRadius: '50px', border: 'none',
-                      background: 'white', fontWeight: '900', cursor: loading? 'not-allowed' : 'pointer',
-                      color: '#000', opacity: loading? 0.6 : 1
+                      background: 'white', fontWeight: '900', cursor: loading ? 'not-allowed' : 'pointer',
+                      color: '#000', opacity: loading ? 0.6 : 1
                     }}
                   >
                     BUY
@@ -227,7 +226,7 @@ export default function VipLevels() {
                 )}
                 {isLocked && vip.level > currentVipLevel && <div style={{ fontSize: '28px' }}>🔒</div>}
                 {isCurrent && <div style={{ fontSize: '24px' }}>✅</div>}
-                {isOwned &&!isCurrent && <div style={{ fontSize: '18px', fontWeight: '900', color: '#000' }}>Owned</div>}
+                {isOwned && !isCurrent && <div style={{ fontSize: '18px', fontWeight: '900', color: '#000' }}>Owned</div>}
               </div>
             </div>
           )
