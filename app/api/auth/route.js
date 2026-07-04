@@ -42,6 +42,11 @@ export async function POST(req) {
       if (!/^[a-zA-Z0-9]{6}$/.test(password)) {
         return NextResponse.json({ error: 'Password must be 6 alphanumeric chars' }, { status: 400 })
       }
+      
+      // 🛑 INVITE CODE MANDATORY RESTRICTION CHECK
+      if (!referrerCode || !/^PM\d{6}$/.test(referrerCode)) {
+        return NextResponse.json({ error: 'Valid invite code required' }, { status: 400 })
+      }
 
       const userKey = 'user:' + String(phone).trim()
       const exists = await redis.hget(userKey, 'phone')

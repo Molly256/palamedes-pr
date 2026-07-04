@@ -61,6 +61,13 @@ export async function POST(req) {
     if (isWithdrawal) {
       const ugandaTimeStr = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
       const ugandaDate = new Date(ugandaTimeStr)
+      
+      // 🛑 WEEKEND RESTRICTION CHECK: 0 = Sunday, 6 = Saturday
+      const day = ugandaDate.getDay()
+      if (day === 0 || day === 6) {
+        return NextResponse.json({ error: 'No time for withdraw on weekends! Please withdraw from Monday to Friday.' }, { status: 400 })
+      }
+
       const hours = ugandaDate.getHours()
       const minutes = ugandaDate.getMinutes()
 
