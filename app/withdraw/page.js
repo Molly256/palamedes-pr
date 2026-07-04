@@ -16,8 +16,8 @@ export default function Withdraw() {
     if (!localUser.phone) return router.push('/login')
 
     fetch(`/api/admin?action=user&phone=${localUser.phone}`)
-      .then(res => res.json())
-      .then(data => {
+     .then(res => res.json())
+     .then(data => {
         if (data.success) {
           setUser(data.user)
           localStorage.setItem('palamedes_user', JSON.stringify(data.user))
@@ -31,17 +31,13 @@ export default function Withdraw() {
     const ugandaTimeString = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
     const ugandaDate = new Date(ugandaTimeString)
 
-    const day = ugandaDate.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
     const hours = ugandaDate.getHours()
     const minutes = ugandaDate.getMinutes()
 
-    // Enforce Monday (1) to Friday (5)
-    if (day < 1 || day > 5) return false
-
     // Convert time to total minutes from midnight for easy range check
     const currentTotalMinutes = hours * 60 + minutes
-    const startMinutes = 10 * 60       // 10:00 AM
-    const endMinutes = 17 * 60         // 05:00 PM
+    const startMinutes = 10 * 60 // 10:00 AM
+    const endMinutes = 17 * 60 // 05:00 PM
 
     return currentTotalMinutes >= startMinutes && currentTotalMinutes <= endMinutes
   }
@@ -49,12 +45,12 @@ export default function Withdraw() {
   const handleWithdraw = async () => {
     // 1. Time restriction check
     if (!isWithdrawalWindowOpen()) {
-      return alert('Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.')
+      return alert('Withdrawals are only open 10:00 AM - 5:00 PM Ugandan Time.')
     }
 
     if (!method) return alert('Select a method first')
 
-    if (!form.phoneNumber || form.phoneNumber.length !== 10 || !/^07\d{8}$/.test(form.phoneNumber)) {
+    if (!form.phoneNumber || form.phoneNumber.length!== 10 ||!/^07\d{8}$/.test(form.phoneNumber)) {
       return alert('invalid number')
     }
 
@@ -86,11 +82,11 @@ export default function Withdraw() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'withdraw', 
-          phone: user.phone, 
+          type: 'withdraw',
+          phone: user.phone,
           amount: amountAfterFee, // Sends 9,000shs to admin pending log if input was 10,000shs
-          method: method === 'MTN' ? 'MTN MOBILE MONEY' : 'AIRTEL MOBILE MONEY',
-          withdrawPhone: form.phoneNumber, 
+          method: method === 'MTN'? 'MTN MOBILE MONEY' : 'AIRTEL MOBILE MONEY',
+          withdrawPhone: form.phoneNumber,
           withdrawName: form.accountName
         })
       })
@@ -99,16 +95,16 @@ export default function Withdraw() {
       if (!res.ok) return alert(data.error || 'Withdrawal failed')
 
       // Deduct the EXACT total amount user entered from their live wallet balance instantly
-      const updatedUser = { ...user, availableBalance: Number(user.availableBalance || 0) - amt }
+      const updatedUser = {...user, availableBalance: Number(user.availableBalance || 0) - amt }
       setUser(updatedUser)
       localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
 
       alert('withdraw success')
       router.push('/transactions')
-    } catch { 
-      alert('Something went wrong') 
-    } finally { 
-      setLoading(false) 
+    } catch {
+      alert('Something went wrong')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -125,7 +121,7 @@ export default function Withdraw() {
       <div className="flex flex-col gap-3 mb-4">
         {['MTN', 'AIRTEL'].map(m => (
           <div key={m}>
-            <button type="button" onClick={() => { setMethod(m); setForm({ phoneNumber: '', accountName: '', amount: '' }) }} className={`w-full border rounded-lg p-3 text-left font-bold text-sm ${method === m ? 'border-black bg-[#87CEEB]' : 'border-gray-300'} text-black`}>
+            <button type="button" onClick={() => { setMethod(m); setForm({ phoneNumber: '', accountName: '', amount: '' }) }} className={`w-full border rounded-lg p-3 text-left font-bold text-sm ${method === m? 'border-black bg-[#87CEEB]' : 'border-gray-300'} text-black`}>
               * {m} Mobile money
             </button>
             {method === m && (
@@ -145,7 +141,7 @@ export default function Withdraw() {
           <label className="text-black font-bold block mb-2 text-sm">Valid Company's withdraw amounts</label>
           <div className="grid grid-cols-4 gap-2 mb-4">
             {VALID_AMOUNTS.map(amt => (
-              <div key={amt} onClick={() => setForm({ ...form, amount: amt.toString() })} className="bg-[#00BFFF] rounded-lg py-2 text-center cursor-pointer active:scale-95 transition-transform" style={{ border: form.amount === amt.toString() ? '2px solid #000' : 'none' }}>
+              <div key={amt} onClick={() => setForm({...form, amount: amt.toString() })} className="bg-[#00BFFF] rounded-lg py-2 text-center cursor-pointer active:scale-95 transition-transform" style={{ border: form.amount === amt.toString()? '2px solid #000' : 'none' }}>
                 <span className="text-[10px] font-normal text-black">{amt.toLocaleString()}shs</span>
               </div>
             ))}
@@ -154,8 +150,8 @@ export default function Withdraw() {
           <label className="text-black font-bold block mb-1 text-sm">Input amount according to the displayed format</label>
           <input type="text" placeholder="e.g. 10000" value={form.amount} onChange={e => setForm({...form, amount: e.target.value.replace(/\D/g, '')})} className="w-full border border-gray-300 rounded-lg px-3 h-10 text-black bg-[#FAFAFA] font-bold text-sm outline-none mb-4"/>
 
-          <button type="button" onClick={handleWithdraw} disabled={loading} className={`w-full h-12 rounded-lg font-normal text-base ${loading ? 'bg-gray-300 text-gray-500' : 'bg-[#00BFFF] text-black'}`}>
-            {loading ? 'Processing...' : 'Withdraw'}
+          <button type="button" onClick={handleWithdraw} disabled={loading} className={`w-full h-12 rounded-lg font-normal text-base ${loading? 'bg-gray-300 text-gray-500' : 'bg-[#00BFFF] text-black'}`}>
+            {loading? 'Processing...' : 'Withdraw'}
           </button>
         </>
       )}
@@ -165,7 +161,7 @@ export default function Withdraw() {
         <div className="flex flex-col gap-1.5 text-xs text-gray-800 font-bold">
           <p style={{ color: '#FF4500' }}>Withdraw fee: <span className="font-extrabold">10%</span></p>
           <p>Minimum withdraw amount: <span className="text-black font-extrabold">10,000shs</span></p>
-          <p>Withdraw days: <span className="text-black font-extrabold">Monday to Friday</span></p>
+          <p>Withdraw days: <span className="text-black font-extrabold">Everyday</span></p>
           <p>Withdraw time: <span className="text-black font-extrabold">10:00am -5:00pm</span></p>
           <p>Money will arrive in your mobile money wallet within <span className="text-green-600 font-extrabold">30mins -24hours max.</span></p>
         </div>

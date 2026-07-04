@@ -15,6 +15,13 @@ const getTodayTimeStrKampala = () => {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', ' ');
 }
 
+const isWeekendUganda = () => {
+  const ugandaTimeString = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
+  const ugandaDate = new Date(ugandaTimeString)
+  const day = ugandaDate.getDay() // 0 = Sunday, 6 = Saturday
+  return day === 0 || day === 6
+}
+
 const Toast = ({ msg, onClose }) => {
   useEffect(() => {
     const t = setTimeout(onClose, 1500);
@@ -104,6 +111,7 @@ export default function VipLevels() {
     try {
       const dateStr = getTodayDateStrFullYear();
       const timeStr = getTodayTimeStrKampala();
+      const isWeekend = isWeekendUganda();
 
       const res = await fetch('/api/viplevels', {
         method: 'POST',
@@ -117,7 +125,8 @@ export default function VipLevels() {
             price: vip.price,
             books: vip.books,
             dateStr, // 2026-MM-DD
-            timeStr // 2026-MM-DD HH:mm
+            timeStr, // 2026-MM-DD HH:mm
+            assignBooks:!isWeekend // false on Saturday/Sunday Uganda time, true Mon-Fri
           }
         })
       })
@@ -134,7 +143,7 @@ export default function VipLevels() {
       const updatedUser = {...data.user }
       localStorage.setItem('palamedes_user', JSON.stringify(updatedUser))
       setUser(updatedUser)
-      showToast('VIP Buy Successful') // auto-dismiss, no OK
+      showToast(isWeekend? 'VIP Buy Successful - Books unlock on Monday' : 'VIP Buy Successful') // auto-dismiss, no OK
 
     } catch (err) {
       showToast('Error: ' + err.message)
@@ -160,6 +169,7 @@ export default function VipLevels() {
             username={user.username}
             vipLevel={currentVipLevel}
             size={60}
+            avatar={user?.avatar || ''}
             key={currentVipLevel + '-' + user.availableBalance}
           />
           <div style={{ marginTop: '8px', textAlign: 'left' }}>

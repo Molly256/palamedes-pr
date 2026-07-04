@@ -61,20 +61,15 @@ export async function POST(req) {
     if (isWithdrawal) {
       const ugandaTimeStr = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
       const ugandaDate = new Date(ugandaTimeStr)
-      const day = ugandaDate.getDay() 
       const hours = ugandaDate.getHours()
       const minutes = ugandaDate.getMinutes()
-
-      if (day < 1 || day > 5) {
-        return NextResponse.json({ error: 'Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
-      }
 
       const totalMinutes = hours * 60 + minutes
       const startMinutes = 10 * 60 
       const endMinutes = 17 * 60   
 
       if (totalMinutes < startMinutes || totalMinutes > endMinutes) {
-        return NextResponse.json({ error: 'Withdrawals are only open Monday to Friday, 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
+        return NextResponse.json({ error: 'Withdrawals are only open 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
       }
     }
 
@@ -156,7 +151,7 @@ export async function GET(request) {
     const availableBalance = Number(userHash.availableBalance || 0)
 
     const transactions = rawItems
-      .map(item => {
+     .map(item => {
         const tx = safeParse(item)
         if (!tx) return null
 
@@ -178,7 +173,7 @@ export async function GET(request) {
           label: tx.label || getLabel(tx), 
           amount: String(tx.amount),
           note: tx.note || '',
-          status: (tx.status === 'completed' || tx.status === 'success') ? 'success' : tx.status, 
+          status: (tx.status === 'completed' || tx.status === 'success')? 'success' : tx.status, 
           createdAt: tx.createdAt, 
           phone: tx.phone || phone, 
           method: tx.method || '', 
@@ -188,9 +183,9 @@ export async function GET(request) {
           vipLevel: tx.vipLevel || ''
         };
       })
-      .filter(Boolean)
-      .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+     .filter(Boolean)
+     .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
+     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
 
     return NextResponse.json({ 
       success: true, 
