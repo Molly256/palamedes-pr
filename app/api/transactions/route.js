@@ -38,6 +38,13 @@ function getUgandaDateTimeString() {
   return new Date().toLocaleString("en-CA", { timeZone: "Africa/Kampala", hour12: false }).slice(0,16).replace(',', '');
 }
 
+// Helper helper function to safely get the current Uganda Date object
+function getUgandaNow() {
+  // This reads the server time, changes it to Uganda text, and creates a clean date object
+  const ugandaText = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" });
+  return new Date(ugandaText);
+}
+
 // =========================================================================
 // POST: Save transaction entry and update availableBalance atomically
 // =========================================================================
@@ -59,21 +66,21 @@ export async function POST(req) {
     const isWithdrawal = cleanType === 'withdraw'
 
     if (isWithdrawal) {
-      const ugandaTimeStr = new Date().toLocaleString("en-US", { timeZone: "Africa/Kampala" })
-      const ugandaDate = new Date(ugandaTimeStr)
+      const ugandaDate = getUgandaNow();
       
-      // 🛑 WEEKEND RESTRICTION CHECK: 0 = Sunday, 6 = Saturday
+      // 🛑 WEEKEND RESTRICTION CHECK (0 = Sunday, 6 = Saturday in Uganda)
       const day = ugandaDate.getDay()
       if (day === 0 || day === 6) {
         return NextResponse.json({ error: 'No time for withdraw on weekends! Please withdraw from Monday to Friday.' }, { status: 400 })
       }
 
+      // ⏰ TIME RESTRICTION CHECK (10:00 AM to 5:00 PM Uganda Time)
       const hours = ugandaDate.getHours()
       const minutes = ugandaDate.getMinutes()
 
       const totalMinutes = hours * 60 + minutes
-      const startMinutes = 10 * 60 
-      const endMinutes = 17 * 60   
+      const startMinutes = 10 * 60 // 10:00 AM
+      const endMinutes = 17 * 60   // 5:00 PM
 
       if (totalMinutes < startMinutes || totalMinutes > endMinutes) {
         return NextResponse.json({ error: 'Withdrawals are only open 10:00 AM - 5:00 PM Ugandan Time.' }, { status: 400 })
@@ -149,50 +156,56 @@ export async function GET(request) {
 
     const historyKey = `tx:${phone}:history`
 
-    // Read details and history in parallel cleanly without executing sync loops
-    const [userHash, rawItems] = await Promise.all([
-      redis.hgetall(`user:${phone}`) || {},
-      redis.lrange(historyKey, 0, 399) || []
+    // Safely await data and load up to 50 items max to protect database speed
+    const [userHashResult, rawItemsResult] = await Promise.all([
+      redis.hgetall(`user:${phone}`),
+      redis.lrange(historyKey, 0, 49)
     ])
+    
+    const userHash = userHashResult || {}
+    const rawItems = rawItemsResult || []
     
     const availableBalance = Number(userHash.availableBalance || 0)
 
-    const transactions = rawItems
-     .map(item => {
-        const tx = safeParse(item)
-        if (!tx) return null
+    // Lightning fast single loop processing
+    const transactions = [];
+    const seenIds = new Set();
 
-        let uiType = String(tx.type || '').toLowerCase().trim();
-        if (uiType === 'buy_vip') uiType = 'vip' 
-        if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
-        if (uiType === 'shares') uiType = 'shares'
-        if (uiType === 'shares_collected') uiType = 'shares'
-        if (uiType === 'system_increase') uiType = 'system_increase'
-        
-        if (uiType === 'team_a_payout') uiType = 'team_a_payout'
-        if (uiType === 'team_b_payout') uiType = 'team_b_payout'
-        if (uiType === 'team_c_payout') uiType = 'team_c_payout'
-        if (uiType === 'commission') uiType = 'commission'
+    for (let i = 0; i < rawItems.length; i++) {
+      const tx = safeParse(rawItems[i]);
+      if (!tx || !tx.id) continue;
 
-        return {
-          id: String(tx.id), 
-          type: uiType, 
-          label: tx.label || getLabel(tx), 
-          amount: String(tx.amount),
-          note: tx.note || '',
-          status: (tx.status === 'completed' || tx.status === 'success')? 'success' : tx.status, 
-          createdAt: tx.createdAt, 
-          phone: tx.phone || phone, 
-          method: tx.method || '', 
-          withdrawPhone: tx.withdrawPhone || '',
-          withdrawName: tx.withdrawName || '', 
-          bookTitle: tx.bookTitle || '',
-          vipLevel: tx.vipLevel || ''
-        };
-      })
-     .filter(Boolean)
-     .filter((v, i, a) => a.findIndex(t => t.id === v.id) === i)
-     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      if (seenIds.has(tx.id)) continue;
+      seenIds.add(tx.id);
+
+      let uiType = String(tx.type || '').toLowerCase().trim();
+      if (uiType === 'buy_vip') uiType = 'vip' 
+      if (uiType === 'daily_income' || uiType === 'book_income') uiType = 'daily income'
+      if (uiType === 'shares') uiType = 'shares'
+      if (uiType === 'shares_collected') uiType = 'shares'
+      if (uiType === 'system_increase') uiType = 'system_increase'
+      
+      if (uiType === 'team_a_payout') uiType = 'team_a_payout'
+      if (uiType === 'team_b_payout') uiType = 'team_b_payout'
+      if (uiType === 'team_c_payout') uiType = 'team_c_payout'
+      if (uiType === 'commission') uiType = 'commission'
+
+      transactions.push({
+        id: String(tx.id), 
+        type: uiType, 
+        label: tx.label || getLabel(tx), 
+        amount: String(tx.amount),
+        note: tx.note || '',
+        status: (tx.status === 'completed' || tx.status === 'success') ? 'success' : tx.status, 
+        createdAt: tx.createdAt, 
+        phone: tx.phone || phone, 
+        method: tx.method || '', 
+        withdrawPhone: tx.withdrawPhone || '',
+        withdrawName: tx.withdrawName || '', 
+        bookTitle: tx.bookTitle || '',
+        vipLevel: tx.vipLevel || ''
+      });
+    }
 
     return NextResponse.json({ 
       success: true, 
