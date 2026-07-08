@@ -3,12 +3,10 @@ import Card from '../../components/Card'
 
 export default function ManagerPage() {
   const managers = [
-    { name: "Manager 1", phone: "447412283536" },
-    { name: "Manager 2", phone: "447441424968" },
-    { name: "Manager 3", phone: "447451296569" }
+    { name: "Alicia", phone: "447451296569" }
   ]
 
-  const getWaLink = (phone) => `https://wa.me/${phone}?text=Hello%20Manager%20-%20Palamedes%20PR`
+  const getWaLink = (phone) => `https://wa.me/${phone}?text=Hello%20Alicia%20-%20Palamedes%20PR`
 
   return (
     <Card>
@@ -98,8 +96,6 @@ export default function ManagerPage() {
             color: '#666',
             textAlign: 'left'
           }}>
-            <div>📱 Manager Maya: +447412283536</div>
-            <div>📱 Manager Zoe: +447441424968</div>
             <div>📱 Manager Alicia: +447451296569</div>
           </div>
         </div>
