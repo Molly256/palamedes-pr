@@ -21,8 +21,8 @@ export async function POST(request) {
     const userKey = `user:${phone}`;
     const txKey = `tx:${phone}:history`;
 
-    const currentSpinsStr = await redis.hget(userKey, 'spins');
-    const currentSpins = parseInt(currentSpinsStr || '0', 10);
+    // Check spins first - can't pipeline this one
+    const currentSpins = parseInt(await redis.hget(userKey, 'spins') || '0', 10);
 
     if (currentSpins < 1) {
       return NextResponse.json(
@@ -34,34 +34,31 @@ export async function POST(request) {
     const prizeAmount = 2000;
     const timestamp = Date.now();
 
-    // MATCH YOUR EXISTING TX FORMAT FROM SCREENSHOT
     const txData = {
       id: `tx_${timestamp}_wheel`,
       type: 'system_increase',
-      label: 'Lucky Wheel Win', // Your UI reads 'label', not 'description'
-      amount: prizeAmount.toString(), // String "2000" not number 2000
+      label: 'Lucky Wheel Win',
+      amount: prizeAmount.toString(),
       timestamp: timestamp,
       status: 'completed'
     };
 
+    // Single pipeline for all writes + reads
     const pipeline = redis.pipeline();
     pipeline.hincrby(userKey, 'spins', -1);
     pipeline.hincrby(userKey, 'availableBalance', prizeAmount);
     pipeline.lpush(txKey, JSON.stringify(txData));
-    
-    await pipeline.exec();
+    pipeline.hget(userKey, 'spins'); // index 3
+    pipeline.hget(userKey, 'availableBalance'); // index 4
 
-    const [finalSpins, newBalance] = await Promise.all([
-      redis.hget(userKey, 'spins'),
-      redis.hget(userKey, 'availableBalance')
-    ]);
+    const results = await pipeline.exec();
 
     return NextResponse.json({
       success: true,
       winningSliceIndex: 0,
       prizeAmount: prizeAmount,
-      remainingSpins: Number(finalSpins || 0),
-      newBalance: Number(newBalance || 0)
+      remainingSpins: Number(results[3].result || 0),
+      newBalance: Number(results[4].result || 0)
     });
 
   } catch (error) {
