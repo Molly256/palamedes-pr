@@ -54,13 +54,17 @@ export default function InvitePage() {
   ]
 
   const MONTHLY_SALARY_DATA = [
+    { team: 'A + BC', people: '3 + 2', salary: '50,000 shs' },
+    { team: 'A + BC', people: '5 + 5', salary: '100,000 shs' },
+    { team: 'A + BC', people: '10 + 10', salary: '200,000 shs' },
+    { team: 'A + BC', people: '20 + 20', salary: '400,000 shs' },
     { team: 'A +BC', people: '50 +50', salary: '1,000,000 shs' },
     { team: 'A +BC', people: '100 +100', salary: '2,000,000 shs' },
     { team: 'A +BC', people: '200 +200', salary: '3,500,000 shs' },
   ]
 
   const COMMISSIONS = [
-    { level: 'Level 1 (Direct)', rate: '5%', desc: 'Your direct team setup' },
+    { level: 'Level 1 (Direct)', rate: '10%', desc: 'Your direct team setup' },
     { level: 'Level 2 (Sub)', rate: '2%', desc: 'Invited by Level 1' },
     { level: 'Level 3 (Indirect)', rate: '1%', desc: 'Invited by Level 2' },
   ]

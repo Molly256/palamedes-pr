@@ -100,6 +100,7 @@ export default function Dashboard() {
     { icon: '👨‍👩‍👧', label: 'Myteam', href: '/myteam' },
     { icon: '📖', label: 'About', href: '/about' },
     { icon: '📱', label: 'Download App', href: '/downloadapp' },
+    { icon: '🎡', label: 'Lucky Wheel', href: '/wheel' },
     { icon: '🎧', label: 'Manager', href: '/manager' }
   ]
 

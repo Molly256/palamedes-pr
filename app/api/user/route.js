@@ -55,7 +55,8 @@ export async function GET(request) {
           avatar: data.avatar || '',
           vip: safeNumber(data.vip),
           inviteCode: data.inviteCode ? String(data.inviteCode) : '',
-          availableBalance: safeNumber(data.availableBalance, 0)
+          availableBalance: safeNumber(data.availableBalance, 0),
+          spins: safeNumber(data.spins, 0)
         }
       });
     }
@@ -78,7 +79,8 @@ export async function GET(request) {
           inviteCode: user.inviteCode ? String(user.inviteCode) : '', // 👈 Crucial fallback anchor for your invite page links!
           availableBalance: currentAvailable, 
           vip: safeNumber(user.vip),
-          avatar: user.avatar || ''
+          avatar: user.avatar || '',
+          spins: safeNumber(user.spins, 0)
         }
       }, {
         headers: {
@@ -132,7 +134,8 @@ export async function POST(request) {
           inviteCode: user.inviteCode ? String(user.inviteCode) : '',
           availableBalance: currentAvailable,
           vip: safeNumber(user.vip),
-          avatar: user.avatar || ''
+          avatar: user.avatar || '',
+          spins: safeNumber(user.spins, 0)
         }
       })
     }
@@ -161,7 +164,8 @@ export async function POST(request) {
           inviteCode: updatedUser.inviteCode ? String(updatedUser.inviteCode) : '',
           availableBalance: currentAvailable,
           vip: safeNumber(updatedUser.vip),
-          avatar: updatedUser.avatar || ''
+          avatar: updatedUser.avatar || '',
+          spins: safeNumber(updatedUser.spins, 0)
         }
       })
     }
