@@ -19,6 +19,7 @@ export async function POST(request) {
     }
 
     const userKey = `user:${phone}`;
+    const txKey = `tx:${phone}:history`; // TX history key
 
     // 1. Fetch the spin count from Redis hash
     const currentSpinsStr = await redis.hget(userKey, 'spins');
@@ -32,20 +33,36 @@ export async function POST(request) {
       );
     }
 
-    // 3. Atomic transaction: deduct 1 spin, add 2,000 to available_balance
+    const prizeAmount = 2000;
+    const timestamp = Date.now();
+
+    // 3. Atomic transaction: deduct 1 spin, add to available_balance, create TX
     const pipeline = redis.pipeline();
     pipeline.hincrby(userKey, 'spins', -1);
-    pipeline.hincrby(userKey, 'available_balance', 2000);
+    pipeline.hincrby(userKey, 'available_balance', prizeAmount);
+    
+    // ADDED: Create transaction log for All tab
+    pipeline.lpush(txKey, JSON.stringify({
+      type: 'lucky wheel',
+      amount: prizeAmount,
+      timestamp: timestamp,
+      description: 'Lucky Wheel Win'
+    }));
+    
     await pipeline.exec();
 
-    // 4. Get updated spins to sync UI
-    const finalSpins = await redis.hget(userKey, 'spins');
+    // 4. Get updated spins and balance to sync UI
+    const [finalSpins, newBalance] = await Promise.all([
+      redis.hget(userKey, 'spins'),
+      redis.hget(userKey, 'available_balance')
+    ]);
 
     return NextResponse.json({
       success: true,
       winningSliceIndex: 0,
-      prizeAmount: 2000,
-      remainingSpins: Number(finalSpins || 0)
+      prizeAmount: prizeAmount,
+      remainingSpins: Number(finalSpins || 0),
+      newBalance: Number(newBalance || 0) // Send back for UI update
     });
 
   } catch (error) {
