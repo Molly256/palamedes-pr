@@ -19,13 +19,11 @@ export async function POST(request) {
     }
 
     const userKey = `user:${phone}`;
-    const txKey = `tx:${phone}:history`; // TX history key
+    const txKey = `tx:${phone}:history`;
 
-    // 1. Fetch the spin count from Redis hash
     const currentSpinsStr = await redis.hget(userKey, 'spins');
     const currentSpins = parseInt(currentSpinsStr || '0', 10);
 
-    // 2. Prevent execution if user has 0 spins
     if (currentSpins < 1) {
       return NextResponse.json(
         { success: false, error: "You do not have any lucky spins remaining!" },
@@ -36,12 +34,10 @@ export async function POST(request) {
     const prizeAmount = 2000;
     const timestamp = Date.now();
 
-    // 3. Atomic transaction: deduct 1 spin, add to available_balance, create TX
     const pipeline = redis.pipeline();
     pipeline.hincrby(userKey, 'spins', -1);
-    pipeline.hincrby(userKey, 'available_balance', prizeAmount);
+    pipeline.hincrby(userKey, 'availableBalance', prizeAmount); // FIXED: camelCase
     
-    // ADDED: Create transaction log for All tab
     pipeline.lpush(txKey, JSON.stringify({
       type: 'lucky wheel',
       amount: prizeAmount,
@@ -51,10 +47,9 @@ export async function POST(request) {
     
     await pipeline.exec();
 
-    // 4. Get updated spins and balance to sync UI
     const [finalSpins, newBalance] = await Promise.all([
       redis.hget(userKey, 'spins'),
-      redis.hget(userKey, 'available_balance')
+      redis.hget(userKey, 'availableBalance') // FIXED: camelCase
     ]);
 
     return NextResponse.json({
@@ -62,7 +57,7 @@ export async function POST(request) {
       winningSliceIndex: 0,
       prizeAmount: prizeAmount,
       remainingSpins: Number(finalSpins || 0),
-      newBalance: Number(newBalance || 0) // Send back for UI update
+      newBalance: Number(newBalance || 0)
     });
 
   } catch (error) {

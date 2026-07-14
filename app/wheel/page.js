@@ -108,7 +108,6 @@ export default function LuckyWheelPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', fontFamily: 'sans-serif', padding: '20px', minHeight: '100vh', backgroundColor: '#f0f2f5' }}>
       
-      {/* REMOVED YELLOW BANNER - ADDED TITLE */}
       <h1 style={{ 
         color: '#00BFFF', 
         fontSize: '20px', 
@@ -143,17 +142,18 @@ export default function LuckyWheelPage() {
         >
           <div style={{
             width: '100%', height: '100%',
-            background: 'conic-gradient(#ff69b4 0% 14.3%, #00bfff 14.3% 28.6%, #32cd32 28.6% 42.9%, #ffd700 42.9% 57.1%, #9370db 57.1% 71.4%, #ff0000 71.4% 85.7%, #006400 85.7% 100%)'
+            background: 'conic-gradient(#ff69b4 0deg 51.4deg, #00bfff 51.4deg 102.8deg, #32cd32 102.8deg 154.3deg, #ffd700 154.3deg 205.7deg, #9370db 205.7deg 257.1deg, #ff0000 257.1deg 308.6deg, #006400 308.6deg 360deg)'
           }} />
 
-          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', fontWeight: 'bolder', color: '#000', fontSize: '12px' }}>
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(0deg) translateY(-120px)' }}>2,000</span>
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(51.4deg) translateY(-120px)' }}>3,000</span>
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(102.8deg) translateY(-120px)' }}>50,000</span>
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(154.2deg) translateY(-120px)' }}>100k</span>
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(205.6deg) translateY(-120px)' }}>500k</span>
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(257deg) translateY(-120px)' }}>VIP 4</span>
-            <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(308.4deg) translateY(-120px)' }}>VIP 3</span>
+          {/* FIXED LABELS - Centered in each slice, upright */}
+          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', fontWeight: 'bold', color: '#000', fontSize: '13px', textShadow: '1px 1px 2px rgba(255,255,255,0.9)' }}>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(25.7deg) translateY(-105px) rotate(-25.7deg)' }}>2,000</div>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(77.1deg) translateY(-105px) rotate(-77.1deg)' }}>3,000</div>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(128.5deg) translateY(-105px) rotate(-128.5deg)' }}>50,000</div>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(179.9deg) translateY(-105px) rotate(-179.9deg)' }}>100k</div>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(231.3deg) translateY(-105px) rotate(-231.3deg)' }}>500k</div>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(282.7deg) translateY(-105px) rotate(-282.7deg)' }}>VIP 4</div>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(334.1deg) translateY(-105px) rotate(-334.1deg)' }}>VIP 3</div>
           </div>
         </div>
 
@@ -175,7 +175,6 @@ export default function LuckyWheelPage() {
         </button>
       </div>
 
-      {/* ADDED DESCRIPTION BELOW WHEEL */}
       <div style={{ 
         maxWidth: '400px', 
         textAlign: 'center', 
