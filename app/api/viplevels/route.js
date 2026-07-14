@@ -108,7 +108,7 @@ export async function POST(req) {
     }
     pipeline.lpush(historyKey, JSON.stringify({ id: 'by_' + Date.now(), type: 'buy_vip', amount: String(-upgradeCost), note: VIPS[vipLevel].name + ' Purchase', status: 'success', createdAt: timeStr }));
 
-    // === WHEEL LOGIC START: Give 1 spin to buyer ===
+    // === WHEEL LOGIC START: Give 1 spin to buyer - always 1 no matter VIP level ===
     pipeline.hincrby(userKey, 'spins', 1);
     // === WHEEL LOGIC END ===
 
@@ -167,8 +167,8 @@ async function processHierarchicalCommissions(buyerPhone, buyerVipLevel) {
           }));
           commissionPipeline.hincrby('user:' + uplinePhone, 'availableBalance', reward);
 
-          // === WHEEL LOGIC START: Give 1 spin to A-level inviter only ===
-          if (i === 0) { // Team A only
+          // === WHEEL LOGIC START: Give 1 spin to direct inviter only - always 1 no matter VIP level ===
+          if (i === 0) { // Team A = direct inviter only
             commissionPipeline.hincrby('user:' + uplinePhone, 'spins', 1);
           }
           // === WHEEL LOGIC END ===

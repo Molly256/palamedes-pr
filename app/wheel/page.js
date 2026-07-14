@@ -9,14 +9,13 @@ const TARGET_SLICE_INDEX = 0; // 2,000 Shs (Hot Pink) - ALWAYS LANDS HERE
 
 export default function LuckyWheelPage() {
   const [isSpinning, setIsSpinning] = useState(false);
-  const [balance, setBalance] = useState(0);
   const [spins, setSpins] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   
   const wheelRef = useRef(null);
 
-  // Fetch user data on mount - gets real balance + spins from DB
+  // Fetch user data on mount - gets real spins from DB
   useEffect(() => {
     async function fetchUserData() {
       try {
@@ -27,7 +26,6 @@ export default function LuckyWheelPage() {
         const data = await res.json();
         
         if (data.success) {
-          setBalance(data.balance || 0);
           setSpins(data.spins || 0); // This comes from DB spin field
         }
       } catch (error) {
@@ -73,8 +71,7 @@ export default function LuckyWheelPage() {
       setTimeout(() => {
         setShowModal(true);
         
-        // Update from backend: new balance + remaining spins
-        setBalance(data.newBalance);
+        // Update from backend: remaining spins
         setSpins(data.remainingSpins);
 
         // Reset wheel position for next spin
@@ -108,11 +105,8 @@ export default function LuckyWheelPage() {
       
       {/* Dashboard Stats */}
       <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-        <div style={{ background: '#fff', padding: '10px 20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <strong>Available Balance:</strong> <span style={{ color: '#2e7d32' }}>{balance.toLocaleString()} Shs</span>
-        </div>
         <div style={{ background: spins > 0 ? '#e8f5e9' : '#fff', padding: '10px 20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: spins > 0 ? '2px solid #4caf50' : 'none' }}>
-          <strong>Remaining Spins:</strong> <span style={{ color: spins > 0 ? '#2e7d32' : '#999', fontWeight: spins > 0 ? '700' : '400' }}>({spins})</span>
+          <strong>Spins:</strong> <span style={{ color: spins > 0 ? '#2e7d32' : '#999', fontWeight: spins > 0 ? '700' : '400' }}>{spins}</span>
         </div>
       </div>
 

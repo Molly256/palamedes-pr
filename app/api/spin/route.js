@@ -9,16 +9,16 @@ const redis = new Redis({
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { userId } = body;
+    const { phone } = body;
 
-    if (!userId) {
+    if (!phone) {
       return NextResponse.json(
-        { success: false, error: "Missing User Identification (userId)." },
+        { success: false, error: "Missing phone." },
         { status: 400 }
       );
     }
 
-    const userKey = `user:${userId}`;
+    const userKey = `user:${phone}`;
 
     // 1. Fetch the spin count from Redis hash
     const currentSpinsStr = await redis.hget(userKey, 'spins');
@@ -35,19 +35,16 @@ export async function POST(request) {
     // 3. Atomic transaction: deduct 1 spin, add 2,000 to available_balance
     const pipeline = redis.pipeline();
     pipeline.hincrby(userKey, 'spins', -1);
-    pipeline.hincrby(userKey, 'available_balance', 2000); // changed from 'balance'
-
+    pipeline.hincrby(userKey, 'available_balance', 2000);
     await pipeline.exec();
 
-    // 4. Get updated values to sync UI
-    const finalBalance = await redis.hget(userKey, 'available_balance'); // changed
+    // 4. Get updated spins to sync UI
     const finalSpins = await redis.hget(userKey, 'spins');
 
     return NextResponse.json({
       success: true,
       winningSliceIndex: 0,
       prizeAmount: 2000,
-      newBalance: Number(finalBalance || 0),
       remainingSpins: Number(finalSpins || 0)
     });
 
