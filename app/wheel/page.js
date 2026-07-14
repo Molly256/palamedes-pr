@@ -11,30 +11,40 @@ export default function LuckyWheelPage() {
   const [spins, setSpins] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [phone, setPhone] = useState(''); // Added
+  const [phone, setPhone] = useState('');
   
   const wheelRef = useRef(null);
 
-  // Get phone first
+  // FIXED: Read from palamedes_user like your login stores
   useEffect(() => {
-    // Change 'phone' to match your localStorage key
-    const storedPhone = localStorage.getItem('phone') || localStorage.getItem('userPhone') || '';
-    setPhone(storedPhone);
-  }, []);
-
-  // Fetch user data - FIXED
-  useEffect(() => {
-    if (!phone) return; // Wait for phone
-    
     async function fetchUserData() {
       try {
-        // FIXED: Added ?phone=
-        const res = await fetch(`/api/user?phone=${phone}`);
+        // 1. Get phone from palamedes_user object
+        const storedUser = localStorage.getItem('palamedes_user');
+        
+        if (!storedUser) {
+          console.error('No user found. Please login first.');
+          setLoading(false);
+          return;
+        }
+
+        const userObj = JSON.parse(storedUser);
+        const userPhone = userObj?.phone;
+        
+        if (!userPhone) {
+          console.error('Phone not found in user object');
+          setLoading(false);
+          return;
+        }
+
+        setPhone(userPhone);
+
+        // 2. Fetch spins using that phone
+        const res = await fetch(`/api/user?phone=${userPhone}`);
         const data = await res.json();
         
-        console.log('Redis response:', data); // Debug
+        console.log('Redis response:', data);
         
-        // FIXED: data.user.spins not data.spins
         if (data.success && data.user) {
           setSpins(data.user.spins || 0);
         }
@@ -45,18 +55,17 @@ export default function LuckyWheelPage() {
       }
     }
     fetchUserData();
-  }, [phone]); // Runs when phone is set
+  }, []); // Run once on mount
 
   async function startLuckyWheelSpin() {
     if (isSpinning || spins < 1 || !phone) return;
     setIsSpinning(true);
 
     try {
-      // FIXED: Send phone in body
       const response = await fetch('/api/spin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone }) // FIXED: added phone
+        body: JSON.stringify({ phone })
       });
       
       const data = await response.json();
