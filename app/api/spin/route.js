@@ -34,22 +34,26 @@ export async function POST(request) {
     const prizeAmount = 2000;
     const timestamp = Date.now();
 
+    // MATCH YOUR EXISTING TX FORMAT FROM SCREENSHOT
+    const txData = {
+      id: `tx_${timestamp}_wheel`,
+      type: 'system_increase',
+      label: 'Lucky Wheel Win', // Your UI reads 'label', not 'description'
+      amount: prizeAmount.toString(), // String "2000" not number 2000
+      timestamp: timestamp,
+      status: 'completed'
+    };
+
     const pipeline = redis.pipeline();
     pipeline.hincrby(userKey, 'spins', -1);
-    pipeline.hincrby(userKey, 'availableBalance', prizeAmount); // FIXED: camelCase
-    
-    pipeline.lpush(txKey, JSON.stringify({
-      type: 'lucky wheel',
-      amount: prizeAmount,
-      timestamp: timestamp,
-      description: 'Lucky Wheel Win'
-    }));
+    pipeline.hincrby(userKey, 'availableBalance', prizeAmount);
+    pipeline.lpush(txKey, JSON.stringify(txData));
     
     await pipeline.exec();
 
     const [finalSpins, newBalance] = await Promise.all([
       redis.hget(userKey, 'spins'),
-      redis.hget(userKey, 'availableBalance') // FIXED: camelCase
+      redis.hget(userKey, 'availableBalance')
     ]);
 
     return NextResponse.json({
